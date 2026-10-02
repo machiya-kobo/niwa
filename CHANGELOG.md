@@ -7,6 +7,7 @@ field is a minor bump, and a fix or wording change is a patch. Settings are list
 
 - A post body over 1 MiB is read and dropped (up to 16 MiB) before its 413, which now says `Connection: close`: a
   client still sending saw the connection reset instead of the answer.
+- A remote URL's password with an `@` in it is redacted whole: `https://u:p@ss@host` showed `https://***@ss@host`.
 
 ## 0.3.0
 

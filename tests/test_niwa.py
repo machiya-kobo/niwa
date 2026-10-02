@@ -700,6 +700,9 @@ class HardeningTest(unittest.TestCase):
         from konbini import Konbini
         self.assertEqual(niwa.redact("fatal: https://user:tok@git.test/v.git and git@git.test:v.git"),
                          "fatal: https://***@git.test/v.git and git@git.test:v.git")
+        self.assertEqual(niwa.redact("https://u:p@ss@git.test/v.git"), "https://***@git.test/v.git")  # @ in the password
+        self.assertEqual(niwa.redact("https://git.test/a@b and https://git.test?x=a@b"),
+                         "https://git.test/a@b and https://git.test?x=a@b")                     # no userinfo: untouched
         old_board, old_error = niwa.garden.konbini, niwa.sync.error
         try:
             niwa.garden.konbini = Konbini("http://konbini.internal:8081")

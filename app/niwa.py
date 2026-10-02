@@ -83,7 +83,7 @@ def host_allowed(host_header, allowed):
         return host in allowed
 
 
-CREDENTIALS_RE = re.compile(r"(\w+://)[^/@\s]+@")
+CREDENTIALS_RE = re.compile(r"(\w+://)[^/?#\s]*@")     # to the last @ of the authority: a password may hold one
 
 
 def redact(text):
