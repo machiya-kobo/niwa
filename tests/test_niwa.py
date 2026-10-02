@@ -756,6 +756,247 @@ class HardeningTest(unittest.TestCase):
             shutil.rmtree(tmp, ignore_errors=True)
 
 
+def write_identity(folder, signin_owner=False):
+    """An identity file (vaultkit.identity) for the tests: the owner, an agent with a token that may read and suggest,
+    a person who may only read, a person with nothing, and Niwa's own service token (a konbini grant only).
+    -> {name: token}."""
+    from vaultkit import identity
+    os.makedirs(folder, exist_ok=True)
+    with open(os.path.join(folder, "session.key"), "w") as f:
+        f.write("k" * 43)
+    data = {"version": 1, "session_key_file": "session.key", "principals": {
+        "owner": {"id": "ownerid000000001", "kind": "person", "owner": True, "tailscale": ["owner@test"],
+                  "proxy": ["owner"]},
+        "mcp": {"kind": "agent", "grants": {"niwa": ["read", "suggest"]}},
+        "reader": {"id": "readerid00000001", "kind": "person", "tailscale": ["reader@test"],
+                   "grants": {"niwa": ["read"]}},
+        "nobody": {"id": "nobodyid00000001", "kind": "person", "tailscale": ["nobody@test"]},
+        "niwa": {"kind": "service", "grants": {"konbini": ["read"]}}}}
+    tokens = {n: identity.new_token(data, n, "test") for n in ("mcp", "niwa")}
+    identity.write_file(os.path.join(folder, "identity.toml"), data)
+    return tokens
+
+
+def as_(path, headers, data=None, json_body=None):
+    """A request with these headers only (no owner login added): (status, headers, body)."""
+    body = None
+    headers = dict(headers)
+    if json_body is not None:
+        body, headers["Content-Type"] = json.dumps(json_body).encode(), "application/json"
+    elif data is not None:
+        body = urllib.parse.urlencode(data).encode()
+    r = urllib.request.Request(BASE + path, data=body, headers=headers)
+
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, *a, **k):
+            return None
+    try:
+        with urllib.request.build_opener(NoRedirect).open(r, timeout=20) as resp:
+            return resp.status, resp.headers, resp.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as e:
+        return e.code, e.headers, e.read().decode("utf-8", "replace")
+
+
+def last_event():
+    d = os.path.join(niwa.REPO, ".garden", "events")
+    with open(os.path.join(d, sorted(os.listdir(d))[-1])) as f:
+        return json.loads(f.read().splitlines()[-1])
+
+
+class IdentityTest(unittest.TestCase):
+    """Machiya's identity file (MACHIYA_IDENTITY_FILE, vaultkit.identity): who may read the garden, suggest, and tend
+    it. The owner powers come from the `niwa` `publish` grant, never from Origin or a missing X-Agent."""
+
+    @classmethod
+    def setUpClass(cls):
+        from vaultkit import identity
+        cls.folder = os.path.join(TMP, "identity")
+        cls.tokens = write_identity(cls.folder)
+        cls.saved = niwa.IDENTITY
+        niwa.IDENTITY = identity.Identity(os.path.join(cls.folder, "identity.toml"), "niwa")
+
+    @classmethod
+    def tearDownClass(cls):
+        niwa.IDENTITY = cls.saved
+
+    def setUp(self):
+        self.note = write_note("Notes/Identity.md", "---\ntitle: Identity\n---\nA note for the identity tests.\n")
+
+    def tearDown(self):
+        os.remove(self.note)
+        niwa.garden.revision += "x"
+
+    OWNER = {"Tailscale-User-Login": "owner@test"}
+    READER = {"Tailscale-User-Login": "reader@test"}
+
+    def agent(self):
+        return {"Authorization": "Bearer " + self.tokens["mcp"]}
+
+    def origin(self, headers):
+        return dict(headers, Origin="http://" + HOST)
+
+    def test_who_gets_in(self):
+        self.assertEqual(as_("/", self.OWNER)[0], 200)
+        self.assertEqual(as_("/queue", self.agent())[0], 200)
+        self.assertEqual(as_("/api/suggestions", self.agent())[0], 200)
+        self.assertEqual(as_("/n/Notes/Identity", self.READER)[0], 200)
+        st, _, body = as_("/", {"Tailscale-User-Login": "stranger@test"})
+        self.assertEqual((st, body.strip()), (403, "this login has no access"))
+        self.assertEqual(as_("/", {"Tailscale-User-Login": "nobody@test"})[0], 403)         # in the file, granted nothing
+        self.assertEqual(as_("/", {"Authorization": "Bearer " + self.tokens["niwa"]})[0], 403)   # no niwa grant
+        self.assertEqual(as_("/", {"Authorization": "Bearer mch_zzzzzz_nope"})[0], 401)
+        self.assertEqual(as_("/", {"Authorization": "Bearer mch_zzzzzz_nope", **self.OWNER})[0], 401)   # never falls through
+        self.assertEqual(as_("/", {})[0], 401)                                                    # no proof at all
+        self.assertEqual(as_("/publish", {}, {"rel": "Notes/Identity.md", "on": "1", "confirm": "1"})[0], 401)
+        self.assertEqual(as_("/api/status", {})[0], 200)                                          # still open
+
+    def test_the_owner_publishes_and_tends(self):
+        st, _, body = as_("/publish", self.origin(self.OWNER), {"rel": "Notes/Identity.md", "on": "1", "confirm": "1"})
+        self.assertEqual(st, 302, body)
+        self.assertTrue(niwa.garden.get("Notes/Identity").published)
+        self.assertEqual((last_event()["actor"], last_event()["agent"]), ("owner", "web"))     # actor: the principal
+        st, _, _ = as_("/meta", self.origin(self.OWNER), {"rel": "Notes/Identity.md", "growth": "budding"})
+        self.assertEqual(st, 302)
+        self.assertEqual(last_event()["type"], "garden")
+        st, _, _ = as_("/dismiss", self.origin(dict(self.OWNER, **{"X-Agent": "laptop"})), {"rel": "Notes/Identity.md"})
+        self.assertEqual(st, 302)
+        self.assertEqual((last_event()["actor"], last_event()["agent"]), ("owner", "laptop"))  # X-Agent: a label only
+        st, _, _ = as_("/publish", self.OWNER, {"rel": "Notes/Identity.md", "on": "0"})
+        self.assertEqual(st, 403)                                                  # still a same-origin form post only
+
+    def test_an_agent_suggests_but_never_tends(self):
+        """The hole this closes: an admitted agent that forges a same-origin Origin and leaves out X-Agent."""
+        st, _, body = as_("/api/suggest", self.agent(), json_body={"path": "Notes/Identity.md", "reason": "ready"})
+        self.assertEqual(st, 201, body)
+        self.assertEqual((json.loads(body)["actor"], json.loads(body)["agent"]), ("mcp", "api"))
+        forged = self.origin(self.agent())
+        for path, form in (("/publish", {"rel": "Notes/Identity.md", "on": "1", "confirm": "1"}),
+                           ("/dismiss", {"rel": "Notes/Identity.md"}),
+                           ("/meta", {"rel": "Notes/Identity.md", "growth": "evergreen"})):
+            st, _, body = as_(path, forged, form)
+            self.assertEqual(st, 403, path)
+            self.assertIn("only the owner", body, path)
+        self.assertFalse(niwa.garden.get("Notes/Identity").published)
+        with open(self.note) as f:
+            self.assertNotIn("growth", f.read())
+
+    def test_a_reader_only_reads(self):
+        self.assertEqual(as_("/stream", self.READER)[0], 200)
+        st, _, _ = as_("/api/suggest", self.origin(self.READER), json_body={"path": "Notes/Identity.md"})
+        self.assertEqual(st, 403)
+        st, _, _ = as_("/publish", self.origin(self.READER), {"rel": "Notes/Identity.md", "on": "1", "confirm": "1"})
+        self.assertEqual(st, 403)
+        self.assertFalse(niwa.garden.get("Notes/Identity").published)
+
+    def test_the_writer_follows_the_grant(self):
+        with self.assertRaises(niwa.WriteError):
+            niwa.writer.set_publish("Notes/Identity.md", True, "mcp", "web", power=False)     # "web" is only a label
+        with self.assertRaises(niwa.WriteError):
+            niwa.writer.dismiss("Notes/Identity.md", "mcp", "web", power=False)
+        with self.assertRaises(niwa.WriteError):
+            niwa.writer.set_garden_meta("Notes/Identity.md", {"growth": "budding"}, "mcp", "web", power=False)
+        with self.assertRaises(niwa.WriteError):
+            niwa.writer.set_publish("Notes/Identity.md", True, "x", "bot")                       # no file: the label
+        self.assertFalse(niwa.garden.get("Notes/Identity").published)
+
+    def test_the_full_status_is_the_owners(self):
+        from konbini import Konbini
+        old = niwa.garden.konbini
+        try:
+            niwa.garden.konbini = Konbini("http://konbini.internal:8081")
+            self.assertIn("url", json.loads(as_("/api/status", self.OWNER)[2])["konbini"])
+            for headers in (self.agent(), self.READER, {}, {"Authorization": "Bearer mch_zzzzzz_nope"}):
+                st, _, body = as_("/api/status", headers)
+                self.assertEqual(st, 200)
+                self.assertNotIn("konbini.internal", body)
+        finally:
+            niwa.garden.konbini = old
+
+    def test_sessions_renewed_cleared_and_same_origin(self):
+        from vaultkit import identity
+        ident = identity.Identity(os.path.join(self.folder, "identity.toml"), "niwa", signin=True, secure=False)
+        saved, niwa.IDENTITY = niwa.IDENTITY, ident
+        real = identity.now
+        try:
+            config, key = ident.current()
+            identity.now = lambda: real() - 2 * 86400                    # a session from two days ago: renewed on use
+            cookie = ident.issue(config, key, "owner").split(";")[0]
+            identity.now = real
+            st, headers, _ = as_("/", {"Cookie": cookie})
+            self.assertEqual(st, 200)
+            self.assertIn("machiya_session=", headers["Set-Cookie"])
+            self.assertNotEqual(headers["Set-Cookie"].split(";")[0], cookie)
+            st, headers, _ = as_("/", {"Cookie": "machiya_session=bogus"})
+            self.assertEqual(st, 401)
+            self.assertIn("Max-Age=0", headers["Set-Cookie"])                    # a bad one cleared
+            st, headers, _ = as_("/api/status", {"Cookie": "machiya_session=bogus"})
+            self.assertEqual(st, 200)
+            self.assertIn("Max-Age=0", headers["Set-Cookie"])                    # on every response
+            st, _, _ = as_("/api/suggest", {"Cookie": cookie, "Origin": "http://evil.test"},
+                           json_body={"path": "Notes/Identity.md"})
+            self.assertEqual(st, 403)                                             # a cookie needs a same-origin post
+            st, _, body = as_("/api/suggest", {"Cookie": cookie, "Origin": "http://" + HOST},
+                              json_body={"path": "Notes/Identity.md"})
+            self.assertEqual(st, 201, body)
+        finally:
+            identity.now = real
+            niwa.IDENTITY = saved
+
+    def test_header_mode_needs_the_identity_file(self):
+        with self.assertRaises(SystemExit):
+            niwa.auth_mode("header")
+        self.assertEqual(niwa.auth_mode("header", "/etc/machiya/identity.toml"), "header")
+
+    def test_proxy_header(self):
+        from vaultkit import identity
+        saved = niwa.IDENTITY
+        niwa.IDENTITY = identity.Identity(os.path.join(self.folder, "identity.toml"), "niwa", auth="header",
+                                          header="Remote-User")
+        try:
+            self.assertEqual(as_("/", {"Remote-User": "owner"})[0], 200)
+            self.assertEqual(as_("/", {"Remote-User": "mallory"})[0], 403)
+            self.assertEqual(as_("/", self.OWNER)[0], 401)                     # Tailscale's header means nothing here
+        finally:
+            niwa.IDENTITY = saved
+
+    def test_identity_settings_at_start(self):
+        """With an identity file a header mode refuses a public bind unless a proxy is the only way in."""
+        code = "import niwa; print(niwa.IDENTITY.auth, niwa.IDENTITY.room)"
+        env = dict(os.environ, MACHIYA_IDENTITY_FILE=os.path.join(self.folder, "identity.toml"),
+                   NIWA_DB=os.path.join(TMP, "identity-start", "niwa.sqlite3"))
+        app = os.path.join(HERE, "..", "app")
+
+        def run(**extra):
+            return subprocess.run([sys.executable, "-c", code], cwd=app, env=dict(env, **extra), capture_output=True,
+                                  text=True, timeout=60)
+        r = run(NIWA_BIND="0.0.0.0")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("niwa: identity:", r.stderr)
+        self.assertIn("127.0.0.1", r.stderr)
+        r = run(NIWA_BIND="127.0.0.1")
+        self.assertEqual((r.returncode, r.stdout.strip().splitlines()[-1]), (0, "tailscale niwa"), r.stderr)
+        r = run(NIWA_BIND="0.0.0.0", NIWA_BIND_BEHIND_PROXY="1")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        r = run(NIWA_BIND="127.0.0.1", NIWA_AUTH="header")                     # header mode names its header
+        self.assertNotEqual(r.returncode, 0)
+        r = run(NIWA_BIND="127.0.0.1", NIWA_AUTH="header", NIWA_AUTH_HEADER="Remote-User")
+        self.assertEqual((r.returncode, r.stdout.strip().splitlines()[-1]), (0, "header niwa"), r.stderr)
+        r = run(NIWA_BIND="127.0.0.1", MACHIYA_IDENTITY_FILE=os.path.join(TMP, "no-such.toml"))
+        self.assertNotEqual(r.returncode, 0)                                  # a missing file refuses to start
+
+    def test_without_the_file_the_old_gate(self):
+        self.assertIsNone(self.saved)                                          # the suite runs without one
+        current, niwa.IDENTITY = niwa.IDENTITY, None
+        try:
+            self.assertEqual(req("/")[0], 200)
+            self.assertEqual(req("/", user="guest@test")[0], 403)
+            bogus = {"Tailscale-User-Login": "owner@test", "Authorization": "Bearer mch_zzzzzz_nope"}
+            self.assertEqual(as_("/", bogus)[0], 200)                         # a token means nothing without the file
+            self.assertNotIn("Set-Cookie", as_("/", bogus)[1])
+        finally:
+            niwa.IDENTITY = current
+
+
 class WriteTest(unittest.TestCase):
     def sync(self):
         niwa.sync.commit()

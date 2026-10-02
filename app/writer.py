@@ -1,5 +1,6 @@
-"""The garden's writes: publish/unpublish, stage/confidence/pin, suggestions. Owner only from the web UI, except
-suggest (agents may suggest a note; they never publish). Each write edits frontmatter lines only (vaultkit's
+"""The garden's writes: publish/unpublish, stage/confidence/pin, suggestions. Owner only, except suggest (agents may
+suggest a note; they never publish). Who is the owner: with Machiya's identity file, the caller's `niwa` `publish`
+grant (the handler passes it as `power`); without one, a write labelled "web" (the owner's form posts). Each write edits frontmatter lines only (vaultkit's
 edit_front, the same code Konbini uses), records a garden event in `.garden/events/`, and joins the next batch
 commit by `garden`, which vaultkit.GitSync pulls, replays onto upstream if needed, and pushes.
 """
@@ -15,6 +16,13 @@ CONFIDENCE = ("certain", "likely", "possible", "speculative")
 
 class WriteError(EditError):
     pass
+
+
+def owner_only(agent, power, message):
+    """power: the identity file's answer (True/False), or None without one, when the "web" label decides as before.
+    `agent` is then only a label for the events."""
+    if not (agent == "web" if power is None else power is True):
+        raise WriteError(403, message)
 
 
 class Writer:
@@ -48,9 +56,8 @@ class Writer:
         self.sync.touch(summary)
         self.garden.revision = "%s+w%d" % (self.garden.revision.split("+w")[0], next(self.counter))
 
-    def set_publish(self, rel, value, actor, agent):
-        if agent != "web":
-            raise WriteError(403, "only the owner publishes to the garden, from the web UI")
+    def set_publish(self, rel, value, actor, agent, power=None):
+        owner_only(agent, power, "only the owner publishes to the garden, from the web UI")
         with self.lock:
             self.checked(rel)
             self.write_file(rel, edit_front(self.read(rel), {"publish": bool(value)}))
@@ -66,18 +73,16 @@ class Writer:
             self.changed("suggest " + os.path.splitext(os.path.basename(rel))[0])
             return ev
 
-    def dismiss(self, rel, actor, agent):
-        if agent != "web":
-            raise WriteError(403, "only the owner dismisses suggestions, from the web UI")
+    def dismiss(self, rel, actor, agent, power=None):
+        owner_only(agent, power, "only the owner dismisses suggestions, from the web UI")
         with self.lock:
             self.state.add_event("unsuggest", actor, agent, path=rel)
             self.changed("dismiss " + os.path.splitext(os.path.basename(rel))[0])
 
-    def set_garden_meta(self, rel, fields, actor, agent):
+    def set_garden_meta(self, rel, fields, actor, agent, power=None):
         """Stage, confidence and pin: owner only. Empty values remove the line (stage goes back to the default
         rule)."""
-        if agent != "web":
-            raise WriteError(403, "only the owner tends the garden, from the web UI")
+        owner_only(agent, power, "only the owner tends the garden, from the web UI")
         scalars = {}
         if "growth" in fields:
             g = str(fields["growth"] or "").strip().lower()

@@ -6,8 +6,8 @@ and events as `garden` (vaultkit.GitSync: batched, rebased, pushed), and keeps i
 Optional: Konbini (column badges, "in bloom", the board half of the stream), Kura (owner links to every note),
 Hister (private link copies, the stream's reading line).
 
-Listeners: web (NIWA_PORT; owner gate on Tailscale-User-Login), gemini 1965, gopher 7070. /api/status is open
-(monitoring).
+Listeners: web (NIWA_PORT; owner gate on Tailscale-User-Login, or Machiya's identity file and its grants), gemini 1965,
+gopher 7070. /api/status is open (monitoring).
 """
 import ipaddress
 import json
@@ -38,6 +38,7 @@ from vaultkit import GitSync  # noqa: E402
 from vaultkit import borrow as vk_borrow  # noqa: E402
 from vaultkit import verify as vk_verify  # noqa: E402
 from vaultkit import EditError  # noqa: E402
+from vaultkit import identity  # noqa: E402
 from writer import Writer, WriteError  # noqa: E402
 
 VERSION = "0.3.1"
@@ -45,12 +46,14 @@ PORT = int(os.environ.get("NIWA_PORT", "8080"))
 USERS = set(filter(None, (u.strip() for u in os.environ.get("NIWA_USERS", "").split(","))))
 
 
-def auth_mode(value):
-    """NIWA_AUTH: "tailscale" (the default: Tailscale-User-Login must be in NIWA_USERS) or "open" (no identity check,
-    for localhost or a trusted LAN). Anything else refuses to start rather than guess."""
+def auth_mode(value, identity_file=""):
+    """NIWA_AUTH: "tailscale" (the default: Tailscale-User-Login must be in NIWA_USERS, or in the identity file),
+    "open" (no identity check, for localhost or a trusted LAN), or with an identity file "header" (a trusted proxy's
+    login header, NIWA_AUTH_HEADER). Anything else refuses to start rather than guess."""
     value = (value or "tailscale").strip().lower()
-    if value not in ("tailscale", "open"):
-        raise SystemExit("niwa: NIWA_AUTH must be tailscale or open, not %r" % value)
+    allowed = ("tailscale", "open", "header") if identity_file else ("tailscale", "open")
+    if value not in allowed:
+        raise SystemExit("niwa: NIWA_AUTH must be %s, not %r" % (" or ".join(allowed), value))
     return value
 
 
@@ -106,10 +109,15 @@ def redact(text):
 
 MAX_BODY = 1 << 20     # form posts and suggestions are small
 MAX_DRAIN = 16 << 20   # an oversized body is read and dropped up to this, so its 413 isn't lost to a reset
-AUTH = auth_mode(os.environ.get("NIWA_AUTH"))
+AUTH = auth_mode(os.environ.get("NIWA_AUTH"), os.environ.get("MACHIYA_IDENTITY_FILE", "").strip())
 # The address every listener binds (web, gemini, gopher). A native install behind `tailscale serve` binds 127.0.0.1:
 # on a public bind the Tailscale-User-Login header could be sent by anyone who reaches the port.
 BIND = os.environ.get("NIWA_BIND", "0.0.0.0").strip() or "0.0.0.0"
+try:        # Machiya's identity file (MACHIYA_IDENTITY_FILE); None without one: the NIWA_USERS gate, as before
+    IDENTITY = identity.load_for("niwa", os.environ, bind=BIND)
+except identity.IdentityError as err:
+    raise SystemExit("niwa: identity: %s" % err)
+NO_STORE = ("Cache-Control", "no-store")
 REPO_URL = os.environ.get("NIWA_REPO_URL", "").strip()
 REPO = os.environ.get("NIWA_REPO_DIR", "/data/repo")
 SUBDIR = os.environ.get("NIWA_REPO_SUBDIR", "").strip("/")      # "" = the notes are at the repo root
@@ -210,27 +218,72 @@ def make_handler(listener):
         protocol_version = "HTTP/1.0"  # no keep-alive, no chunked encoding
         server_version = "niwa/" + VERSION
         timeout = 30                   # a client that stops sending lets its thread go
+        _who = None                    # the identity file's answer, worked out once per request (who())
 
         def log_message(self, fmt, *args):
             if self.path == "/api/status":
                 return
-            sys.stderr.write("%s %s %s\n" % (listener, self.who(), fmt % args))
+            sys.stderr.write("%s %s %s\n" % (listener, self.login(), fmt % args))
+
+        def login(self):
+            """Who is asking, for the log: the principal and how it was proven, or the Tailscale login. Never a
+            token."""
+            if IDENTITY is not None:
+                who = self._who
+                return "%s(%s)" % (who.principal.name, who.principal.via) if who else "-"
+            headers = getattr(self, "headers", None)       # a request too broken to parse has none
+            return headers.get("Tailscale-User-Login", "-") if headers is not None else "-"
 
         def who(self):
-            return self.headers.get("Tailscale-User-Login", "-")
+            """The identity file's answer for this request (vaultkit.identity), worked out once."""
+            if self._who is None:
+                self._who = IDENTITY.resolve(self.headers, self.client_address[0] if self.client_address else "")
+            return self._who
+
+        def host_ok(self):
+            """NIWA_AUTH=open's Host allow-list (DNS rebinding); every request in the other modes."""
+            return AUTH != "open" or host_allowed(self.headers.get("Host"), ALLOWED_HOSTS)
 
         def allowed(self):
+            if not self.host_ok():
+                return False
+            if IDENTITY is not None:
+                who = self.who()
+                return bool(who) and who.principal.can("niwa", "read")
             if AUTH == "open":
-                return host_allowed(self.headers.get("Host"), ALLOWED_HOSTS)
+                return True
             return "*" in USERS or self.headers.get("Tailscale-User-Login", "") in USERS
 
+        def may(self, action):
+            """A grant beyond read: "suggest" (POST /api/suggest) or "publish" (publish, dismiss, the garden fields).
+            Decided by the identity file, never by a header the caller writes. Without one, everyone the gate admits
+            may, as before (the owner powers still need a same-origin form post, and writer.py the "web" label)."""
+            if IDENTITY is None:
+                return self.allowed()
+            who = self.who()
+            return self.allowed() and who.principal.can("niwa", action)
+
+        def owner(self):
+            """The full /api/status (where Konbini and Hister are, what they answered): the owner only. Without an
+            identity file, everyone the gate admits is the owner, as before."""
+            if IDENTITY is not None:
+                return self.host_ok() and bool(self.who()) and self.who().principal.owner
+            return self.allowed()
+
         def refuse(self):
-            if AUTH == "open":
+            if not self.host_ok():
                 return self.send(403, "forbidden: NIWA_AUTH=open serves localhost, IP addresses, NIWA_HOST and "
                                       "NIWA_ALLOWED_HOSTS, not %r\n" % self.headers.get("Host", ""), "text/plain")
+            if IDENTITY is not None:
+                who = self.who()
+                status = who.status if not who else 403
+                body = (who.error if not who else "not allowed in niwa") + "\n"
+                return self.send(status, body, "text/plain", headers=[NO_STORE])
             return self.send(403, "forbidden\n", "text/plain")
 
         def actor(self):
+            if IDENTITY is not None:  # the principal's name ("local" in open mode, as before)
+                return self.who().principal.name
             if AUTH == "open":        # nothing vouches for the header without Tailscale: never let it name the actor
                 return "local"
             return self.headers.get("Tailscale-User-Login", "")
@@ -254,6 +307,8 @@ def make_handler(listener):
                 self.send_header("Connection", "close")
             for k, v in headers:
                 self.send_header(k, v)
+            for c in (self._who.cookies if self._who is not None else ()):
+                self.send_header("Set-Cookie", c)          # a renewed session, or a bad one cleared
             self.end_headers()
             if self.command != "HEAD":
                 self.wfile.write(data)
@@ -270,7 +325,7 @@ def make_handler(listener):
             url = urlsplit(self.path)
             path, query = unquote(url.path), parse_qs(url.query)
             if path == "/api/status":
-                return self.send_json(200, status(owner=self.allowed()))
+                return self.send_json(200, status(owner=self.owner()))
             if not self.allowed():
                 return self.refuse()
             if path == "/api/offline":      # the notes the service worker keeps for good (frontmatter offline: true)
@@ -415,10 +470,20 @@ def make_handler(listener):
                 data = self.body()
                 if not api and not self.same_origin():
                     raise WriteError(403, "cross-site form post refused")
+                if IDENTITY is not None and self.who().principal.via == "session" and not self.same_origin():
+                    raise WriteError(403, "cross-site post refused")       # a cookie rides along on any site's post
                 actor, agent = self.actor(), self.agent()
                 if api and agent == "web" and not self.same_origin():
                     agent = "api"
+                # The label the events record: "web" for the owner's form posts, as before; with an identity file
+                # X-Agent still names the session that did it, and the power to do it comes from the grant (power).
+                label = agent if IDENTITY is not None else "web" if not api else agent
+                power = self.may("publish") if IDENTITY is not None else None
+                if path in ("/dismiss", "/publish", "/meta") and power is False:
+                    raise WriteError(403, "only the owner tends the garden (niwa publish)")
                 if path in ("/api/suggest", "/api/garden/suggest"):
+                    if not self.may("suggest"):
+                        raise WriteError(403, "not allowed to suggest (niwa suggest)")
                     target = str(data.get("path") or data.get("note") or data.get("slug") or "").strip()
                     n = garden.get(target[:-3] if target.endswith(".md") else target)
                     if not n:
@@ -434,7 +499,7 @@ def make_handler(listener):
                     n = garden.get(rel[:-3] if rel.endswith(".md") else rel)
                     if not n:
                         raise WriteError(404, "no such note")
-                    writer.dismiss(n.rel, actor, "web" if not api else agent)
+                    writer.dismiss(n.rel, actor, label, power)
                     self.send(302, "", "text/plain", headers=[("Location", base + "/queue")])
                 elif path == "/publish":
                     rel = data.get("rel", "")
@@ -448,7 +513,7 @@ def make_handler(listener):
                             ctx = self.ctx()
                             return self.send(200, gmodern.note(ctx, base, garden, n, garden.konbini.cards_by_path(),
                                                                garden.check(n)))
-                    writer.set_publish(n.rel, on, actor, "web" if not api else agent)
+                    writer.set_publish(n.rel, on, actor, label, power)
                     self.send(302, "", "text/plain", headers=[("Location", "%s/n/%s" % (base, quote(n.slug)))])
                 elif path == "/meta":
                     rel = data.get("rel", "")
@@ -456,7 +521,7 @@ def make_handler(listener):
                     if not n:
                         raise WriteError(404, "no such note")
                     writer.set_garden_meta(n.rel, {"growth": data.get("growth", ""), "confidence": data.get("confidence", ""),
-                                                   "garden_pin": data.get("garden_pin", "")}, actor, "web" if not api else agent)
+                                                   "garden_pin": data.get("garden_pin", "")}, actor, label, power)
                     self.send(302, "", "text/plain", headers=[("Location", "%s/n/%s" % (base, quote(n.slug)))])
                 else:
                     raise WriteError(405, "no such write endpoint")
@@ -512,11 +577,14 @@ def main():
     for p in vk_verify.check():
         print("niwa: vaultkit drift: %s" % p, flush=True)
     garden.index()
+    if IDENTITY is not None:
+        users = "from %s (NIWA_AUTH=%s)" % (IDENTITY.path, AUTH)
+    else:
+        users = "anyone (NIWA_AUTH=open)" if AUTH == "open" else ",".join(sorted(USERS)) or "NOBODY (set NIWA_USERS)"
     print("niwa %s (vaultkit %s): %d notes, %d published; repo %s, subdir %r; konbini %s; hister %s; users %s" % (
         VERSION, vk_verify.version().split(" - ")[0], len(garden.notes), len(garden.published()), REPO, SUBDIR,
         shell.BOARD_URL or "off", "on" if hister else "off",
-        "anyone (NIWA_AUTH=open)" if AUTH == "open" else ",".join(sorted(USERS)) or "NOBODY (set NIWA_USERS)"),
-        flush=True)
+        users), flush=True)
     print("niwa: link archive %s; hister save %s" % (ARCHIVE, "on" if HISTER_SAVE else "off"), flush=True)
     print("niwa: listening on %s: web %d, gemini 1965, gopher 7070%s" % (
         BIND, PORT, ("; settings from " + ENV_FILE) if ENV_FILE else ""), flush=True)
