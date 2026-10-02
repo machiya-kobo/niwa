@@ -3,6 +3,11 @@
 Niwa follows [SemVer](https://semver.org). Before 1.0, a new feature, a changed default or setting, or a changed API
 field is a minor bump, and a fix or wording change is a patch. Settings are listed in the README.
 
+## 0.3.1
+
+- A post body over 1 MiB is read and dropped (up to 16 MiB) before its 413, which now says `Connection: close`: a
+  client still sending saw the connection reset instead of the answer.
+
 ## 0.3.0
 
 - Gemini and gopher serve only the images a published note shows; an image only unpublished or private notes use

@@ -659,7 +659,35 @@ class HardeningTest(unittest.TestCase):
         owner = [("Tailscale-User-Login", "owner@test"), ("Content-Type", "application/json")]
         self.assertEqual(raw("POST", "/api/suggest", owner + [("Content-Length", "x")])[0], 400)
         self.assertEqual(raw("POST", "/api/suggest", owner + [("Content-Length", "-1")])[0], 400)
-        self.assertEqual(raw("POST", "/api/suggest", owner + [("Content-Length", str(2 << 20))])[0], 413)
+        big = b"x" * (2 << 20)
+        self.assertEqual(raw("POST", "/api/suggest", owner + [("Content-Length", str(len(big)))], big)[0], 413)
+
+    def test_an_oversized_body_gets_its_413(self):
+        import socket
+        body = b"x" * (12 << 20)         # over MAX_BODY: unread, closing would reset the connection before the 413
+        head = ("POST /api/suggest HTTP/1.0\r\nTailscale-User-Login: owner@test\r\nContent-Type: application/json\r\n"
+                "Content-Length: %d\r\n\r\n" % len(body)).encode()
+        with socket.create_connection(("127.0.0.1", SERVER.server_address[1]), timeout=10) as c:
+            sent = []
+
+            def upload():
+                try:
+                    c.sendall(head + body)
+                    sent.append(True)
+                except OSError:          # reset: the server closed with the body unread
+                    sent.append(False)
+            sender = threading.Thread(target=upload)
+            sender.start()
+            sender.join(10)
+            data = b""
+            while True:
+                chunk = c.recv(65536)    # ConnectionResetError here without the drain
+                if not chunk:
+                    break
+                data += chunk
+        self.assertEqual(sent, [True])
+        self.assertTrue(data.startswith(b"HTTP/1.0 413"), data[:40])
+        self.assertIn(b"Connection: close", data)
 
     def test_theme_goes_back_only_within_the_site(self):
         user = ("Tailscale-User-Login", "owner@test")

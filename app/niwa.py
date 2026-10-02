@@ -40,7 +40,7 @@ from vaultkit import verify as vk_verify  # noqa: E402
 from vaultkit import EditError  # noqa: E402
 from writer import Writer, WriteError  # noqa: E402
 
-VERSION = "0.3.0"
+VERSION = "0.3.1"
 PORT = int(os.environ.get("NIWA_PORT", "8080"))
 USERS = set(filter(None, (u.strip() for u in os.environ.get("NIWA_USERS", "").split(","))))
 
@@ -92,6 +92,7 @@ def redact(text):
 
 
 MAX_BODY = 1 << 20     # form posts and suggestions are small
+MAX_DRAIN = 16 << 20   # an oversized body is read and dropped up to this, so its 413 isn't lost to a reset
 AUTH = auth_mode(os.environ.get("NIWA_AUTH"))
 # The address every listener binds (web, gemini, gopher). A native install behind `tailscale serve` binds 127.0.0.1:
 # on a public bind the Tailscale-User-Login header could be sent by anyone who reaches the port.
@@ -237,6 +238,8 @@ def make_handler(listener):
             self.send_response(status)
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(data)))
+            if status == 413:
+                self.send_header("Connection", "close")
             for k, v in headers:
                 self.send_header(k, v)
             self.end_headers()
@@ -361,6 +364,7 @@ def make_handler(listener):
             if length < 0:
                 raise WriteError(400, "invalid Content-Length")
             if length > MAX_BODY:
+                self.drain(length)
                 raise WriteError(413, "request body too large")
             raw = self.rfile.read(length) if length else b""
             if "json" in (self.headers.get("Content-Type") or ""):
@@ -370,6 +374,19 @@ def make_handler(listener):
                     raise WriteError(400, "invalid JSON")
             form = parse_qs(raw.decode("utf-8", "replace"), keep_blank_values=True)
             return {k: v[-1] for k, v in form.items()}
+
+        def drain(self, length):
+            """Read and drop an unwanted body: closing with it unread resets the connection, and a client still
+            sending sees the reset instead of the answer. Past MAX_DRAIN the client gets the reset."""
+            left = min(length, MAX_DRAIN)
+            try:
+                while left > 0:
+                    chunk = self.rfile.read(min(left, 65536))
+                    if not chunk:
+                        break
+                    left -= len(chunk)
+            except OSError:                # stalled (the 30 s timeout) or gone: answer what we can
+                pass
 
         def same_origin(self):
             host = self.headers.get("Host", "")
