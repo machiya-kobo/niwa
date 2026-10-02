@@ -16,7 +16,17 @@ field is a minor bump, and a fix or wording change is a patch. Settings are list
   `tailscale` and `header` refuse a non-loopback bind unless `NIWA_BIND_BEHIND_PROXY=1`. `NIWA_ACCEPT_APP_CAPS=1`
   knows Tailscale tagged nodes by their app capability.
 - `NIWA_KONBINI_TOKEN_FILE`: Niwa's service token, sent to Konbini as `Authorization: Bearer` on every call.
-- vaultkit 0.10.0.
+- The built-in sign-in, with an identity file and `NIWA_SIGNIN=1` (vaultkit's `signin`): `GET`/`POST /signin` and
+  `POST /signout` (same-origin only), the session cookie, and a 401 page in the browser that links to
+  `/signin?next=`. Settings shows who is signed in and a Sign Out button.
+- Shiori device pairing: `POST /api/pair` turns a one-time code from the identity CLI into a device token.
+- Per-user preferences: `GET`/`PUT /api/prefs`, kept in `prefs.sqlite3` next to `NIWA_DB` (the `niwa` `read` grant;
+  a PUT made with a cookie or login must be same-origin, one with a token needn't).
+- `NIWA_PUBLIC_URL`: Niwa's web address, an origin with no path. `http://` turns off the session cookie's `Secure`
+  and is the only origin the sign-in accepts there; its host joins the names `NIWA_AUTH=open` serves.
+- Without an identity file `/signin`, `/signout`, `/api/pair` and `/api/prefs` answer 404, as before.
+- `/settings` is `Cache-Control: no-store`.
+- vaultkit 0.11.0.
 
 ## 0.3.1
 

@@ -14,6 +14,11 @@ affects. You'll get an answer within a week, and a fix or a plan before anything
   any header (`Origin`, `X-Agent` or its absence), a request with an invalid token or session being served as
   someone else instead of 401, a principal reading or suggesting without `read` or `suggest`, or a header mode
   starting on a public bind without `NIWA_BIND_BEHIND_PROXY` is in scope.
+- **Sign-in, pairing and preferences** (with an identity file): a cross-site request signing someone in or out or
+  writing their preferences with a cookie or login; `next` sending a browser to another site; a sign-in accepted
+  over plain http without `NIWA_PUBLIC_URL` as its origin; a password, a hash or a session or device token reaching
+  a page, a log line or a JSON answer (other than the one token `/api/pair` hands out); one principal reading or
+  writing another's preferences; any of these routes answering without an identity file.
 - **Tokens:** Niwa's Konbini token (`NIWA_KONBINI_TOKEN_FILE`) or a caller's token reaching a log line, a page,
   `/api/status`, or any host but Konbini's.
 - **Reading what isn't published:** an unpublished note, its title or its text, or an image only unpublished notes
