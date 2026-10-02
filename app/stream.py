@@ -95,7 +95,8 @@ def build(garden, days=30, links=None, reading=None, public=False):
         elif kind == "suggest":
             rel = ev.get("path") or ""
             n = garden.notes.get(rel)
-            who = ev.get("agent") if ev.get("agent") not in (None, "web", "api") else (ev.get("actor") or "")
+            # the actor is a login (Tailscale-User-Login): the owner's pages may name it, gemini and gopher never do
+            who = ev.get("agent") if ev.get("agent") not in (None, "web", "api") else ("" if public else ev.get("actor") or "")
             garden_events.append({"kind": "garden", "date": d, "event": "suggested" + ((" by " + who) if who else ""),
                                   "title": n.title if n else rel, "note_slug": n.slug if n and n.published else "", "rel": rel})
         elif kind in ("publish", "unpublish"):

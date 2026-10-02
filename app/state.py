@@ -32,6 +32,7 @@ class State:
         self.db.executescript(SCHEMA)
         self.db.commit()
         self._events, self._events_key = [], None
+        self.links_version = 0      # bumped by every link_set, so readers can cache the table
 
     # -- links (used by links.py) -------------------------------------------------------------------------------
 
@@ -49,6 +50,7 @@ class State:
 
     def link_set(self, url, **fields):
         with self.lock, self.db:
+            self.links_version += 1
             cur = self.db.execute("SELECT url FROM links WHERE url = ?", (url,)).fetchone()
             if cur:
                 if fields:

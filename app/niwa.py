@@ -9,6 +9,7 @@ Hister (private link copies, the stream's reading line).
 Listeners: web (NIWA_PORT; owner gate on Tailscale-User-Login), gemini 1965, gopher 7070. /api/status is open
 (monitoring).
 """
+import ipaddress
 import json
 import os
 import re
@@ -36,9 +37,10 @@ from state import EVENTS_DIR, State  # noqa: E402
 from vaultkit import GitSync  # noqa: E402
 from vaultkit import borrow as vk_borrow  # noqa: E402
 from vaultkit import verify as vk_verify  # noqa: E402
+from vaultkit import EditError  # noqa: E402
 from writer import Writer, WriteError  # noqa: E402
 
-VERSION = "0.2.3"
+VERSION = "0.3.0"
 PORT = int(os.environ.get("NIWA_PORT", "8080"))
 USERS = set(filter(None, (u.strip() for u in os.environ.get("NIWA_USERS", "").split(","))))
 
@@ -67,6 +69,29 @@ def flag(value):
     return (value or "").strip().lower() in ("1", "on", "true")
 
 
+def host_allowed(host_header, allowed):
+    """NIWA_AUTH=open's guard against DNS rebinding: a page on another site whose name is pointed at this machine
+    arrives with that site's name in Host (and Origin), so only an IP literal, localhost or a listed name is served."""
+    try:
+        host = urlsplit("//" + (host_header or "")).hostname or ""
+    except ValueError:
+        return False
+    try:
+        ipaddress.ip_address(host)
+        return True
+    except ValueError:
+        return host in allowed
+
+
+CREDENTIALS_RE = re.compile(r"(\w+://)[^/@\s]+@")
+
+
+def redact(text):
+    """A URL's user:password@ (an https remote with a token) never reaches a log line or /api/status."""
+    return CREDENTIALS_RE.sub(r"\1***@", text) if isinstance(text, str) else text
+
+
+MAX_BODY = 1 << 20     # form posts and suggestions are small
 AUTH = auth_mode(os.environ.get("NIWA_AUTH"))
 # The address every listener binds (web, gemini, gopher). A native install behind `tailscale serve` binds 127.0.0.1:
 # on a public bind the Tailscale-User-Login header could be sent by anyone who reaches the port.
@@ -81,6 +106,9 @@ SPARSE = [p.strip().strip("/") for p in os.environ.get("NIWA_REPO_SPARSE", "").s
 POLL = max(10, int(os.environ.get("NIWA_POLL", "60")))
 DB = os.environ.get("NIWA_DB", "/data/niwa.sqlite3")
 HOST = os.environ.get("NIWA_HOST", "").strip()           # the name in the gemini cert and gopher menus; "" = localhost, no footer links
+# NIWA_AUTH=open serves only these names in Host (plus any IP literal): localhost, NIWA_HOST and NIWA_ALLOWED_HOSTS.
+ALLOWED_HOSTS = {"localhost", HOST.lower()} - {""} | {
+    h.strip().lower() for h in os.environ.get("NIWA_ALLOWED_HOSTS", "").split(",") if h.strip()}
 SMALLWEB_HOST = HOST or "localhost"
 PRIVATE = tuple(p.strip().strip("/") + "/" for p in os.environ.get("NIWA_PRIVATE_FOLDERS", "").split(",") if p.strip().strip("/"))
 AUTHOR = (os.environ.get("NIWA_GIT_NAME", "garden"), os.environ.get("NIWA_GIT_EMAIL", "garden@niwa"))
@@ -119,7 +147,7 @@ def clone_once():
     if os.path.isdir(os.path.join(REPO, ".git")) or not REPO_URL:
         return
     os.makedirs(REPO, exist_ok=True)
-    print("niwa: cloning %s%s" % (REPO_URL, (" (objects from %s)" % REFERENCE) if REFERENCE else ""), flush=True)
+    print("niwa: cloning %s%s" % (redact(REPO_URL), (" (objects from %s)" % REFERENCE) if REFERENCE else ""), flush=True)
     ref = ["--reference", REFERENCE] if REFERENCE else []
     subprocess.run(["git", "clone", "-q", *ref, "--", REPO_URL, REPO], check=True, timeout=3600)
 
@@ -168,6 +196,7 @@ def make_handler(listener):
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.0"  # no keep-alive, no chunked encoding
         server_version = "niwa/" + VERSION
+        timeout = 30                   # a client that stops sending lets its thread go
 
         def log_message(self, fmt, *args):
             if self.path == "/api/status":
@@ -179,8 +208,14 @@ def make_handler(listener):
 
         def allowed(self):
             if AUTH == "open":
-                return True
+                return host_allowed(self.headers.get("Host"), ALLOWED_HOSTS)
             return "*" in USERS or self.headers.get("Tailscale-User-Login", "") in USERS
+
+        def refuse(self):
+            if AUTH == "open":
+                return self.send(403, "forbidden: NIWA_AUTH=open serves localhost, IP addresses, NIWA_HOST and "
+                                      "NIWA_ALLOWED_HOSTS, not %r\n" % self.headers.get("Host", ""), "text/plain")
+            return self.send(403, "forbidden\n", "text/plain")
 
         def actor(self):
             if AUTH == "open":        # nothing vouches for the header without Tailscale: never let it name the actor
@@ -220,9 +255,9 @@ def make_handler(listener):
             url = urlsplit(self.path)
             path, query = unquote(url.path), parse_qs(url.query)
             if path == "/api/status":
-                return self.send_json(200, status())
+                return self.send_json(200, status(owner=self.allowed()))
             if not self.allowed():
-                return self.send(403, "forbidden\n", "text/plain")
+                return self.refuse()
             if path == "/api/offline":      # the notes the service worker keeps for good (frontmatter offline: true)
                 return self.send_json(200, {"urls": ["/n/" + quote(n.slug) for n in garden.published()
                                                      if n.fm.get("offline") is True and not n.rel.startswith(NO_STORE_DIRS)]})
@@ -252,9 +287,11 @@ def make_handler(listener):
                 theme = (query.get("set") or ["system"])[0]
                 theme = {"auto": "system"}.get(theme, theme)
                 theme = theme if theme in ("night", "day", "system") else "system"
-                ref = urlsplit(self.headers.get("Referer") or "")
+                back = urlsplit(self.headers.get("Referer") or "").path
+                if not back.startswith("/") or back[1:2] in ("/", "\\"):     # //host and /\host leave the site
+                    back = "/"
                 return self.send(302, "", "text/plain", headers=[
-                    ("Location", ref.path or "/"), ("Set-Cookie", "theme=%s; path=/; max-age=31536000" % theme)])
+                    ("Location", back), ("Set-Cookie", "theme=%s; path=/; max-age=31536000" % theme)])
             self.garden_get(path, "", query, ctx)
 
         def static(self, name, query):
@@ -317,7 +354,14 @@ def make_handler(listener):
         # -- writes --------------------------------------------------------------------------------------------
 
         def body(self):
-            length = int(self.headers.get("Content-Length") or 0)
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                raise WriteError(400, "invalid Content-Length")
+            if length < 0:
+                raise WriteError(400, "invalid Content-Length")
+            if length > MAX_BODY:
+                raise WriteError(413, "request body too large")
             raw = self.rfile.read(length) if length else b""
             if "json" in (self.headers.get("Content-Type") or ""):
                 try:
@@ -334,7 +378,7 @@ def make_handler(listener):
 
         def do_POST(self):
             if not self.allowed():
-                return self.send(403, "forbidden\n", "text/plain")
+                return self.refuse()
             path = unquote(urlsplit(self.path).path)
             api = path.startswith("/api/")
             base = ""
@@ -387,7 +431,7 @@ def make_handler(listener):
                     self.send(302, "", "text/plain", headers=[("Location", "%s/n/%s" % (base, quote(n.slug)))])
                 else:
                     raise WriteError(405, "no such write endpoint")
-            except WriteError as e:
+            except EditError as e:         # WriteError, and vaultkit's own (no frontmatter, invalid YAML)
                 if api:
                     self.send_json(e.status, dict(error=e.message, **e.extra))
                 else:
@@ -413,13 +457,20 @@ def footer_status():
 shell.STATUS = footer_status
 
 
-def status():
+def status(owner=False):
+    """Open for monitoring. Only the owner sees where Konbini and Hister are and what they answered."""
     garden.index()
+    sync_status = dict(sync.status(), error=redact(sync.status().get("error")))
+    if owner:
+        konbini = garden.konbini.status()
+        hister_status = dict(hister.status(), error=hister.error or None) if hister else "off"
+    else:
+        konbini = {"on": garden.konbini.enabled(), "ok": not garden.konbini.error}
+        hister_status = {"on": True, "ok": not hister.error} if hister else "off"
     return {"version": VERSION, "vaultkit": vk_verify.version().split(" - ")[0], "head": sync.head(),
-            "notes": len(garden.notes), "published": len(garden.published()), "sync": sync.status(),
-            "konbini": garden.konbini.status(),
-            "hister": dict(hister.status(), error=hister.error or None) if hister else "off",
-            "links": links.last_run, "ready": bool(garden.revision), "error": sync.error or None, "auth": AUTH}
+            "notes": len(garden.notes), "published": len(garden.published()), "sync": sync_status,
+            "konbini": konbini, "hister": hister_status, "links": links.last_run, "ready": bool(garden.revision),
+            "error": redact(sync.error) or None, "auth": AUTH}
 
 
 def serve(port, listener):

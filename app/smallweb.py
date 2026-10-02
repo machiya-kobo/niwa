@@ -221,9 +221,11 @@ def stream_lines(garden, timeline):
 
 class GeminiHandler(socketserver.StreamRequestHandler):
     garden = timeline = None
+    timeout = 30        # a client that stops sending lets its thread go
 
     def handle(self):
         try:
+            self.request.do_handshake()     # here, in the connection's thread: TLSServer.get_request doesn't wait for it
             url = self.rfile.readline(1100).decode("utf-8", "replace").strip()
         except (OSError, ssl.SSLError):
             return
@@ -272,7 +274,7 @@ class GeminiHandler(socketserver.StreamRequestHandler):
                     lines.append(text)
             return self.reply("20 text/gemini; charset=utf-8", "\n".join(lines) + "\n\n=> / garden\n")
         if path.startswith("/a/"):
-            full = g.asset_path(path[3:])
+            full = g.public_asset_path(path[3:])
             mime = IMAGE_MIME.get(os.path.splitext(path)[1].lower())
             if full and mime:
                 with open(full, "rb") as f:
@@ -298,7 +300,8 @@ class TLSServer(socketserver.ThreadingTCPServer):
     def get_request(self):
         sock, addr = super().get_request()
         sock.settimeout(30)
-        return self.context.wrap_socket(sock, server_side=True), addr
+        # No handshake on the accept thread: a client that connects and says nothing would hold up every other one.
+        return self.context.wrap_socket(sock, server_side=True, do_handshake_on_connect=False), addr
 
 
 def ensure_cert(data_dir, hostname):
@@ -331,6 +334,8 @@ def serve_gemini(garden, timeline, port, data_dir, hostname, bind=""):
 
 def gopher_handler(garden, timeline, host, port, allow=None):
     class Handler(socketserver.StreamRequestHandler):
+        timeout = 30    # a client that stops sending lets its thread go
+
         def handle(self):
             if allow is not None and self.client_address[0] not in allow:
                 return self.send(menu([("3", "forbidden", "")]))
@@ -372,7 +377,7 @@ def gopher_handler(garden, timeline, host, port, allow=None):
                         rows.append(("i", text[:70], ""))
                 return self.send(menu(rows))
             if sel.startswith("/a/"):
-                full = garden.asset_path(sel[3:])
+                full = garden.public_asset_path(sel[3:])
                 if full:
                     with open(full, "rb") as f:
                         return self.send(f.read(), binary=True)

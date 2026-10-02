@@ -103,6 +103,32 @@ def req(path, data=None, user="owner@test", origin=True, json_body=None, agent=N
         return e.code, e.read().decode("utf-8", "replace")
 
 
+def raw(method, path, headers=(), body=b""):
+    """A request with exactly these headers (urllib fixes Host and Content-Length): (status, headers, body)."""
+    import socket
+    head = "".join("%s: %s\r\n" % kv for kv in headers)
+    with socket.create_connection(("127.0.0.1", SERVER.server_address[1]), timeout=10) as c:
+        c.sendall(("%s %s HTTP/1.0\r\n%s\r\n" % (method, path, head)).encode() + body)
+        data = b""
+        while True:
+            chunk = c.recv(65536)
+            if not chunk:
+                break
+            data += chunk
+    top, _, rest = data.partition(b"\r\n\r\n")
+    lines = top.decode("latin-1").split("\r\n")
+    return int(lines[0].split()[1]), dict(l.split(": ", 1) for l in lines[1:] if ": " in l), rest.decode("utf-8", "replace")
+
+
+def write_note(rel, text):
+    """A note added to the clone for one test (the caller removes it)."""
+    path = os.path.join(niwa.garden.root, rel)
+    with open(path, "w") as f:
+        f.write(text)
+    niwa.garden.revision += "x"
+    return path
+
+
 def remote_file(rel):
     return subprocess.run(["git", "--git-dir", REMOTE, "show", "HEAD:" + rel], capture_output=True, text=True).stdout
 
@@ -528,6 +554,168 @@ class EnvFileTest(unittest.TestCase):
             shutil.rmtree(d, ignore_errors=True)
         self.assertIn("listening on 127.0.0.1: web %d" % port, out)
         self.assertIn("settings from " + os.path.join(d, "niwa.env"), out)
+
+
+class HardeningTest(unittest.TestCase):
+    def test_public_stream_never_names_a_login(self):
+        import smallweb
+        path = write_note("Notes/Sown.md", "---\ntitle: Sown\npublish: true\n---\nSown.\n")
+        try:
+            niwa.state.add_event("suggest", "owner@test", "api", path="Notes/Sown.md")  # no X-Agent: only the login
+            text = "\n".join(t for t, _ in smallweb.stream_lines(niwa.garden, None))
+            self.assertIn("suggested: Sown", text)
+            self.assertNotIn("owner@test", text)                                     # gemini and gopher: never a login
+            self.assertIn("owner@test", json.dumps(niwa.stream.build(niwa.garden), default=str))   # the owner's page may
+        finally:
+            os.remove(path)
+            niwa.garden.revision += "x"
+
+    def test_gemini_and_gopher_serve_only_images_published_notes_show(self):
+        import socket
+        import smallweb
+        server = smallweb.GopherServer(("127.0.0.1", 0), smallweb.gopher_handler(niwa.garden, None, "garden.test", 70))
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+
+        def gopher(selector):
+            with socket.create_connection(server.server_address, timeout=5) as c:
+                c.sendall(selector.encode() + b"\r\n")
+                return c.recv(64)
+
+        try:
+            self.assertIsNotNone(niwa.garden.asset_path("Archive/old.png"))           # the owner's web pages still have it
+            for rel in ("Archive/old.png", "Notes/lantern.png"):                       # in the vault, in no published note
+                self.assertIsNone(niwa.garden.public_asset_path(rel))
+                self.assertNotIn(b"PNG", gopher("/a/" + rel))
+            path = write_note("Notes/Lit.md", "---\npublish: true\n---\n![[lantern.png]]\n")
+            try:
+                self.assertTrue(niwa.garden.public_asset_path("Notes/lantern.png"))
+                self.assertIn(b"PNG", gopher("/a/Notes/lantern.png"))
+                self.assertNotIn(b"PNG", gopher("/a/Archive/old.png"))
+            finally:
+                os.remove(path)
+                niwa.garden.revision += "x"
+        finally:
+            server.shutdown()
+            server.server_close()
+
+    def test_a_silent_gemini_client_holds_up_nobody(self):
+        import socket
+        import ssl
+        import smallweb
+        tmp = tempfile.mkdtemp()
+        try:
+            crt, key = smallweb.ensure_cert(tmp, "garden.test")
+            ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            ctx.load_cert_chain(crt, key)
+            server = smallweb.TLSServer(("127.0.0.1", 0), smallweb.GeminiHandler, ctx)
+            smallweb.GeminiHandler.garden = niwa.garden
+            threading.Thread(target=server.serve_forever, daemon=True).start()
+            client = ssl.create_default_context()
+            client.check_hostname, client.verify_mode = False, ssl.CERT_NONE
+            with socket.create_connection(server.server_address):                    # connects and never says hello
+                time.sleep(0.2)
+                with client.wrap_socket(socket.create_connection(server.server_address, timeout=5)) as c:
+                    c.sendall(b"gemini://garden.test/\r\n")
+                    self.assertTrue(c.recv(64).startswith(b"20 "))
+            server.shutdown()
+            server.server_close()
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+        import smallweb as sw
+        self.assertEqual(sw.GeminiHandler.timeout, 30)                                 # every listener lets a stalled client go
+        self.assertEqual(sw.gopher_handler(niwa.garden, None, "h", 70).timeout, 30)
+        self.assertEqual(niwa.make_handler("tailnet").timeout, 30)
+
+    def test_open_mode_serves_only_known_host_names(self):
+        allowed = {"localhost", "niwa.test"}
+        for host in ("127.0.0.1:8080", "[::1]:8080", "192.168.1.5", "localhost:8080", "niwa.test", "NIWA.test:80"):
+            self.assertTrue(niwa.host_allowed(host, allowed), host)
+        for host in ("evil.test", "evil.test:8080", "localhost.evil.test", "", None, "[::1"):
+            self.assertFalse(niwa.host_allowed(host, allowed), host)
+        self.assertEqual(niwa.ALLOWED_HOSTS, {"localhost", "niwa.test"})               # NIWA_HOST is one of them
+        port = SERVER.server_address[1]
+        niwa.AUTH = "open"
+        try:
+            self.assertEqual(raw("GET", "/", [("Host", "localhost:%d" % port)])[0], 200)
+            status, _, body = raw("GET", "/", [("Host", "evil.test:%d" % port)])         # a rebound name: refused
+            self.assertEqual(status, 403)
+            self.assertIn("NIWA_ALLOWED_HOSTS", body)
+            form = b"rel=Notes%2FPaper+lanterns.md&on=1&confirm=1"
+            status, _, _ = raw("POST", "/publish", [("Host", "evil.test:%d" % port), ("Origin", "http://evil.test:%d" % port),
+                                                    ("Content-Length", str(len(form)))], form)
+            self.assertEqual(status, 403)
+        finally:
+            niwa.AUTH = "tailscale"
+
+    def test_bad_request_bodies_get_an_answer(self):
+        path = write_note("Notes/Bare.md", "No frontmatter here.\n")
+        try:
+            status, body = req("/publish", {"rel": "Notes/Bare.md", "on": "1", "confirm": "1"})
+            self.assertEqual(status, 422)                                                # vaultkit's EditError, not a dropped connection
+            self.assertIn("no frontmatter", body)
+        finally:
+            os.remove(path)
+            niwa.garden.revision += "x"
+        owner = [("Tailscale-User-Login", "owner@test"), ("Content-Type", "application/json")]
+        self.assertEqual(raw("POST", "/api/suggest", owner + [("Content-Length", "x")])[0], 400)
+        self.assertEqual(raw("POST", "/api/suggest", owner + [("Content-Length", "-1")])[0], 400)
+        self.assertEqual(raw("POST", "/api/suggest", owner + [("Content-Length", str(2 << 20))])[0], 413)
+
+    def test_theme_goes_back_only_within_the_site(self):
+        user = ("Tailscale-User-Login", "owner@test")
+        for referer, back in (("http://h/tags", "/tags"), ("http://evil.test//evil.test/x", "/"),
+                              ("http://evil.test/\\evil.test/x", "/"), ("", "/")):
+            status, headers, _ = raw("GET", "/theme?set=day", [user, ("Referer", referer)])
+            self.assertEqual((status, headers.get("Location")), (302, back), referer)
+
+    def test_status_keeps_addresses_and_credentials_to_the_owner(self):
+        from konbini import Konbini
+        self.assertEqual(niwa.redact("fatal: https://user:tok@git.test/v.git and git@git.test:v.git"),
+                         "fatal: https://***@git.test/v.git and git@git.test:v.git")
+        old_board, old_error = niwa.garden.konbini, niwa.sync.error
+        try:
+            niwa.garden.konbini = Konbini("http://konbini.internal:8081")
+            niwa.sync.error = "push failed: https://user:tok@git.test/v.git"
+            anyone = json.loads(req("/api/status", user=None)[1])
+            self.assertNotIn("konbini.internal", json.dumps(anyone))
+            self.assertEqual(anyone["konbini"], {"on": True, "ok": True})
+            self.assertEqual(anyone["hister"], "off")
+            owner = json.loads(req("/api/status")[1])
+            self.assertEqual(owner["konbini"]["url"], "http://konbini.internal:8081")
+            for data in (anyone, owner):
+                self.assertNotIn("tok", json.dumps(data))
+                self.assertIn("https://***@git.test", data["error"])
+        finally:
+            niwa.garden.konbini, niwa.sync.error = old_board, old_error
+
+    def test_links_follow_the_published_notes(self):
+        import types
+        import links as linkrot
+        from state import State
+        tmp = tempfile.mkdtemp()
+        try:
+            note = types.SimpleNamespace(rel="A.md", published=True,
+                                         text="https://a.example/x?p=1&q=2 and https://b.example/y")
+            garden = types.SimpleNamespace(index=lambda: None, notes={"A.md": note})
+            store = State(os.path.join(tmp, "db.sqlite3"), tmp)
+            links = linkrot.Links(store, garden)
+            self.assertEqual(links.collect(), 2)
+            store.link_set("https://a.example/x?p=1&q=2", status="dead",
+                           archive_url='https://web.archive.org/web/1/x"onmouseover="x', archived_at="2026-01-01")
+            html = links.annotate('<a href="https://a.example/x?p=1&amp;q=2">a</a>')   # the href as Markdown renders it
+            self.assertIn('class="dead"', html)
+            self.assertIn("x&quot;onmouseover=&quot;x", html)                           # escaped, never a new attribute
+            note.text = "https://a.example/x?p=1&q=2"                                    # the b link left the note
+            links.collect()
+            self.assertEqual([r["url"] for r in links.for_note("A.md")], ["https://a.example/x?p=1&q=2"])
+            self.assertEqual([r["url"] for r in store.links(linkrot.IN_USE)], ["https://a.example/x?p=1&q=2"])
+            self.assertTrue(store.link("https://b.example/y"))                          # the record and its copies stay
+            note.published = False                                                       # unpublished: nothing is checked
+            links.collect()
+            self.assertEqual(store.links(linkrot.IN_USE), [])
+            self.assertEqual(links.for_note("A.md"), [])
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
 
 
 class WriteTest(unittest.TestCase):

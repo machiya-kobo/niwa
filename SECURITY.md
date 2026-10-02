@@ -10,8 +10,9 @@ affects. You'll get an answer within a week, and a fix or a plan before anything
 
 - **The owner gate:** a way for an agent or a cross-site request to publish, unpublish, stage, pin or dismiss a note.
   Only the owner's same-origin form posts may; agents may only suggest.
-- **Reading what isn't published:** an unpublished note, its title or its text reaching the website, gemini or
-  gopher; or a note under a `NIWA_PRIVATE_FOLDERS` folder being published.
+- **Reading what isn't published:** an unpublished note, its title or its text, or an image only unpublished notes
+  show, reaching the website, gemini or gopher; or a note under a `NIWA_PRIVATE_FOLDERS` folder being published.
+- **Logins:** the owner's `Tailscale-User-Login` reaching gemini, gopher or the open `/api/status`.
 - **The small-web stream:** the gemini and gopher `/stream` pages carry garden events about published notes only. A
   board card, a `next:` step, a blocked-by text, or the title of an unpublished note appearing there is in scope.
 - **Private copies:** Hister results, copies or `private_url` reaching gemini, gopher or any page an anonymous

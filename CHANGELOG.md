@@ -3,6 +3,23 @@
 Niwa follows [SemVer](https://semver.org). Before 1.0, a new feature, a changed default or setting, or a changed API
 field is a minor bump, and a fix or wording change is a patch. Settings are listed in the README.
 
+## 0.3.0
+
+- Gemini and gopher serve only the images a published note shows; an image only unpublished or private notes use
+  was reachable there by its path.
+- The gemini and gopher stream no longer names the owner's login for a suggestion made without `X-Agent`.
+- `NIWA_AUTH=open` answers only to an IP address, `localhost`, `NIWA_HOST` or a name in the new `NIWA_ALLOWED_HOSTS`
+  (a guard against DNS rebinding).
+- `/api/status` shows the Konbini and Hister addresses and errors only to the owner (anyone else gets
+  `{"on", "ok"}`), and credentials in a remote URL are redacted there and in the clone log line.
+- A gemini client that connects and says nothing no longer holds up the others (the TLS handshake moved off the
+  accept thread), and every listener drops a client that stalls for 30 seconds.
+- Publishing a note without frontmatter answers 422 instead of closing the connection; a bad or oversized
+  `Content-Length` answers 400 or 413.
+- `/theme` sends the browser back only to a page on this site.
+- Link rot checks and archives only the links published notes still have, finds a dead link whose URL has a `&`,
+  and escapes the archived-copy addresses it writes into pages. Pages read the link table once per change.
+
 ## 0.2.3
 
 - The gopher listener starts after a restart within a minute of the last connection (it sets `SO_REUSEADDR`, as the

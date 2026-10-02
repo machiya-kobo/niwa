@@ -25,10 +25,13 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from html import escape, unescape
 
 
 URL_RE = re.compile(r"https?://[^\s<>\"'()\[\]`]+")
 ARCHIVE_HOSTS = ("web.archive.org", "archive.org")
+# Only links some published note still has are checked and archived (collect() clears `notes` for the others).
+IN_USE = "COALESCE(notes, '') != ''"
 # Never external: this machine and tailnet names (*.ts.net is never public), plus NIWA_SKIP_HOSTS (comma-separated host
 # names, each matching itself and its subdomains). Private, loopback and link-local IP literals are skipped too (is_internal).
 SKIP_HOSTS = ("localhost", "ts.net") + tuple(h.strip().lower().strip(".") for h in os.environ.get("NIWA_SKIP_HOSTS", "").split(",")
@@ -185,11 +188,13 @@ class Links:
         self.hister_save = hister_save   # off: Hister is looked up, never indexed into (Shiori saves pages)
         self.lock = threading.Lock()
         self.last_run = ""
+        self._index, self._index_version = ({}, {}), None
 
     # -- collect ---------------------------------------------------------------
 
     def collect(self):
-        """Register the external links of published notes."""
+        """Register the external links of published notes; a link no published note has any more keeps its record
+        (and its copies) with no notes, and is no longer checked or archived."""
         self.garden.index()
         refs = {}
         for n in self.garden.notes.values():
@@ -207,6 +212,9 @@ class Links:
             else:
                 self.store.link_set(u, first_seen=now_iso(), status="unknown", fails=0, notes=notes)
                 added += 1
+        for rec in self.store.links(IN_USE):
+            if rec["url"] not in refs:
+                self.store.link_set(rec["url"], notes="")
         return added
 
     # -- check -----------------------------------------------------------------
@@ -293,20 +301,21 @@ class Links:
         added = self.collect()
         due = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=CHECK_DAYS)).strftime("%Y-%m-%dT%H:%M:%SZ")
         checked = 0
-        for rec in self.store.links("last_checked IS NULL OR last_checked < ?", (due,), BATCH_CHECK):
+        for rec in self.store.links("(last_checked IS NULL OR last_checked < ?) AND " + IN_USE, (due,), BATCH_CHECK):
             self.check(rec)
             checked += 1
             time.sleep(1)
         saved = 0
         if self.enabled and self.backends:
-            for rec in self.store.links("archive_url IS NULL AND status != 'unknown'", (), BATCH_SAVE):
+            for rec in self.store.links("archive_url IS NULL AND status != 'unknown' AND " + IN_USE, (), BATCH_SAVE):
                 if self.archive(rec):
                     saved += 1
                 time.sleep(3)
         if self.cold or self.hister:
             week = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=CHECK_DAYS)).strftime("%Y-%m-%dT%H:%M:%SZ")
             for rec in self.store.links("private_url IS NULL AND status != 'unknown' AND "
-                                        "(private_checked IS NULL OR private_checked < ?)", (week,), BATCH_PRIVATE):
+                                        "(private_checked IS NULL OR private_checked < ?) AND " + IN_USE, (week,),
+                                        BATCH_PRIVATE):
                 if self.private_copy(rec):
                     saved += 1
         self.last_run = now_iso()
@@ -324,8 +333,21 @@ class Links:
 
     # -- for pages -------------------------------------------------------------
 
+    def index(self):
+        """({url: record}, {note rel: [records]}), read once per change to the link table (pages ask per note and
+        per link)."""
+        version = self.store.links_version
+        if self._index_version != version:
+            by_url, by_note = {}, {}
+            for r in self.store.links():
+                by_url[r["url"]] = r
+                for rel in filter(None, (r.get("notes") or "").split("\n")):
+                    by_note.setdefault(rel, []).append(r)
+            self._index, self._index_version = (by_url, by_note), version
+        return self._index
+
     def for_note(self, rel):
-        return [r for r in self.store.links() if rel in (r.get("notes") or "").split("\n")]
+        return list(self.index()[1].get(rel, ()))
 
     def dead_for_note(self, rel):
         return [r for r in self.for_note(rel) if r.get("status") == "dead"]
@@ -334,16 +356,19 @@ class Links:
         """Point dead links at their archived copy and mark them. private=True
         (the owner's modern pages) prefers the private copy; everything else
         only ever gets the public Wayback copy."""
+        by_url = self.index()[0]
         def swap(m):
-            url = m.group(1)
-            rec = self.store.link(url)
+            url = unescape(m.group(1))      # the href is HTML (&amp;); the table holds the URL as written
+            rec = by_url.get(url)
             if not rec or rec.get("status") != "dead":
                 return m.group(0)
             if private and rec.get("private_url"):
-                return '<a class="dead" title="dead link, private copy from %s" href="%s"' % (rec.get("private_at") or "?", rec["private_url"])
+                return '<a class="dead" title="dead link, private copy from %s" href="%s"' % (
+                    escape(rec.get("private_at") or "?"), escape(rec["private_url"]))
             if rec.get("archive_url"):
-                return '<a class="dead" title="dead link, archived copy from %s" href="%s"' % (rec.get("archived_at") or "?", rec["archive_url"])
-            return '<a class="dead" title="dead link, no archived copy" href="%s"' % url
+                return '<a class="dead" title="dead link, archived copy from %s" href="%s"' % (
+                    escape(rec.get("archived_at") or "?"), escape(rec["archive_url"]))
+            return '<a class="dead" title="dead link, no archived copy" href="%s"' % escape(url)
         return re.sub(r'<a href="(https?://[^"]+)"', swap, html)
 
     def died_between(self, start, end):

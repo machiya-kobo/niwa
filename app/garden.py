@@ -14,6 +14,7 @@ derived from Niwa's own clone of the vault and cached per git revision:
     tokens, links to private (NIWA_PRIVATE_FOLDERS) or unpublished notes, missing summary)
 """
 import datetime
+import os
 import re
 
 from vaultkit import _str
@@ -49,6 +50,26 @@ class Garden(Vault):
         self.links = None    # set by niwa.py (links.Links)
         self.hister = None
         self.konbini = None
+        self._public_assets, self._public_assets_key = set(), None
+
+    def public_asset_path(self, rel):
+        """asset_path() for gemini and gopher: only an image a published note shows (an ![[embed]] or a Markdown image,
+        resolved the way rendering resolves them), never one that only private or unpublished notes use."""
+        self.index()
+        key = self.key()
+        if self._public_assets_key != key:
+            shown = set()
+            for n in self.notes.values():
+                if not n.published:
+                    continue
+                for m in EMBED_RE.finditer(n.text):
+                    if m.group(1).strip().lower().endswith(IMAGE_EXT):
+                        shown.add(self.assets.get(os.path.basename(m.group(1).strip())))
+                for m in MDIMG_RE.finditer(n.text):
+                    if not re.match(r"https?://", m.group(2)):
+                        shown.add(self.assets.get(os.path.basename(m.group(2).replace("%20", " "))))
+            self._public_assets, self._public_assets_key = shown - {None}, key
+        return self.asset_path(rel) if rel in self._public_assets else None
 
     def is_private(self, rel):
         return rel.startswith(self.private)
