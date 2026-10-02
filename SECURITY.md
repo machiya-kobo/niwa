@@ -9,7 +9,13 @@ affects. You'll get an answer within a week, and a fix or a plan before anything
 ## What's in scope
 
 - **The owner gate:** a way for an agent or a cross-site request to publish, unpublish, stage, pin or dismiss a note.
-  Only the owner's same-origin form posts may; agents may only suggest.
+  Only the owner's same-origin form posts may; agents may only suggest. With Machiya's identity file
+  (`MACHIYA_IDENTITY_FILE`) the power is the `niwa` `publish` grant: a principal without it doing any of these by
+  any header (`Origin`, `X-Agent` or its absence), a request with an invalid token or session being served as
+  someone else instead of 401, a principal reading or suggesting without `read` or `suggest`, or a header mode
+  starting on a public bind without `NIWA_BIND_BEHIND_PROXY` is in scope.
+- **Tokens:** Niwa's Konbini token (`NIWA_KONBINI_TOKEN_FILE`) or a caller's token reaching a log line, a page,
+  `/api/status`, or any host but Konbini's.
 - **Reading what isn't published:** an unpublished note, its title or its text, or an image only unpublished notes
   show, reaching the website, gemini or gopher; or a note under a `NIWA_PRIVATE_FOLDERS` folder being published.
 - **Logins:** the owner's `Tailscale-User-Login` reaching gemini, gopher or the open `/api/status`.

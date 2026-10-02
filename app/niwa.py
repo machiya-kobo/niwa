@@ -42,7 +42,7 @@ from vaultkit import identity  # noqa: E402
 from vaultkit import read_secret  # noqa: E402
 from writer import Writer, WriteError  # noqa: E402
 
-VERSION = "0.3.1"
+VERSION = "0.4.0"
 PORT = int(os.environ.get("NIWA_PORT", "8080"))
 USERS = set(filter(None, (u.strip() for u in os.environ.get("NIWA_USERS", "").split(","))))
 

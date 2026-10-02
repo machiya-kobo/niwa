@@ -199,6 +199,7 @@ vault mirror) are the files to start from. What changes for Niwa:
 | `MACHIYA_COOKIE_DOMAIN`, `MACHIYA_ROOMS` | one cookie domain and the list of room URLs, so the Rooms menu and the theme settings are shared |
 | `NIWA_KONBINI_URL`, `NIWA_KURA_URL` | the other rooms' addresses: Konbini adds board badges and its API feeds the owner's stream; Kura adds "View in Kura" links (both optional) |
 | `NIWA_AUTH`, `NIWA_USERS`, `NIWA_BIND` | `tailscale` with the allowed logins behind `tailscale serve`, bound to `127.0.0.1`; `open` only on a trusted machine |
+| `MACHIYA_IDENTITY_FILE`, `NIWA_KONBINI_TOKEN_FILE` | the stack's identity file (who may read, suggest and publish) in place of `NIWA_USERS`, and Niwa's own token for its calls to Konbini (see Settings) |
 | `NIWA_ENV_FILE` (or `--env-file`) | a file of `KEY=VALUE` settings, for a native install |
 | `MACHIYA_SOURCE_URL` | the address of the source code, to show a "Source code" link as the AGPL asks of a networked service |
 
@@ -261,15 +262,20 @@ On first start Niwa asks `openssl` for a self-signed certificate (EC P-256, vali
 | `TZ` | `UTC` | the time zone for the stream's days and "this week" counts, e.g. `Europe/Berlin` |
 | `NIWA_IGNORE_AUTHORS` | — | comma-separated git author names of bots that commit to the vault: their commits don't count as "tended" in the stream (Niwa's own `NIWA_GIT_NAME` is always ignored) |
 | `NIWA_INTRO` | `Notes from the vault, shared as they grow.` | the landing page's intro while no `Garden.md` is published: plain text (HTML-escaped), one line. Publish `Garden.md` to write your own |
-| `NIWA_AUTH` | `tailscale` | `tailscale`: the owner's pages and writes need a `Tailscale-User-Login` in `NIWA_USERS`. `open`: no identity check (a startup warning), for localhost or a trusted LAN only; it serves only requests whose `Host` is an IP address, `localhost`, `NIWA_HOST` or a name in `NIWA_ALLOWED_HOSTS` (a guard against DNS rebinding), so an HTTP/1.0 client that sends no `Host` header gets 403. Either way, form posts must be same-origin and agents may only suggest. Any other value refuses to start |
+| `NIWA_AUTH` | `tailscale` | `tailscale`: the owner's pages and writes need a `Tailscale-User-Login` in `NIWA_USERS`. `open`: no identity check (a startup warning), for localhost or a trusted LAN only; it serves only requests whose `Host` is an IP address, `localhost`, `NIWA_HOST` or a name in `NIWA_ALLOWED_HOSTS` (a guard against DNS rebinding), so an HTTP/1.0 client that sends no `Host` header gets 403. `header`: with `MACHIYA_IDENTITY_FILE` only, a trusted proxy's login header (`NIWA_AUTH_HEADER`). Either way, form posts must be same-origin and agents may only suggest. Any other value refuses to start |
 | `NIWA_USERS` | — | allowed `Tailscale-User-Login`s; `*` = anyone; unset = nobody (`/api/status` is open) |
 | `NIWA_BIND` | `0.0.0.0` | the IPv4 address all three listeners bind (web, gemini, gopher). Behind `tailscale serve` on a native install, bind `127.0.0.1`: on a public bind anyone who reaches the port could send the `Tailscale-User-Login` header |
+| `MACHIYA_IDENTITY_FILE` | — | Machiya's identity file (vaultkit's `identity`; Machiya's `docs/plans/identity.md`): people, agents and services with grants. Set, it replaces `NIWA_USERS`: pages and read APIs need the `niwa` `read` grant, `POST /api/suggest` needs `suggest`, and publishing, dismissing and the garden fields need `publish` (the owner has every grant). No or a bad proof (token, login) answers 401, a principal without the grant 403. `/api/status`'s full view is the owner's. Mount the file's **directory** read-only (the CLI replaces the file, and a file mount keeps the old one); with a `session_key_file` beside it. Unset: `NIWA_USERS`, as before |
+| `NIWA_AUTH_HEADER` | — | with an identity file and `NIWA_AUTH=header`: the trusted proxy's login header (`Remote-User`, …), matched against each principal's `proxy` logins. `header` without an identity file refuses to start |
+| `NIWA_BIND_BEHIND_PROXY` | — | `1`: with an identity file, `NIWA_AUTH=tailscale` or `header` may bind a non-loopback address because a proxy (the Tailscale sidecar) is the only way into the web port. Without it Niwa refuses to start on anything but 127.0.0.1 |
+| `NIWA_ACCEPT_APP_CAPS` | — | `1`: with an identity file, a Tailscale tagged node (an agent's machine) is known by the app capability `tailscale serve --accept-app-caps=github.com/machiya-kobo/cap/identity` forwards. Only where Serve (Tailscale v1.92 or later) forwards and strips that header; an older one passes a client's own copy through |
 | `NIWA_ALLOWED_HOSTS` | — | with `NIWA_AUTH=open`: more names (comma-separated) the web UI answers to besides IP addresses, `localhost` and `NIWA_HOST`, e.g. a LAN name. Names match without case, port or a trailing dot (`Box.lan:8080` is `box.lan`). A request with no `Host` header (an HTTP/1.0 client may send none) gets 403 |
 | `NIWA_HOST` | — | the name in the gemini certificate and gopher menus, and the footer's Gemini and Gopher links. Unset: `localhost`, no footer links, and a startup warning |
 | `NIWA_PRIVATE_FOLDERS` | — | top-level folders of the notes (comma-separated, e.g. `Private,Inbox`) whose notes are never queued: the pre-publish check refuses them and warns about links to them. Unset: no folder is special |
 | `NIWA_LINKS_USER_AGENT` | `niwa-links/1` | the link checker's User-Agent (add a contact URL for the sites it checks) |
 | `NIWA_SKIP_HOSTS` | — | host names (comma-separated; each matches itself and its subdomains) the link checker never visits, on top of `localhost`, `*.ts.net` and every private, loopback or link-local IP address |
 | `NIWA_KONBINI_URL`, `NIWA_KURA_URL` | — | sister services (see above): the addresses browsers follow |
+| `NIWA_KONBINI_TOKEN_FILE` | — | a file holding Niwa's service token for Konbini (`python3 -m vaultkit.identity token mint niwa`), sent as `Authorization: Bearer` on every call to Konbini (with `X-Agent: niwa`), so Konbini knows Niwa by its own principal. Never logged. Set to a file with no token, Niwa refuses to start. Unset: no token, as before |
 | `NIWA_KONBINI_API_URL` | `NIWA_KONBINI_URL` | the address Niwa's own server calls Konbini on, when it differs from the one browsers use (in a container stack: `http://konbini:8081` inside, `http://localhost:8081` outside) |
 | `NIWA_GOPHER_PUBLIC_PORT` | `70` | the port the gopher menus advertise; the listener itself is on 7070, so map the public port to it |
 | `MACHIYA_ROOMS` | — | the Rooms switcher, `shiori=https://…,konbini=…,niwa=…,kura=…,hister=…,searxng=…` (the stack sets it). Unset: the switcher shows Konbini and Kura from the two settings above, or nothing |
@@ -286,7 +292,10 @@ On first start Niwa asks `openssl` for a self-signed certificate (EC P-256, vali
 - `POST /api/suggest {"path": "Notes/X.md" | "slug", "reason": "…"}`: an agent suggests a note for the garden (the old Konbini path `/api/garden/suggest` also works). 201, or 409 if it's already published.
 - `GET /api/status`: head, notes, published, sync, konbini, hister. Open to anyone for monitoring; only the owner sees the Konbini and Hister addresses and their errors, and credentials in a remote URL are never shown.
 
-Publishing, stages and dismissals are form posts from the owner's pages (same origin only; agents get 403).
+Publishing, stages and dismissals are form posts from the owner's pages (same origin only; agents get 403). With an
+identity file the power comes from the `niwa` `publish` grant, not from the request's `Origin` or a missing
+`X-Agent`: an agent's token gets 403 there whatever it sends. `X-Agent` names the session in the garden's events
+(`agent`), and `actor` is the principal. Agents send their token as `Authorization: Bearer mch_…`.
 
 ## Layout
 

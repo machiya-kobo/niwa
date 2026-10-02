@@ -3,6 +3,21 @@
 Niwa follows [SemVer](https://semver.org). Before 1.0, a new feature, a changed default or setting, or a changed API
 field is a minor bump, and a fix or wording change is a patch. Settings are listed in the README.
 
+## 0.4.0
+
+- Machiya's identity file (`MACHIYA_IDENTITY_FILE`, vaultkit 0.10.0's `identity`): set, it replaces `NIWA_USERS`.
+  Every request is resolved to a principal (a token, a Tailscale login or tagged node, a trusted proxy's header);
+  pages and read APIs need the `niwa` `read` grant, `POST /api/suggest` needs `suggest`, and publishing, dismissing
+  and the garden fields need `publish`. An agent no longer gets the owner's powers by sending a same-origin `Origin`
+  without `X-Agent`; same-origin stays the guard against cross-site form posts. Events record the principal as
+  `actor` and `X-Agent` as `agent`. No or a bad proof answers 401, a missing grant 403. `/api/status`'s full view
+  is the owner's. Unset, nothing changes.
+- `NIWA_AUTH=header` with `NIWA_AUTH_HEADER` (a trusted proxy's login header), with an identity file only; with one,
+  `tailscale` and `header` refuse a non-loopback bind unless `NIWA_BIND_BEHIND_PROXY=1`. `NIWA_ACCEPT_APP_CAPS=1`
+  knows Tailscale tagged nodes by their app capability.
+- `NIWA_KONBINI_TOKEN_FILE`: Niwa's service token, sent to Konbini as `Authorization: Bearer` on every call.
+- vaultkit 0.10.0.
+
 ## 0.3.1
 
 - A post body over 1 MiB is read and dropped (up to 16 MiB) before its 413, which now says `Connection: close`: a
