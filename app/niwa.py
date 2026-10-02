@@ -40,6 +40,7 @@ from vaultkit import verify as vk_verify  # noqa: E402
 from vaultkit import EditError  # noqa: E402
 from vaultkit import identity  # noqa: E402
 from vaultkit import read_secret  # noqa: E402
+from vaultkit import signin  # noqa: E402
 from writer import Writer, WriteError  # noqa: E402
 
 VERSION = "0.4.0"
@@ -162,6 +163,26 @@ SMALLWEB_HOST = HOST or "localhost"
 PRIVATE = tuple(p.strip().strip("/") + "/" for p in os.environ.get("NIWA_PRIVATE_FOLDERS", "").split(",") if p.strip().strip("/"))
 AUTHOR = (os.environ.get("NIWA_GIT_NAME", "garden"), os.environ.get("NIWA_GIT_EMAIL", "garden@niwa"))
 DATA_DIR = os.path.dirname(DB) or "."
+# Per-user preferences (GET/PUT /api/prefs, with an identity file): their own SQLite file next to NIWA_DB, made (0600)
+# on first use.
+PREFS_DB = os.path.join(DATA_DIR, "prefs.sqlite3")
+# The origins the sign-in, sign-out and a prefs PUT made with a cookie accept as same-origin: NIWA_PUBLIC_URL. Without
+# it the request's own Host counts, over https only; over plain http the sign-in then always refuses (vaultkit.signin).
+ORIGINS = (PUBLIC_URL,) if PUBLIC_URL else ()
+# Before the gate (they are how you get past it), each with vaultkit.signin's body limit.
+SIGNIN_LIMITS = {"/signin": signin.MAX_FORM, "/signout": signin.MAX_FORM, "/api/pair": signin.MAX_PAIR}
+_prefs, _prefs_lock = None, threading.Lock()
+
+
+def prefs_store():
+    """vaultkit.signin.Prefs on PREFS_DB, opened once."""
+    global _prefs
+    with _prefs_lock:
+        if _prefs is None:
+            _prefs = signin.Prefs(PREFS_DB)
+        return _prefs
+
+
 IMAGE_TYPES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif",
                ".webp": "image/webp", ".svg": "image/svg+xml"}
 STATIC_TYPES = {"niwa.css": "text/css", "niwa.js": "text/javascript", "mermaid.min.js": "text/javascript",
@@ -319,9 +340,56 @@ def make_handler(listener):
             if IDENTITY is not None:
                 who = self.who()
                 status = who.status if not who else 403
+                if status == 401 and IDENTITY.signin and self.browser_page():
+                    return self.send(401, shell.signin_needed(self.ctx(), self.path), headers=[NO_STORE])
                 body = (who.error if not who else "not allowed in niwa") + "\n"
                 return self.send(status, body, "text/plain", headers=[NO_STORE])
             return self.send(403, "forbidden\n", "text/plain")
+
+        def browser_page(self):
+            """A browser asking for a page (not an API, not a write): it gets the sign-in link with its 401."""
+            path = urlsplit(self.path).path
+            return self.command in ("GET", "HEAD") and not path.startswith("/api/") \
+                and "text/html" in (self.headers.get("Accept") or "")
+
+        def signed_in(self):
+            """The principal's name when it came with the built-in sign-in's session cookie, else "" (Settings shows
+            a sign-out button only then)."""
+            if IDENTITY is None or not self.who():
+                return ""
+            return self.who().principal.name if self.who().principal.via == "session" else ""
+
+        def reply(self, status, headers, body):
+            """A vaultkit.signin answer: (status, [(header, value)], bytes)."""
+            self.send_response(status)
+            for k, v in headers:
+                self.send_header(k, v)
+            self.send_header("Content-Length", str(len(body)))
+            if status == 413:
+                self.close_connection = True
+                self.send_header("Connection", "close")
+            for c in (self._who.cookies if self._who is not None else ()):
+                self.send_header("Set-Cookie", c)          # a renewed session, or a bad one cleared
+            self.end_headers()
+            if self.command != "HEAD":
+                self.wfile.write(body)
+
+        def signin_body(self, limit):
+            """The body for a sign-in, pairing or prefs request (vaultkit.signin.read_body, at most `limit`); None
+            when it's too large, chunked or short, after reading and dropping what can be read so the 413 isn't lost
+            to a reset (as body() does)."""
+            data = signin.read_body(self.headers, self.rfile, limit)
+            if data is None:
+                raw = (self.headers.get("Content-Length") or "").strip()
+                if raw.isdigit() and not self.headers.get("Transfer-Encoding"):
+                    self.drain(int(raw))
+            return data
+
+        def too_large(self, api):
+            self.close_connection = True
+            if api:
+                return self.send_json(413, {"error": "request body too large"})
+            return self.send(413, "request body too large\n", "text/plain", headers=[NO_STORE])
 
         def actor(self):
             if IDENTITY is not None:  # the principal's name ("local" in open mode, as before)
@@ -361,6 +429,22 @@ def make_handler(listener):
         def do_HEAD(self):
             self.do_GET()
 
+        def do_PUT(self):
+            """PUT /api/prefs only, after the gate (the niwa read grant); with no identity file, 404."""
+            path = unquote(urlsplit(self.path).path)
+            if path != "/api/prefs":
+                return self.send_error(501, "Unsupported method ('PUT')")
+            if not self.allowed():
+                return self.refuse()
+            if IDENTITY is None:
+                self.drain(self.content_length())
+                return self.send_json(404, {"error": "not found"})
+            body = self.signin_body(signin.MAX_PREFS)
+            if body is None:
+                return self.too_large(True)
+            return self.reply(*signin.handle_prefs(prefs_store(), self.who().principal, "PUT", self.headers, body,
+                                                   secure=IDENTITY.secure, origins=ORIGINS))
+
         # -- reads ---------------------------------------------------------------------------------------------
 
         def do_GET(self):
@@ -368,8 +452,17 @@ def make_handler(listener):
             path, query = unquote(url.path), parse_qs(url.query)
             if path == "/api/status":
                 return self.send_json(200, status(owner=self.owner()))
+            if path == "/signin" and IDENTITY is not None:      # before the gate: the way past it
+                if not self.host_ok():
+                    return self.refuse()
+                return self.reply(*signin.handle_get(IDENTITY, self.headers, url.query))
             if not self.allowed():
                 return self.refuse()
+            if path == "/api/prefs":        # the principal's own preferences (404 without an identity file)
+                if IDENTITY is None:
+                    return self.send_json(404, {"error": "not found"})
+                return self.reply(*signin.handle_prefs(prefs_store(), self.who().principal, "GET", self.headers,
+                                                       secure=IDENTITY.secure, origins=ORIGINS))
             if path == "/api/offline":      # the notes the service worker keeps for good (frontmatter offline: true)
                 return self.send_json(200, {"urls": ["/n/" + quote(n.slug) for n in garden.published()
                                                      if n.fm.get("offline") is True and not n.rel.startswith(NO_STORE_DIRS)]})
@@ -394,7 +487,8 @@ def make_handler(listener):
                 return self.static(path[8:], query)
             if path == "/settings":
                 return self.send(200, shell.settings(ctx, VERSION, footer_status()["text"],
-                                                     vk_verify.version().split(" - ")[0]))
+                                                     vk_verify.version().split(" - ")[0], self.signed_in()),
+                                 headers=[NO_STORE])
             if path == "/theme":            # the no-JavaScript fallback for /settings' Theme
                 theme = (query.get("set") or ["system"])[0]
                 theme = {"auto": "system"}.get(theme, theme)
@@ -484,6 +578,11 @@ def make_handler(listener):
             form = parse_qs(raw.decode("utf-8", "replace"), keep_blank_values=True)
             return {k: v[-1] for k, v in form.items()}
 
+        def content_length(self):
+            """Content-Length as a number for drain(); 0 when absent or unreadable."""
+            raw = (self.headers.get("Content-Length") or "").strip()
+            return int(raw) if raw.isdigit() else 0
+
         def drain(self, length):
             """Read and drop an unwanted body: closing with it unread resets the connection, and a client still
             sending sees the reset instead of the answer. Past MAX_DRAIN the client gets the reset."""
@@ -503,10 +602,26 @@ def make_handler(listener):
             return bool(host) and urlsplit(ref).netloc == host
 
         def do_POST(self):
-            if not self.allowed():
-                return self.refuse()
             path = unquote(urlsplit(self.path).path)
             api = path.startswith("/api/")
+            if path in SIGNIN_LIMITS and IDENTITY is not None:  # before the gate: sign-in, sign-out, pairing
+                if not self.host_ok():
+                    return self.refuse()
+                body = self.signin_body(SIGNIN_LIMITS[path])
+                if body is None:
+                    return self.too_large(api)
+                client = self.client_address[0] if self.client_address else ""
+                if path == "/signin":
+                    return self.reply(*signin.handle_post(IDENTITY, self.headers, body, client, ORIGINS))
+                if path == "/signout":
+                    return self.reply(*signin.handle_signout(IDENTITY, self.headers, ORIGINS))
+                return self.reply(*signin.handle_pair(IDENTITY, self.headers, body, client))
+            if not self.allowed():
+                return self.refuse()
+            if path in SIGNIN_LIMITS:       # no identity file: no such routes
+                self.drain(self.content_length())
+                return self.send_json(404, {"error": "not found"}) if api else \
+                    self.send(404, "not found\n", "text/plain")
             base = ""
             try:
                 data = self.body()

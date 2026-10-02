@@ -997,6 +997,195 @@ class IdentityTest(unittest.TestCase):
             niwa.IDENTITY = current
 
 
+def call(method, path, headers, body=None, ctype=None):
+    """Any method with exactly these headers (plus urllib's Host): (status, headers, body)."""
+    headers = dict(headers)
+    if ctype:
+        headers["Content-Type"] = ctype
+    r = urllib.request.Request(BASE + path, data=body, headers=headers, method=method)
+
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, *a, **k):
+            return None
+    try:
+        with urllib.request.build_opener(NoRedirect).open(r, timeout=20) as resp:
+            return resp.status, resp.headers, resp.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as e:
+        return e.code, e.headers, e.read().decode("utf-8", "replace")
+
+
+class SigninTest(unittest.TestCase):
+    """The built-in sign-in, Shiori pairing and per-user preferences (vaultkit.signin, NIWA_SIGNIN=1), over plain
+    http as the tests serve it: NIWA_PUBLIC_URL (niwa.ORIGINS) names the test server's origin."""
+
+    @classmethod
+    def setUpClass(cls):
+        import tomllib
+        from vaultkit import identity
+        cls.folder = os.path.join(TMP, "signin")
+        cls.tokens = write_identity(cls.folder)
+        cls.file = os.path.join(cls.folder, "identity.toml")
+        with open(cls.file, "rb") as f:
+            data = tomllib.load(f)
+        data["principals"]["owner"]["password"] = identity.hash_password("owner pass")
+        data["principals"]["reader"]["password"] = identity.hash_password("reader pass")
+        cls.code, cls.device = identity.new_pairing(data, "reader", "iPhone")
+        identity.write_file(cls.file, data)
+        cls.saved = (niwa.IDENTITY, niwa.ORIGINS)
+
+    def setUp(self):
+        from vaultkit import identity
+        niwa.IDENTITY = identity.Identity(self.file, "niwa", signin=True, secure=False)   # a fresh throttle each test
+        niwa.ORIGINS = ("http://" + HOST,)
+
+    def tearDown(self):
+        niwa.IDENTITY, niwa.ORIGINS = self.saved
+
+    ME = "http://" + HOST
+
+    def sign_in(self, name="owner", password="owner pass", origin=ME, nxt="/stream"):
+        form = urllib.parse.urlencode({"name": name, "password": password, "next": nxt}).encode()
+        return call("POST", "/signin", {"Origin": origin} if origin else {}, form,
+                    "application/x-www-form-urlencoded")
+
+    def cookie(self):
+        st, headers, body = self.sign_in()
+        self.assertEqual(st, 303, body)
+        return headers["Set-Cookie"].split(";")[0]
+
+    def test_the_full_flow(self):
+        st, headers, body = call("GET", "/", {"Accept": "text/html"})                 # a browser with no session
+        self.assertEqual(st, 401)
+        self.assertIn('href="/signin?next=%2F"', body)
+        self.assertNotIn("published", body)                                          # nothing of the garden on it
+        self.assertEqual(headers["Cache-Control"], "no-store")
+        self.assertEqual(call("GET", "/", {})[0], 401)                               # an API client: plain 401
+        self.assertNotIn("/signin", call("GET", "/api/suggestions", {"Accept": "text/html"})[2])
+        st, headers, body = call("GET", "/signin?next=/stream", {})
+        self.assertEqual(st, 200)
+        self.assertIn('name="password"', body)
+        self.assertIn('value="/stream"', body)
+        self.assertEqual((headers["Cache-Control"], headers["X-Frame-Options"]), ("no-store", "DENY"))
+        st, headers, body = self.sign_in(password="wrong")
+        self.assertEqual(st, 401)
+        self.assertIn("Wrong name or password.", body)
+        self.assertNotIn("Set-Cookie", headers)
+        st, headers, _ = self.sign_in()
+        self.assertEqual((st, headers["Location"]), (303, "/stream"))
+        cookie = headers["Set-Cookie"].split(";")[0]
+        self.assertTrue(cookie.startswith("machiya_session="))
+        self.assertNotIn("Secure", headers["Set-Cookie"])                            # plain http: a Secure cookie is lost
+        self.assertEqual(call("GET", "/stream", {"Cookie": cookie})[0], 200)
+        st, headers, body = call("GET", "/settings", {"Cookie": cookie})
+        self.assertIn("Signed in as owner", body)
+        self.assertIn('action="/signout"', body)
+        self.assertEqual(headers["Cache-Control"], "no-store")
+        self.assertNotIn("/signout", call("GET", "/settings", {"Tailscale-User-Login": "owner@test"})[2])
+        st, headers, _ = call("POST", "/signout", {"Cookie": cookie, "Origin": self.ME}, b"",
+                              "application/x-www-form-urlencoded")
+        self.assertEqual((st, headers["Location"]), (303, "/"))
+        self.assertIn("Max-Age=0", headers["Set-Cookie"])
+
+    def test_cross_site_posts_are_refused(self):
+        self.assertEqual(self.sign_in(origin="http://evil.test")[0], 403)
+        self.assertEqual(self.sign_in(origin=None)[0], 403)                         # neither Origin nor Referer
+        self.assertEqual(self.sign_in(nxt="//evil.test/")[1]["Location"], "/")       # next stays on the site
+        cookie = self.cookie()
+        st, _, _ = call("POST", "/signout", {"Cookie": cookie, "Origin": "http://evil.test"}, b"",
+                        "application/x-www-form-urlencoded")
+        self.assertEqual(st, 403)
+
+    def test_plain_http_needs_the_public_url(self):
+        niwa.ORIGINS = ()               # NIWA_PUBLIC_URL unset over plain http: Host and Origin prove nothing
+        st, headers, body = self.sign_in()
+        self.assertEqual(st, 403, body)
+        self.assertNotIn("Set-Cookie", headers)
+        niwa.ORIGINS = ("http://" + HOST,)
+        self.assertEqual(self.sign_in()[0], 303)
+
+    def test_bodies_and_hosts(self):
+        big = urllib.parse.urlencode({"name": "owner", "password": "x" * 5000}).encode()
+        st, headers, _ = call("POST", "/signin", {"Origin": self.ME}, big, "application/x-www-form-urlencoded")
+        self.assertEqual(st, 413)
+        self.assertEqual(headers["Connection"], "close")
+        st, _, body = call("POST", "/api/pair", {}, b"{" + b" " * 2000 + b"}", "application/json")
+        self.assertEqual((st, json.loads(body)), (413, {"error": "request body too large"}))
+        niwa.AUTH = "open"
+        try:            # the open-mode Host check comes first
+            port = SERVER.server_address[1]
+            form = b"name=owner&password=owner+pass"
+            st, _, _ = raw("POST", "/signin", [("Host", "evil.test:%d" % port), ("Origin", "http://evil.test:%d" % port),
+                                               ("Content-Type", "application/x-www-form-urlencoded"),
+                                               ("Content-Length", str(len(form)))], form)
+            self.assertEqual(st, 403)
+            self.assertEqual(raw("GET", "/signin", [("Host", "evil.test:%d" % port)])[0], 403)
+        finally:
+            niwa.AUTH = "tailscale"
+
+    def test_pairing_gives_a_working_token(self):
+        st, _, body = call("POST", "/api/pair", {}, json.dumps({"code": "AAAA-BBBB", "device": "iPhone"}).encode(),
+                           "application/json")
+        self.assertEqual(st, 401, body)
+        st, _, body = call("POST", "/api/pair", {}, json.dumps({"code": self.code, "device": "iPhone"}).encode(),
+                           "application/json")
+        self.assertEqual(st, 200, body)
+        answer = json.loads(body)
+        self.assertEqual(answer["principal"], "reader")
+        self.assertTrue(answer["token"].startswith("mcd_"))
+        device = {"Authorization": "Bearer " + answer["token"]}
+        self.assertEqual(call("GET", "/stream", device)[0], 200)
+        st, _, _ = call("POST", "/publish", dict(device, Origin=self.ME), b"rel=Notes%2FPaper+lanterns.md&on=1",
+                        "application/x-www-form-urlencoded")
+        self.assertEqual(st, 403)                                                    # a reader's device only reads
+
+    def test_prefs(self):
+        cookie = self.cookie()
+        put = json.dumps({"prefs": {"theme": "night", "garden.view": "list"}}).encode()
+        st, _, _ = call("PUT", "/api/prefs", {"Cookie": cookie}, put, "application/json")
+        self.assertEqual(st, 403)                                                    # a cookie needs same-origin
+        st, _, _ = call("PUT", "/api/prefs", {"Cookie": cookie, "Origin": "http://evil.test"}, put, "application/json")
+        self.assertEqual(st, 403)
+        st, headers, body = call("PUT", "/api/prefs", {"Cookie": cookie, "Origin": self.ME}, put, "application/json")
+        self.assertEqual((st, json.loads(body)), (200, {"prefs": {"garden.view": "list", "theme": "night"}}))
+        self.assertEqual(headers["Cache-Control"], "no-store")
+        self.assertEqual(json.loads(call("GET", "/api/prefs", {"Cookie": cookie})[2]),
+                         {"prefs": {"garden.view": "list", "theme": "night"}})
+        agent = {"Authorization": "Bearer " + self.tokens["mcp"]}
+        self.assertEqual(json.loads(call("GET", "/api/prefs", agent)[2]), {"prefs": {}})   # each principal its own
+        st, _, body = call("PUT", "/api/prefs", agent, json.dumps({"prefs": {"theme": "day"}}).encode(),
+                           "application/json")
+        self.assertEqual((st, json.loads(body)), (200, {"prefs": {"theme": "day"}}))       # a token: no Origin needed
+        self.assertEqual(json.loads(call("GET", "/api/prefs", {"Cookie": cookie})[2])["prefs"]["theme"], "night")
+        st, _, _ = call("PUT", "/api/prefs", {"Tailscale-User-Login": "reader@test"},
+                        json.dumps({"prefs": {"theme": "day"}}).encode(), "application/json")
+        self.assertEqual(st, 403)                       # a Tailscale login rides along like a cookie: same-origin
+        st, _, body = call("PUT", "/api/prefs", {"Cookie": cookie, "Origin": self.ME},
+                           json.dumps({"prefs": {"theme": None}}).encode(), "application/json")
+        self.assertEqual(json.loads(body), {"prefs": {"garden.view": "list"}})              # null removes
+        self.assertEqual(call("GET", "/api/prefs", {})[0], 401)
+        self.assertEqual(call("GET", "/api/prefs", {"Tailscale-User-Login": "nobody@test"})[0], 403)   # no niwa read
+        self.assertEqual(call("GET", "/api/prefs", {"Authorization": "Bearer " + self.tokens["niwa"]})[0], 403)
+        self.assertEqual(niwa.PREFS_DB, os.path.join(os.path.dirname(niwa.DB), "prefs.sqlite3"))
+        self.assertEqual(os.stat(niwa.PREFS_DB).st_mode & 0o777, 0o600)
+
+    def test_signin_off_and_no_identity_file(self):
+        from vaultkit import identity
+        niwa.IDENTITY = identity.Identity(self.file, "niwa")                         # NIWA_SIGNIN unset
+        self.assertEqual(call("GET", "/signin", {})[0], 404)
+        self.assertEqual(self.sign_in()[0], 404)
+        self.assertNotIn("/signin", call("GET", "/", {"Accept": "text/html"})[2])  # no link to a sign-in that's off
+        niwa.IDENTITY = None                                                          # no identity file: no new routes
+        owner = {"Tailscale-User-Login": "owner@test", "Origin": self.ME}
+        self.assertEqual(call("GET", "/signin", owner)[0], 404)
+        for path in ("/signin", "/signout"):
+            self.assertEqual(call("POST", path, owner, b"name=owner", "application/x-www-form-urlencoded")[0], 404, path)
+        self.assertEqual(call("POST", "/api/pair", owner, b"{}", "application/json")[0], 404)
+        self.assertEqual(call("GET", "/api/prefs", owner)[0], 404)
+        self.assertEqual(call("PUT", "/api/prefs", owner, b'{"prefs": {}}', "application/json")[0], 404)
+        self.assertEqual(call("GET", "/signin", {})[0], 403)                          # the old gate first, as before
+        self.assertNotIn("/signout", call("GET", "/settings", owner)[2])
+
+
 class PublicUrlTest(unittest.TestCase):
     """NIWA_PUBLIC_URL: Niwa's web address, an origin with no path (Kura's KURA_PUBLIC_URL rules)."""
 

@@ -8,6 +8,7 @@ settings (niwa.py sets BOARD_URL from NIWA_KONBINI_URL and KURA_URL from NIWA_KU
 import datetime
 import hashlib
 import os
+from urllib.parse import quote
 
 from vaultkit import shell as house
 from vaultkit.shell import e, prefs  # noqa: F401  (prefs: niwa.py reads the theme and text size with it)
@@ -90,7 +91,7 @@ def service_worker(app):
     offline reading (the 200 most recently read; pinned ones, offline: true, for good, fetched ahead via
     /api/offline); search, settings and random are never stored; the APIs are never touched."""
     return house.service_worker(VERSION, shell_urls(app), offline="/offline", bypass=["^/api/", "^/theme$"],
-                                network=["^/search$", "^/settings$", "^/random$"], notes={"match": "^/n/", "limit": 200},
+                                network=["^/search$", "^/settings$", "^/random$", "^/signin$"], notes={"match": "^/n/", "limit": 200},
                                 pages=30, assetMatch=["^/a/"], assets=100, pins="/api/offline")
 
 
@@ -135,12 +136,31 @@ def offline(ctx, app):
                 'work: <a href="/">Niwa</a>.</p></div></main>')
 
 
-def settings(ctx, version, status_text, vaultkit):
+def signin_needed(ctx, next_path):
+    """The 401 page a browser gets without a session when the built-in sign-in is on (NIWA_SIGNIN=1): a link to
+    /signin?next=<the page asked for>. Nothing of the garden on it: no nav, no footer status."""
+    href = "/signin?next=" + quote(next_path or "/", safe="")
+    body = ('%s<main class="msg"><div class="empty"><h2>Sign in</h2><p>The garden is private. '
+            '<a href="%s">Sign in to Niwa</a> to read it.</p></div></main>'
+            % (house.header(ROOM, [], "", rooms(), settings=False), e(href)))
+    return house.page(ctx, ROOM, "Sign In", body, links=rooms(), manifest=False)
+
+
+def account_section(name):
+    """Settings' Account rows for a principal signed in with the built-in sign-in: who, and a same-origin sign-out
+    form (POST /signout)."""
+    out = ('<div class="item"><span>Signed in as %s</span><form method="post" action="/signout">'
+           '<button type="submit">Sign Out</button></form></div>' % e(name))
+    return ("Account", [out], "Signing out ends the session on this browser. Paired devices stay signed in.")
+
+
+def settings(ctx, version, status_text, vaultkit, signed_in=""):
     garden = ("Garden", [house.toggle("Link Previews", "linkPreviews", True), house.offline_row()],
               "Link Previews: hovering over a link to a note shows its stage and summary. Off, links just open. "
               "Offline Copies: the notes you read last (up to 200) stay on this device for reading without the "
               "network, and notes marked offline: true stay for good. Notes under Archive/ are never kept.")
     sections = [house.appearance_section(ctx), garden, house.apps_section(ROOM, rooms(), {}),
+                account_section(signed_in) if signed_in else None,
                 house.about_section(ROOM, version, status_text, vaultkit)]
     return page(ctx, "Settings - niwa", header("", "Settings") + house.settings_page(sections, ROOM))
 
