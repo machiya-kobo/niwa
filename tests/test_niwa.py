@@ -643,6 +643,7 @@ class HardeningTest(unittest.TestCase):
         niwa.AUTH = "open"
         try:
             self.assertEqual(raw("GET", "/", [("Host", "localhost:%d" % port)])[0], 200)
+            self.assertEqual(raw("GET", "/")[0], 403)                                     # HTTP/1.0, no Host: as documented
             status, _, body = raw("GET", "/", [("Host", "evil.test:%d" % port)])         # a rebound name: refused
             self.assertEqual(status, 403)
             self.assertIn("NIWA_ALLOWED_HOSTS", body)

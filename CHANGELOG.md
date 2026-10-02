@@ -10,6 +10,7 @@ field is a minor bump, and a fix or wording change is a patch. Settings are list
 - A remote URL's password with an `@` in it is redacted whole: `https://u:p@ss@host` showed `https://***@ss@host`.
 - `NIWA_HOST` and `NIWA_ALLOWED_HOSTS` names are matched without case, a trailing dot or a port, on both sides:
   `name:8080` in the setting answered 403.
+- The README says that with `NIWA_AUTH=open` a request without a `Host` header (an HTTP/1.0 client) gets 403.
 
 ## 0.3.0
 
