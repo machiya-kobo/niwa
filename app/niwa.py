@@ -69,12 +69,25 @@ def flag(value):
     return (value or "").strip().lower() in ("1", "on", "true")
 
 
+def host_name(value):
+    """A host as Host or a setting may write it, reduced to its name: lowercase, no port, no brackets around an IPv6
+    address, no trailing dot. "" when it isn't one."""
+    try:
+        return (urlsplit("//" + (value or "").strip()).hostname or "").rstrip(".")
+    except ValueError:
+        return ""
+
+
+def allowed_hosts(host, setting):
+    """The names NIWA_AUTH=open serves: localhost, NIWA_HOST and NIWA_ALLOWED_HOSTS (comma-separated)."""
+    return {"localhost", host_name(host)} - {""} | {host_name(h) for h in (setting or "").split(",")} - {""}
+
+
 def host_allowed(host_header, allowed):
     """NIWA_AUTH=open's guard against DNS rebinding: a page on another site whose name is pointed at this machine
     arrives with that site's name in Host (and Origin), so only an IP literal, localhost or a listed name is served."""
-    try:
-        host = urlsplit("//" + (host_header or "")).hostname or ""
-    except ValueError:
+    host = host_name(host_header)
+    if not host:
         return False
     try:
         ipaddress.ip_address(host)
@@ -108,8 +121,7 @@ POLL = max(10, int(os.environ.get("NIWA_POLL", "60")))
 DB = os.environ.get("NIWA_DB", "/data/niwa.sqlite3")
 HOST = os.environ.get("NIWA_HOST", "").strip()           # the name in the gemini cert and gopher menus; "" = localhost, no footer links
 # NIWA_AUTH=open serves only these names in Host (plus any IP literal): localhost, NIWA_HOST and NIWA_ALLOWED_HOSTS.
-ALLOWED_HOSTS = {"localhost", HOST.lower()} - {""} | {
-    h.strip().lower() for h in os.environ.get("NIWA_ALLOWED_HOSTS", "").split(",") if h.strip()}
+ALLOWED_HOSTS = allowed_hosts(HOST, os.environ.get("NIWA_ALLOWED_HOSTS"))
 SMALLWEB_HOST = HOST or "localhost"
 PRIVATE = tuple(p.strip().strip("/") + "/" for p in os.environ.get("NIWA_PRIVATE_FOLDERS", "").split(",") if p.strip().strip("/"))
 AUTHOR = (os.environ.get("NIWA_GIT_NAME", "garden"), os.environ.get("NIWA_GIT_EMAIL", "garden@niwa"))

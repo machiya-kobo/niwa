@@ -633,6 +633,12 @@ class HardeningTest(unittest.TestCase):
         for host in ("evil.test", "evil.test:8080", "localhost.evil.test", "", None, "[::1"):
             self.assertFalse(niwa.host_allowed(host, allowed), host)
         self.assertEqual(niwa.ALLOWED_HOSTS, {"localhost", "niwa.test"})               # NIWA_HOST is one of them
+        self.assertEqual(niwa.allowed_hosts("Niwa.Test.:8080", " Box.LAN:8080, box.lan., [FE80::1]:80,lan.test ,"),
+                         {"localhost", "niwa.test", "box.lan", "fe80::1", "lan.test"})    # case, a trailing dot, a port
+        listed = niwa.allowed_hosts("", "box.lan:8080")
+        for host in ("box.lan", "BOX.lan.:8080", "box.lan:9"):
+            self.assertTrue(niwa.host_allowed(host, listed), host)
+        self.assertFalse(niwa.host_allowed("box.lan.evil.test", listed))
         port = SERVER.server_address[1]
         niwa.AUTH = "open"
         try:
