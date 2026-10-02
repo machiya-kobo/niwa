@@ -10,7 +10,67 @@ Niwa is one app of [Machiya](https://github.com/machiya-kobo/machiya), a small s
 - **Link rot:** every external link in a published note is checked. A dead link is swapped for its Wayback copy; the owner's pages also get a Hister copy.
 - **Small web:** gemini (1965) and gopher (70) mirrors of the garden. They serve published notes only, and their `/stream` lists garden events about published notes and nothing from a board, so nothing about an unpublished note reaches them.
 
-## Standalone
+## Quickstart
+
+Niwa alone on your own machine, with the sample vault (a paper-lantern workshop and a trip to Kyoto, nine notes in the
+garden): no account, no Tailscale, no identity file. These are the commands for Debian or Ubuntu; other systems and
+containers are under "More ways to run it".
+
+**1. Clone Niwa:**
+
+```sh
+git clone https://github.com/machiya-kobo/niwa.git && cd niwa
+```
+
+**2. Install** Python 3 with venv, `git` and `openssl` (it makes the gemini certificate); `curl` and `nc` are for the
+checks below. Then `markdown` 3.7 or later and `pyyaml` into a venv:
+
+<!-- quickstart: packages-debian -->
+```bash
+sudo apt-get update && sudo apt-get install -y python3-venv git openssl curl netcat-openbsd
+```
+
+<!-- quickstart: venv -->
+```bash
+python3 -m venv .venv && .venv/bin/pip install -q 'markdown>=3.7' pyyaml
+```
+
+**3. Make the sample vault a git repository.** Niwa's publish buttons write to the vault, so it clones a repository
+it can push to: here a local bare one, `demo-vault.git`, made from `sample-vault/` (its notes are in `personal/`):
+
+<!-- quickstart: vault -->
+```bash
+tools/demo-vault demo-vault --bare
+mkdir -p demo-data
+```
+
+**4. Start it** on `127.0.0.1` with the identity check off (`NIWA_AUTH=open`, for your own machine only):
+
+<!-- quickstart: native-run-debian background -->
+```bash
+NIWA_AUTH=open NIWA_BIND=127.0.0.1 NIWA_HOST=localhost NIWA_REPO_SUBDIR=personal \
+  NIWA_REPO_URL="file://$PWD/demo-vault.git" NIWA_REPO_DIR="$PWD/demo-data/repo" \
+  NIWA_DB="$PWD/demo-data/niwa.sqlite3" .venv/bin/python app/niwa.py
+```
+
+**5. Open <http://127.0.0.1:8080/>**: nine published notes in three growth stages, topic maps, tags, the stream and the
+queue of unpublished notes. Publishing a note there commits to `demo-vault.git` (`git -C demo-vault.git log`). Gemini
+is on port 1965 and gopher on 7070. Ctrl-C stops it; `rm -rf demo-vault demo-vault.git demo-data` cleans up.
+
+`tools/quickstart-test` runs these steps (and the container and BSD ones below) from a fresh clone and checks the output.
+
+## Who can use it
+
+- **You, on localhost:** `NIWA_AUTH=open` with `NIWA_BIND=127.0.0.1`, as in the Quickstart: no login, and anyone who
+  reaches the web port can publish, so keep it on your own machine.
+- **People on your tailnet:** bind `127.0.0.1`, put `tailscale serve` in front, and list their Tailscale logins in
+  `NIWA_USERS` (`NIWA_AUTH=tailscale`, the default; `*` = anyone, unset = nobody). `/api/status` is always open.
+- **People, agents, sign-in or Shiori devices:** turn on Machiya's identity file with `python3 -m vaultkit.identity setup`,
+  which prints the settings for each room. It's off unless you set it; see [Machiya's identity guide](https://github.com/machiya-kobo/machiya/blob/main/docs/identity.md).
+- Niwa's identity settings: `MACHIYA_IDENTITY_FILE`, `NIWA_SIGNIN`, `NIWA_AUTH_HEADER`, `NIWA_BIND_BEHIND_PROXY`,
+  `NIWA_ACCEPT_APP_CAPS` and `NIWA_PUBLIC_URL` (under Settings).
+
+## How it uses the vault
 
 Niwa keeps its own read-write clone of the vault (ssh deploy key) and writes only the garden's fields (`publish`, `growth`, `confidence`, `garden_pin`) and its events (`.garden/events/*.jsonl`). Writes are batched into commits by `garden`; vaultkit's GitSync pulls, rebases (a conflicting edit is replayed with a three-way frontmatter merge), and pushes. Its SQLite file holds only link-rot records, which are rebuildable.
 
@@ -21,37 +81,13 @@ Optional:
 
 Without them the garden still works; those extras just don't appear.
 
-## Quickstart
+## More ways to run it
 
-Two ways to run Niwa: **A. on its own**, with a small sample vault (about five minutes, nothing else needed), or **B. as
-part of the Machiya stack**. Every block below marked `quickstart:` is run by `tools/quickstart-test`, so these are
-exactly the commands that were tested.
+Each starts in a clone with the sample vault made a repository (steps 1 and 3 of the Quickstart). **You need** `git`,
+`curl`, `openssl` and `nc` (netcat), and one of `podman` (4 or newer) or `docker` (24 or newer); the container build pulls
+its base images from the internet. Ports 8080 (web), 1965 (gemini) and 7070 (gopher) must be free.
 
-**You need:** `git`, `curl`, `openssl` and `nc` (netcat); one of `podman` (4 or newer) or `docker` (24 or newer) for the
-container path, or Python 3 with `markdown` 3.7 or newer and `pyyaml` for the native path (the image uses Python 3.13;
-nothing else is installed with pip). The container build pulls its base images from the internet. Ports 8080 (web), 1965
-(gemini) and 7070 (gopher) on this machine must be free.
-
-### A. On its own, with the sample vault
-
-**1. Get the code and make the sample vault a git repository.** Niwa works on a Git repository it can push to, because
-its publish buttons write to the vault. For the demo that is a local bare "remote" next to a copy of the sample vault (a
-`file://` remote needs no ssh key). Run these from the root of this repository
-(`git clone https://github.com/machiya-kobo/niwa.git && cd niwa`):
-
-<!-- quickstart: vault -->
-```bash
-tools/demo-vault demo-vault --bare
-mkdir -p demo-data
-```
-
-The sample vault is a small invented one (a paper-lantern workshop and a trip to Kyoto, with notes at the three growth
-stages); `tools/demo-vault` copies it into `demo-vault`, commits it, and makes `demo-vault.git`, the bare clone that
-Niwa clones from and pushes to. Its notes are in a `personal/` folder, which is why the commands below set
-`NIWA_REPO_SUBDIR=personal` (by default Niwa reads the repository root).
-
-**2. Start it**, in a container or natively. `NIWA_AUTH=open` means no login: it is for localhost and a trusted
-network only.
+### In a container
 
 *Container with podman* (on Debian or Ubuntu, install it first):
 
@@ -92,23 +128,9 @@ docker run -d --init --name niwa-demo -u "$(id -u):$(id -g)" \
   -e NIWA_REPO_URL="file://$PWD/demo-vault.git" niwa-demo
 ```
 
-*Natively on Debian or Ubuntu:*
+### Natively on the BSDs
 
-<!-- quickstart: packages-debian -->
-```bash
-sudo apt-get update && sudo apt-get install -y python3 python3-markdown python3-yaml git openssl curl netcat-openbsd
-```
-
-<!-- quickstart: native-run-debian background -->
-```bash
-cd app
-NIWA_AUTH=open NIWA_BIND=127.0.0.1 NIWA_HOST=localhost NIWA_REPO_SUBDIR=personal \
-  NIWA_REPO_URL="file://$PWD/../demo-vault.git" NIWA_REPO_DIR="$PWD/../demo-data/repo" \
-  NIWA_DB="$PWD/../demo-data/niwa.sqlite3" python3 niwa.py
-```
-
-*Natively on OpenBSD, FreeBSD or NetBSD* (packages only, no pip). Run the install line for your system, then the run
-block:
+Packages only, no pip. Run the install line for your system, then the run block:
 
 <!-- quickstart: packages-openbsd -->
 ```bash
@@ -128,17 +150,18 @@ sudo env PKG_PATH="https://cdn.NetBSD.org/pub/pkgsrc/packages/NetBSD/$(uname -p)
 
 <!-- quickstart: native-run-bsd background -->
 ```bash
-cd app
 NIWA_AUTH=open NIWA_BIND=127.0.0.1 NIWA_HOST=localhost NIWA_REPO_SUBDIR=personal \
-  NIWA_REPO_URL="file://$PWD/../demo-vault.git" NIWA_REPO_DIR="$PWD/../demo-data/repo" \
-  NIWA_DB="$PWD/../demo-data/niwa.sqlite3" ${PYTHON:-python3} niwa.py
+  NIWA_REPO_URL="file://$PWD/demo-vault.git" NIWA_REPO_DIR="$PWD/demo-data/repo" \
+  NIWA_DB="$PWD/demo-data/niwa.sqlite3" ${PYTHON:-python3} app/niwa.py
 ```
 
 On the BSDs the interpreter is the one your packages installed: set `PYTHON=python3.12` (FreeBSD) or
 `PYTHON=python3.13` (NetBSD) first if there is no `python3`. `docs/install/bsd.md` in
 [machiya-kobo/machiya](https://github.com/machiya-kobo/machiya) is the full guide, with rc.d scripts and the env file.
 
-**3. Check that it is up.** The loop waits up to four minutes for the first start (Niwa clones and indexes the vault):
+### Check all three listeners
+
+Whichever way it runs, this checks the web, gemini and gopher listeners. The loop waits up to four minutes for the first start (Niwa clones and indexes the vault):
 
 <!-- quickstart: check -->
 ```bash
@@ -164,12 +187,8 @@ You should see the status, the page titles, the gemini capsule and the first lin
 niwa - notes from the vault
 ```
 
-Open http://127.0.0.1:8080/ in a browser: nine published notes in three growth stages, topic maps, tags, the stream and
-the queue of unpublished notes. Publishing a note there commits to `demo-vault.git`
-(`git -C demo-vault.git log`). Niwa has no read-only mode: a real vault needs a deploy key with write access (see
-"Install" below).
-
-**4. Stop it and clean up.**
+Niwa has no read-only mode: a real vault needs a deploy key with write access (see "Install" below). Stop a container
+with:
 
 <!-- quickstart: stop-container-podman -->
 ```bash
@@ -180,12 +199,12 @@ podman rm -f niwa-demo
 ```bash
 docker rm -f niwa-demo
 ```
-For a native run, press Ctrl-C in its terminal. Then remove the demo files: `rm -rf demo-vault demo-vault.git demo-data`.
+A native run stops with Ctrl-C. Then remove the demo files: `rm -rf demo-vault demo-vault.git demo-data`.
 
 The gemini certificate is made on first start with `openssl` (see "The gemini certificate" below). The gopher menus
 point at port 70 of `NIWA_HOST` (change it with `NIWA_GOPHER_PUBLIC_PORT`), so a real install maps that port to 7070; the demo's links only work if you map it.
 
-### B. As part of the Machiya stack
+### As part of the Machiya stack
 
 In the stack, Niwa shares the vault with the other apps instead of keeping a second history, and the apps link to
 each other. The reference files are in [machiya-kobo/machiya](https://github.com/machiya-kobo/machiya): its README has the
@@ -198,9 +217,8 @@ vault mirror) are the files to start from. What changes for Niwa:
 | `NIWA_REPO_REFERENCE`, `NIWA_REPO_SPARSE` | the vault mirror's path, mounted read-only at the same absolute path, so Niwa borrows its objects instead of fetching a second copy; the folders to check out (`<notes folder>,.garden`) |
 | `MACHIYA_COOKIE_DOMAIN`, `MACHIYA_ROOMS` | one cookie domain and the list of room URLs, so the Rooms menu and the theme settings are shared |
 | `NIWA_KONBINI_URL`, `NIWA_KURA_URL` | the other rooms' addresses: Konbini adds board badges and its API feeds the owner's stream; Kura adds "View in Kura" links (both optional) |
-| `NIWA_AUTH`, `NIWA_USERS`, `NIWA_BIND` | `tailscale` with the allowed logins behind `tailscale serve`, bound to `127.0.0.1`; `open` only on a trusted machine |
-| `MACHIYA_IDENTITY_FILE`, `NIWA_KONBINI_TOKEN_FILE` | the stack's identity file (who may read, suggest and publish) in place of `NIWA_USERS`, and Niwa's own token for its calls to Konbini (see Settings) |
-| `NIWA_SIGNIN`, `NIWA_PUBLIC_URL` | with the identity file: the built-in sign-in (no Tailscale or proxy needed), and Niwa's web address (required for the sign-in over plain http) |
+| `NIWA_AUTH`, `NIWA_USERS`, `NIWA_BIND`, `MACHIYA_IDENTITY_FILE` | who may use it: see "Who can use it" |
+| `NIWA_KONBINI_TOKEN_FILE` | with the identity file: Niwa's own token for its calls to Konbini (see Settings) |
 | `NIWA_ENV_FILE` (or `--env-file`) | a file of `KEY=VALUE` settings, for a native install |
 | `MACHIYA_SOURCE_URL` | the address of the source code, to show a "Source code" link as the AGPL asks of a networked service |
 
@@ -240,7 +258,7 @@ docker run -d --name niwa --init --user 1000:1000 \
   niwa
 ```
 
-`NIWA_AUTH=open` means no identity check: anyone who can reach the web port can publish and change the garden, so use it for localhost or a trusted LAN only (the example publishes the web port on 127.0.0.1). Gemini and gopher serve only published notes (see SECURITY.md), so their ports can be exposed. For anything else keep the default (`tailscale`): Niwa trusts the `Tailscale-User-Login` header, which `tailscale serve` sets, and any other reverse proxy works if it sets that header to the signed-in user and strips it from incoming requests; list the allowed logins in `NIWA_USERS`.
+`NIWA_AUTH=open` means no identity check: anyone who can reach the web port can publish and change the garden, so use it for localhost or a trusted LAN only (the example publishes the web port on 127.0.0.1). Gemini and gopher serve only published notes (see SECURITY.md), so their ports can be exposed. For anything else see "Who can use it": with `tailscale` (the default) Niwa trusts the `Tailscale-User-Login` header, which `tailscale serve` sets, and any other reverse proxy works if it sets that header to the signed-in user and strips it from incoming requests.
 
 **Native:** Python 3 with `markdown` (3.7 or later) and `pyyaml`, plus `git`, `openssh` and `openssl`. From `app/`, `python3 -m vaultkit.verify` checks the vendored vaultkit is unedited, and `python3 niwa.py` starts the server. Settings come from the environment, or from a file given with `--env-file PATH` (or `NIWA_ENV_FILE`; the real environment wins).
 
@@ -266,7 +284,7 @@ On first start Niwa asks `openssl` for a self-signed certificate (EC P-256, vali
 | `NIWA_AUTH` | `tailscale` | `tailscale`: the owner's pages and writes need a `Tailscale-User-Login` in `NIWA_USERS`. `open`: no identity check (a startup warning), for localhost or a trusted LAN only; it serves only requests whose `Host` is an IP address, `localhost`, `NIWA_HOST`, `NIWA_PUBLIC_URL`'s host or a name in `NIWA_ALLOWED_HOSTS` (a guard against DNS rebinding), so an HTTP/1.0 client that sends no `Host` header gets 403. `header`: with `MACHIYA_IDENTITY_FILE` only, a trusted proxy's login header (`NIWA_AUTH_HEADER`). Either way, form posts must be same-origin and agents may only suggest. Any other value refuses to start |
 | `NIWA_USERS` | — | allowed `Tailscale-User-Login`s; `*` = anyone; unset = nobody (`/api/status` is open) |
 | `NIWA_BIND` | `0.0.0.0` | the IPv4 address all three listeners bind (web, gemini, gopher). Behind `tailscale serve` on a native install, bind `127.0.0.1`: on a public bind anyone who reaches the port could send the `Tailscale-User-Login` header |
-| `MACHIYA_IDENTITY_FILE` | — | Machiya's identity file (vaultkit's `identity`; Machiya's `docs/plans/identity.md`): people, agents and services with grants. Set, it replaces `NIWA_USERS`: pages and read APIs need the `niwa` `read` grant, `POST /api/suggest` needs `suggest`, and publishing, dismissing and the garden fields need `publish` (the owner has every grant). No or a bad proof (token, login) answers 401, a principal without the grant 403. `/api/status`'s full view is the owner's. Mount the file's **directory** read-only (the CLI replaces the file, and a file mount keeps the old one); with a `session_key_file` beside it. Unset: `NIWA_USERS`, as before |
+| `MACHIYA_IDENTITY_FILE` | — | Machiya's identity file (vaultkit's `identity`; [Machiya's `docs/identity.md`](https://github.com/machiya-kobo/machiya/blob/main/docs/identity.md)): people, agents and services with grants. Set, it replaces `NIWA_USERS`: pages and read APIs need the `niwa` `read` grant, `POST /api/suggest` needs `suggest`, and publishing, dismissing and the garden fields need `publish` (the owner has every grant). No or a bad proof (token, login) answers 401, a principal without the grant 403. `/api/status`'s full view is the owner's. Mount the file's **directory** read-only (the CLI replaces the file, and a file mount keeps the old one); with a `session_key_file` beside it. Unset: `NIWA_USERS`, as before |
 | `NIWA_SIGNIN` | — | `1`, `on`, `true` or `yes`: with an identity file, the built-in sign-in (vaultkit's `signin`): `/signin` takes a person's name and password (set with `python3 -m vaultkit.identity passwd NAME`) and sets the `machiya_session` cookie (`MACHIYA_COOKIE_DOMAIN` shares it across rooms), alongside any `NIWA_AUTH` mode. A browser without a session then gets a 401 page linking to `/signin`, and Settings shows a Sign Out button. Unset: `/signin` answers 404 (pairing and preferences don't need it) |
 | `NIWA_PUBLIC_URL` | — | Niwa's web address, an origin with no path (`https://niwa.example`, `http://192.168.1.5:8080`); anything else refuses to start. With an identity file it is the origin the sign-in, sign-out and a cookie's preference writes accept as same-origin. `http://…` means the web is served over plain http: the session cookie isn't `Secure` (a browser would drop it), and only this origin counts, since over http `Host` and `Origin` prove nothing (DNS rebinding). Unset: https, and the request's own `Host`, over https only; over plain http the sign-in then always refuses. Its host is also served with `NIWA_AUTH=open` |
 | `NIWA_AUTH_HEADER` | — | with an identity file and `NIWA_AUTH=header`: the trusted proxy's login header (`Remote-User`, …), matched against each principal's `proxy` logins. `header` without an identity file refuses to start |
