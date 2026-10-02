@@ -1,0 +1,160 @@
+/* niwa.css: the garden's own room, loaded after Machiya's shared machiya.css (tokens, base, header, tab bar, tags,
+   empty states, note bodies, settings, footer; vendored in app/vaultkit/ui/). Only what is Niwa's lives here: the
+   garden's lists and stages, topic maps, the note's meta and owner forms, the stream, the queue, link rot, banners.
+   Uses the house tokens (--room is green here, --room2 teal; --fs-*, --sp-*, --r-*). */
+
+main.garden { max-width: 900px; }
+main.msg { max-width: 640px; }
+.none, .hint { color: var(--muted); font-size: var(--fs-s); }
+.hint { color: var(--comment); }
+
+/* ---- chips: stages and board columns are filled (state), confidence is outlined ----------------------------- */
+.stage, .col-badge, .chk, .claim {
+  display: inline-flex; align-items: center; padding: 1px 8px; border-radius: var(--r-pill); font-size: var(--fs-xs);
+  font-weight: 500; line-height: 16px; white-space: nowrap; color: var(--muted);
+  background: color-mix(in srgb, currentColor 16%, transparent);
+}
+.stage { margin-left: 6px; }
+.stage-evergreen, .sechead.stage-evergreen { color: var(--green); }
+.stage-budding, .sechead.stage-budding { color: var(--teal); }
+.stage-seedling, .sechead.stage-seedling { color: var(--yellow); }
+.conf { display: inline-flex; padding: 0 7px; border: 1px solid var(--line2); border-radius: var(--r-pill);
+  font-size: var(--fs-xs); line-height: 16px; color: var(--muted); }
+.conf-certain { color: var(--green); } .conf-likely { color: var(--teal); } .conf-possible { color: var(--yellow); } .conf-speculative { color: var(--orange); }
+.col-badge { margin-left: 4px; font-weight: 600; }
+.col-badge.col-backlog, .col-badge.col-archived { color: var(--comment); }
+.col-badge.col-ready { color: var(--blue); }
+.col-badge.col-wip { color: var(--orange); }
+.col-badge.col-blocked { color: var(--red); }
+.col-badge.col-done { color: var(--green); }
+a.col-badge:hover { text-decoration: none; filter: brightness(1.1); }
+.claim { color: var(--yellow); }
+.when, .tended, .ntype { color: var(--muted); font-size: var(--fs-xs); }
+.tended { margin-left: 6px; }
+.colcount { display: inline-block; margin-left: 4px; padding: 0 7px; border-radius: var(--r-pill); background: var(--hl);
+  color: var(--fg2); font-size: 11px; font-weight: 500; letter-spacing: 0; line-height: 18px; text-transform: none; }
+
+/* ---- forms and buttons (the owner's Tend and Publish forms, the queue) ----------------------------------------- */
+select { background: var(--dark); color: var(--fg); border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px;
+  font: var(--fs-s) var(--font); }
+select:focus { border-color: var(--house); outline: none; }
+button { background: var(--house); color: var(--bg); border: 0; border-radius: 8px; padding: 6px 14px;
+  font: 600 var(--fs-s) var(--font); cursor: pointer; }
+button:hover { filter: brightness(1.08); }
+button.quiet { background: var(--hl); color: var(--fg2); }
+button:disabled { opacity: .5; cursor: default; filter: none; }
+
+/* ---- garden lists -------------------------------------------------------------------------------------------- */
+ul.garden-list { list-style: none; padding: 0; margin: 0 0 var(--sp-2); }
+ul.garden-list li { padding: var(--sp-2) 0; border-bottom: 1px solid var(--line); }
+ul.garden-list.plain li { padding: 6px 0; }
+ul.garden-list .ntl { font-weight: 600; color: var(--fg); }
+ul.garden-list .summary { margin: 3px 0 0; color: var(--muted); font-size: var(--fs-s);
+  overflow-wrap: anywhere; }   /* break-word misses the phone queue: its column flex sizes rows to min-content */
+
+/* ---- landing ------------------------------------------------------------------------------------------------- */
+.landing .intro { margin: var(--sp-1) 0 var(--sp-3); }
+.landing .intro.none { font-size: var(--fs-m); max-width: var(--measure); }
+.gstats { color: var(--muted); font-size: var(--fs-s); margin: 0 0 6px; }
+.gstats b { color: var(--fg); }
+.typechips { margin: 0 0 var(--sp-2); display: flex; flex-wrap: wrap; gap: 6px; }
+.typechips a { display: inline-block; padding: 3px 10px; border-radius: var(--r-pill); background: var(--dark); color: var(--muted);
+  font-size: var(--fs-s); border: 1px solid transparent; }
+.typechips a:hover { text-decoration: none; color: var(--fg); }
+.typechips a.here { background: var(--hl); color: var(--fg); border-color: var(--room); }
+.typechips a .n { color: var(--comment); margin-left: 3px; }
+.maps { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.maptile { display: block; padding: var(--sp-3) 14px; border-radius: var(--r-m); background: var(--dark); border: 1px solid var(--line);
+  color: var(--fg); }
+.maptile:hover { text-decoration: none; border-color: var(--room); box-shadow: var(--shadow-2); }
+.maptile b { display: block; font-size: 15px; color: var(--room); }
+.maptile .count { font-size: var(--fs-xs); color: var(--muted); }
+.maptile p { margin: 6px 0 0; font-size: var(--fs-s); color: var(--fg2); }
+
+/* ---- a note -------------------------------------------------------------------------------------------------- */
+article.note .nhead h1 { margin: 10px 0 2px; font-size: var(--fs-xxl); line-height: 1.2; letter-spacing: -.01em; font-weight: 700; }
+.nmeta { color: var(--muted); margin: 0 0 14px; line-height: 1.9; }
+.nmeta .stage { margin-left: 0; }
+.nmeta .tag, .related .tag { margin-right: 6px; }
+.preview { color: var(--orange); }
+.sugg-banner { color: var(--yellow); }
+.metaform { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: var(--sp-2) 0; padding: 10px var(--sp-3);
+  background: var(--dark); border-radius: var(--r-m); color: var(--muted); font-size: var(--fs-s); }
+.metaform label { display: inline-flex; align-items: center; gap: 6px; }
+.pubform { margin: var(--sp-5) 0; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; color: var(--muted); }
+.owner .pubform { margin: var(--sp-2) 0 var(--sp-5); }
+ul.checks { list-style: none; padding: 0; margin: 0 0 10px; width: 100%; font-size: var(--fs-s); }
+.chk-error { color: var(--red); } .chk-warn { color: var(--orange); } .chk-info { color: var(--muted); }
+.popover { position: absolute; z-index: 40; width: 320px; padding: 10px var(--sp-3); border-radius: var(--r-m); background: var(--dark);
+  border: 1px solid var(--line2); box-shadow: var(--shadow-2); font-size: var(--fs-s); color: var(--fg); pointer-events: none; }
+.popover p { margin: var(--sp-1) 0; color: var(--fg2); }
+.popover .stage { margin-left: 4px; }
+.mermaid-diagram { margin: 1.2em 0; overflow-x: auto; text-align: center; }   /* ```mermaid blocks (niwa.js) */
+.mermaid-diagram svg { max-width: 100%; height: auto; }
+
+/* ---- link rot ------------------------------------------------------------------------------------------------ */
+.nbody a.dead { color: var(--orange); text-decoration: line-through; text-decoration-color: var(--red); }
+.nbody a.dead::after { content: " \21BB"; text-decoration: none; font-size: var(--fs-xs); }
+.linklist li { font-size: var(--fs-s); word-break: break-all; }
+
+/* ---- tags ---------------------------------------------------------------------------------------------------- */
+.tagcloud { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.tagcloud a.tag { font-size: var(--fs-s); padding: 2px 10px; }
+.tagcloud .n { color: var(--muted); margin-left: 2px; }
+
+/* ---- the stream ---------------------------------------------------------------------------------------------- */
+.stream .kind { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; margin-right: 4px; }
+.ev-garden { color: var(--green); } .ev-reading { color: var(--blue); } .ev-systems { color: var(--cyan); }
+ul.digest { list-style: none; padding: 0; margin: 0 0 6px; }
+ul.digest > li { padding: var(--sp-2) 0; border-bottom: 1px solid var(--line); }
+li.dentry .dhead { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+li.dentry .ntl { font-weight: 600; }
+li.dentry b.ntl { color: var(--fg); }   /* no card: plain text; a card link wears Konbini's colour (.is-card) */
+li.dentry.done .ntl { color: var(--green); }
+ul.nowlist-s .ntl { font-weight: 600; }
+.move { display: inline-block; font-size: 11px; line-height: 18px; padding: 0 7px; border-radius: 9px; background: var(--hl); color: var(--fg2); }
+.more { font-size: var(--fs-xs); color: var(--muted); }
+.nlink { font-size: var(--fs-xs); }
+li.dentry ul.top { margin: 4px 0 0; padding-left: 18px; color: var(--fg2); font-size: 13.5px; }
+li.dentry ul.top li { margin: 2px 0; }
+li.dentry .next, ul.nowlist-s .next { margin: 4px 0 0; color: var(--muted); font-size: 12.5px; }
+ul.nowlist-s .blocked { margin: 4px 0 0; color: var(--red); font-size: 12.5px; }
+li.dentry.systems, li.dentry.garden { color: var(--muted); font-size: var(--fs-s); }
+.reading { margin: 4px 0 var(--sp-2); color: var(--muted); font-size: var(--fs-s); }
+.dayhead { margin: 14px 0 4px; font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 600; }
+.week details summary { cursor: pointer; padding: var(--sp-2) 0; color: var(--fg2); }
+.week details summary b { color: var(--room); }
+.week .wsum { color: var(--muted); font-size: var(--fs-s); }
+.week details[open] summary { border-bottom: 1px solid var(--line); margin-bottom: 4px; }
+.postlink { color: var(--green); }
+
+/* ---- the queue ----------------------------------------------------------------------------------------------- */
+li.qrow { display: flex; gap: var(--sp-3); align-items: flex-start; }
+.qmain { flex: 1; min-width: 0; }
+.qacts { display: flex; gap: 6px; flex-shrink: 0; }
+.qacts form { margin: 0; }
+.chk-ok { color: var(--green); } .chk-warn { color: var(--orange); } .chk-err { color: var(--red); }
+.sugg { display: inline-block; font-size: var(--fs-xs); color: var(--yellow); }
+
+/* ---- banners (niwa.js: offline copy, install hint) and the installed app's back button ----------------------- */
+.banner { padding: 9px var(--sp-3); border-radius: var(--r-m); margin: 0 0 var(--sp-3); font-size: var(--fs-s); display: flex; gap: 10px; align-items: center; }
+.banner.offline { background: color-mix(in srgb, var(--orange) 18%, transparent); color: var(--orange); }
+.banner.hint { background: var(--hl); color: var(--fg2); }
+.banner > span { flex: 1; }
+.banner button { margin-left: auto; background: transparent; color: var(--muted); padding: 2px 6px; font-size: var(--fs-l); }
+@media (display-mode: standalone) { .banner.hint { display: none; } }
+.back { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; margin-left: -8px;
+  border-radius: var(--r-m); background: transparent; color: var(--fg); font-size: 26px; line-height: 1; padding: 0 0 3px; }
+
+/* ---- phones -------------------------------------------------------------------------------------------------- */
+@media (max-width: 760px) {
+  .maps { grid-template-columns: 1fr 1fr; }
+  li.qrow { flex-direction: column; gap: 6px; }
+  article.note .nhead h1 { font-size: 24px; }
+  select { font-size: 16px; padding: 8px 10px; }
+  button { padding: 9px 16px; font-size: var(--fs-m); }
+}
+
+/* ---- search (the room's own: published notes) ------------------------------------------------------------------ */
+main.search form.search { margin: 0 0 var(--sp-3); }
+main.search mark { background: color-mix(in srgb, var(--yellow) 30%, transparent); color: inherit; border-radius: 3px; padding: 0 1px; }

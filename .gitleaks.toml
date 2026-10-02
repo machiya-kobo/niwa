@@ -1,0 +1,9 @@
+# gitleaks config: the only finding in this repository is a false positive in a vendored upstream file, listed on purpose.
+title = "niwa"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "vendored upstream, minified (Mermaid)"
+paths = ['''app/static/mermaid\.min\.js''']
