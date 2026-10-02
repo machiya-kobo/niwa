@@ -82,9 +82,31 @@ def host_name(value):
         return ""
 
 
-def allowed_hosts(host, setting):
-    """The names NIWA_AUTH=open serves: localhost, NIWA_HOST and NIWA_ALLOWED_HOSTS (comma-separated)."""
-    return {"localhost", host_name(host)} - {""} | {host_name(h) for h in (setting or "").split(",")} - {""}
+def public_url(value):
+    """NIWA_PUBLIC_URL: Niwa's web address, an origin only (http(s), a host, maybe a port) with no path, like
+    https://niwa.example. It says whether the web is served over https (the session cookie's Secure, and which pages
+    the sign-in takes as same-origin) and is the origin the sign-in accepts. "" when unset; anything else refuses to
+    start."""
+    value = (value or "").strip().rstrip("/")
+    if not value:
+        return ""
+    u = urlsplit(value)
+    try:
+        u.port                                                     # a malformed port raises
+        ok = u.scheme in ("http", "https") and bool(u.hostname) and not (u.path or u.query or u.fragment)
+    except ValueError:
+        ok = False
+    if not ok or "@" in u.netloc:
+        raise SystemExit("niwa: NIWA_PUBLIC_URL must be an origin with no path, like https://niwa.example, not %r"
+                         % value)
+    return value
+
+
+def allowed_hosts(host, setting, public=""):
+    """The names NIWA_AUTH=open serves: localhost, NIWA_HOST, NIWA_PUBLIC_URL's host and NIWA_ALLOWED_HOSTS
+    (comma-separated)."""
+    names = {"localhost", host_name(host), (urlsplit(public).hostname or "").rstrip(".") if public else ""}
+    return names - {""} | {host_name(h) for h in (setting or "").split(",")} - {""}
 
 
 def host_allowed(host_header, allowed):
@@ -114,8 +136,12 @@ AUTH = auth_mode(os.environ.get("NIWA_AUTH"), os.environ.get("MACHIYA_IDENTITY_F
 # The address every listener binds (web, gemini, gopher). A native install behind `tailscale serve` binds 127.0.0.1:
 # on a public bind the Tailscale-User-Login header could be sent by anyone who reaches the port.
 BIND = os.environ.get("NIWA_BIND", "0.0.0.0").strip() or "0.0.0.0"
+# Niwa's web address (an origin). Served over plain http (http://...), the session cookie isn't Secure and the sign-in
+# accepts only this origin; unset means https, as before.
+PUBLIC_URL = public_url(os.environ.get("NIWA_PUBLIC_URL"))
+SECURE = urlsplit(PUBLIC_URL).scheme != "http"            # unset or https: Secure cookies, https pages only
 try:        # Machiya's identity file (MACHIYA_IDENTITY_FILE); None without one: the NIWA_USERS gate, as before
-    IDENTITY = identity.load_for("niwa", os.environ, bind=BIND)
+    IDENTITY = identity.load_for("niwa", os.environ, bind=BIND, secure=SECURE)
 except identity.IdentityError as err:
     raise SystemExit("niwa: identity: %s" % err)
 NO_STORE = ("Cache-Control", "no-store")
@@ -129,8 +155,9 @@ SPARSE = [p.strip().strip("/") for p in os.environ.get("NIWA_REPO_SPARSE", "").s
 POLL = max(10, int(os.environ.get("NIWA_POLL", "60")))
 DB = os.environ.get("NIWA_DB", "/data/niwa.sqlite3")
 HOST = os.environ.get("NIWA_HOST", "").strip()           # the name in the gemini cert and gopher menus; "" = localhost, no footer links
-# NIWA_AUTH=open serves only these names in Host (plus any IP literal): localhost, NIWA_HOST and NIWA_ALLOWED_HOSTS.
-ALLOWED_HOSTS = allowed_hosts(HOST, os.environ.get("NIWA_ALLOWED_HOSTS"))
+# NIWA_AUTH=open serves only these names in Host (plus any IP literal): localhost, NIWA_HOST, NIWA_PUBLIC_URL's host and
+# NIWA_ALLOWED_HOSTS.
+ALLOWED_HOSTS = allowed_hosts(HOST, os.environ.get("NIWA_ALLOWED_HOSTS"), PUBLIC_URL)
 SMALLWEB_HOST = HOST or "localhost"
 PRIVATE = tuple(p.strip().strip("/") + "/" for p in os.environ.get("NIWA_PRIVATE_FOLDERS", "").split(",") if p.strip().strip("/"))
 AUTHOR = (os.environ.get("NIWA_GIT_NAME", "garden"), os.environ.get("NIWA_GIT_EMAIL", "garden@niwa"))
@@ -287,8 +314,8 @@ def make_handler(listener):
 
         def refuse(self):
             if not self.host_ok():
-                return self.send(403, "forbidden: NIWA_AUTH=open serves localhost, IP addresses, NIWA_HOST and "
-                                      "NIWA_ALLOWED_HOSTS, not %r\n" % self.headers.get("Host", ""), "text/plain")
+                return self.send(403, "forbidden: NIWA_AUTH=open serves localhost, IP addresses, NIWA_HOST, "
+                                      "NIWA_PUBLIC_URL and NIWA_ALLOWED_HOSTS, not %r\n" % self.headers.get("Host", ""), "text/plain")
             if IDENTITY is not None:
                 who = self.who()
                 status = who.status if not who else 403

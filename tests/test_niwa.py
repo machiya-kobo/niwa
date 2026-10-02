@@ -997,6 +997,49 @@ class IdentityTest(unittest.TestCase):
             niwa.IDENTITY = current
 
 
+class PublicUrlTest(unittest.TestCase):
+    """NIWA_PUBLIC_URL: Niwa's web address, an origin with no path (Kura's KURA_PUBLIC_URL rules)."""
+
+    def test_an_origin_only(self):
+        self.assertEqual(niwa.public_url(None), "")
+        self.assertEqual(niwa.public_url(" "), "")
+        for good, want in (("https://niwa.example", "https://niwa.example"),
+                           ("https://niwa.example/", "https://niwa.example"),
+                           ("http://192.168.1.5:8080", "http://192.168.1.5:8080"),
+                           ("http://[::1]:8080", "http://[::1]:8080")):
+            self.assertEqual(niwa.public_url(good), want, good)
+        for bad in ("niwa.example", "https://niwa.example/garden", "https://niwa.example?x=1", "https://niwa.example#a",
+                    "ftp://niwa.example", "https://user:pw@niwa.example", "https://niwa.example:99999",
+                    "https://niwa.example:x", "https://"):
+            with self.assertRaises(SystemExit, msg=bad):
+                niwa.public_url(bad)
+
+    def test_its_host_is_served_in_open_mode(self):
+        self.assertEqual(niwa.allowed_hosts("", "", "http://Box.LAN:8080"), {"localhost", "box.lan"})
+        self.assertEqual(niwa.allowed_hosts("niwa.test", "", ""), {"localhost", "niwa.test"})
+
+    def test_plain_http_turns_secure_off(self):
+        folder = os.path.join(TMP, "public-url")
+        write_identity(folder)
+        code = "import niwa; print('|'.join(map(str, (niwa.PUBLIC_URL, niwa.IDENTITY.secure, sorted(niwa.ALLOWED_HOSTS)))))"
+        env = dict(os.environ, MACHIYA_IDENTITY_FILE=os.path.join(folder, "identity.toml"), NIWA_BIND="127.0.0.1",
+                   NIWA_DB=os.path.join(folder, "data", "niwa.sqlite3"))
+        app = os.path.join(HERE, "..", "app")
+
+        def run(value):
+            return subprocess.run([sys.executable, "-c", code], cwd=app, env=dict(env, NIWA_PUBLIC_URL=value),
+                                  capture_output=True, text=True, timeout=60)
+        for value, want in (("", "|True|['localhost', 'niwa.test']"),           # unset: https, as before
+                            ("https://garden.example", "https://garden.example|True|"
+                                                       "['garden.example', 'localhost', 'niwa.test']"),
+                            ("HTTP://box.lan:8080", "HTTP://box.lan:8080|False|['box.lan', 'localhost', 'niwa.test']")):
+            r = run(value)
+            self.assertEqual((r.returncode, r.stdout.strip().splitlines()[-1]), (0, want), r.stderr)
+        r = run("https://garden.example/niwa")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("NIWA_PUBLIC_URL must be an origin", r.stderr)
+
+
 class KonbiniTokenTest(unittest.TestCase):
     """Niwa -> Konbini with Niwa's service token (NIWA_KONBINI_TOKEN_FILE), so Konbini knows the caller is Niwa."""
 
