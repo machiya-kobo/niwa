@@ -1168,6 +1168,12 @@ class SigninTest(unittest.TestCase):
         self.assertEqual(niwa.PREFS_DB, os.path.join(os.path.dirname(niwa.DB), "prefs.sqlite3"))
         self.assertEqual(os.stat(niwa.PREFS_DB).st_mode & 0o777, 0o600)
 
+    def test_the_sign_in_page_has_its_stylesheet(self):
+        """A signed-out browser loads the shared UI the sign-in page needs, and nothing of Niwa's own."""
+        self.assertEqual(call("GET", "/static/machiya.css", {})[0], 200)
+        for path in ("/static/niwa.css", "/static/niwa.js", "/"):
+            self.assertEqual(call("GET", path, {})[0], 401, path)
+
     def test_signin_off_and_no_identity_file(self):
         from vaultkit import identity
         niwa.IDENTITY = identity.Identity(self.file, "niwa")                         # NIWA_SIGNIN unset

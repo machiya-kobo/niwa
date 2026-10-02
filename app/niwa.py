@@ -170,6 +170,7 @@ PREFS_DB = os.path.join(DATA_DIR, "prefs.sqlite3")
 # it the request's own Host counts, over https only; over plain http the sign-in then always refuses (vaultkit.signin).
 ORIGINS = (PUBLIC_URL,) if PUBLIC_URL else ()
 # Before the gate (they are how you get past it), each with vaultkit.signin's body limit.
+SHARED_UI = ("/static/machiya.css", "/static/machiya.js", "/static/machiya-sw.js")   # vaultkit's, before the gate
 SIGNIN_LIMITS = {"/signin": signin.MAX_FORM, "/signout": signin.MAX_FORM, "/api/pair": signin.MAX_PAIR}
 _prefs, _prefs_lock = None, threading.Lock()
 
@@ -456,6 +457,9 @@ def make_handler(listener):
                 if not self.host_ok():
                     return self.refuse()
                 return self.reply(*signin.handle_get(IDENTITY, self.headers, url.query))
+            if IDENTITY is not None and IDENTITY.signin and self.host_ok() \
+                    and (path in SHARED_UI or path.startswith("/static/icons/")):
+                return self.static(path[8:], query)      # the sign-in page's stylesheet and icons: vendored, no notes
             if not self.allowed():
                 return self.refuse()
             if path == "/api/prefs":        # the principal's own preferences (404 without an identity file)
