@@ -11,12 +11,20 @@ import urllib.error
 import urllib.request
 
 
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):
+        return None
+
+
 class Konbini:
-    def __init__(self, url, ttl=60, timeout=4, login=""):
+    def __init__(self, url, ttl=60, timeout=4, login="", token=""):
         self.url = (url or "").rstrip("/")
         # Behind Tailscale, serve adds Tailscale-User-Login itself (Niwa's calls leave the server as the owner's machine);
         # `login` is only for running Niwa and Konbini side by side without Tailscale (tests).
         self.login = login
+        # Niwa's service token (NIWA_KONBINI_TOKEN_FILE): with Machiya's identity file Konbini knows Niwa as the
+        # service principal it is, not as the owner's machine. Sent on every call; never logged or shown.
+        self.token = token
         self.ttl, self.timeout = ttl, timeout
         self.cache, self.lock = {}, threading.Lock()
         self.error = ""
@@ -35,8 +43,12 @@ class Konbini:
             headers = {"Accept": "application/json", "X-Agent": "niwa"}
             if self.login:
                 headers["Tailscale-User-Login"] = self.login
+            if self.token:
+                headers["Authorization"] = "Bearer " + self.token
             req = urllib.request.Request(self.url + path, headers=headers)
-            with urllib.request.urlopen(req, timeout=self.timeout) as r:
+            # with the token, a redirect is an error: urllib would carry Authorization to wherever it points
+            opener = urllib.request.build_opener(NoRedirect) if self.token else urllib.request.build_opener()
+            with opener.open(req, timeout=self.timeout) as r:
                 data = json.loads(r.read())
             self.error = ""
         except (urllib.error.URLError, OSError, ValueError) as e:

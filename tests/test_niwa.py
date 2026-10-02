@@ -997,6 +997,71 @@ class IdentityTest(unittest.TestCase):
             niwa.IDENTITY = current
 
 
+class KonbiniTokenTest(unittest.TestCase):
+    """Niwa -> Konbini with Niwa's service token (NIWA_KONBINI_TOKEN_FILE), so Konbini knows the caller is Niwa."""
+
+    def capture(self):
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+        seen = []
+
+        class Board(BaseHTTPRequestHandler):
+            def do_GET(self):
+                seen.append((self.path, dict(self.headers)))
+                if self.path == "/elsewhere":
+                    self.send_response(302)
+                    self.send_header("Location", "/api/cards")
+                    self.end_headers()
+                    return
+                body = json.dumps({"cards": [{"path": "Projects/Lantern.md", "slug": "lantern"}]}).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *a):
+                pass
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Board)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        return "http://127.0.0.1:%d" % server.server_address[1], seen
+
+    def test_the_token_is_sent(self):
+        from konbini import Konbini
+        url, seen = self.capture()
+        self.assertIn("Projects/Lantern.md", Konbini(url, token="mch_abcd_secret").cards_by_path())
+        headers = {k.lower(): v for k, v in seen[-1][1].items()}
+        self.assertEqual((headers["authorization"], headers["x-agent"]), ("Bearer mch_abcd_secret", "niwa"))
+        Konbini(url).cards_by_path()                                           # without it, as before
+        self.assertNotIn("authorization", {k.lower() for k in seen[-1][1]})
+
+    def test_the_token_never_follows_a_redirect_or_shows(self):
+        from konbini import Konbini
+        url, seen = self.capture()
+        board = Konbini(url, token="mch_abcd_secret")
+        self.assertIsNone(board.get("/elsewhere"))
+        self.assertEqual([p for p, _ in seen], ["/elsewhere"])
+        self.assertNotIn("secret", json.dumps(board.status()) + board.error)
+
+    def test_the_token_file(self):
+        self.assertEqual(niwa.konbini_token(""), "")
+        d = tempfile.mkdtemp()
+        try:
+            path = os.path.join(d, "konbini.token")
+            with open(path, "w") as f:
+                f.write("mch_abcd_secret\n")
+            self.assertEqual(niwa.konbini_token(path), "mch_abcd_secret")
+            with open(path, "w") as f:
+                f.write("")
+            with self.assertRaises(SystemExit):
+                niwa.konbini_token(path)                                       # set but empty: refuse to start
+            with self.assertRaises(SystemExit):
+                niwa.konbini_token(os.path.join(d, "missing"))
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
+
+
 class WriteTest(unittest.TestCase):
     def sync(self):
         niwa.sync.commit()

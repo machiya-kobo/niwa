@@ -39,6 +39,7 @@ from vaultkit import borrow as vk_borrow  # noqa: E402
 from vaultkit import verify as vk_verify  # noqa: E402
 from vaultkit import EditError  # noqa: E402
 from vaultkit import identity  # noqa: E402
+from vaultkit import read_secret  # noqa: E402
 from writer import Writer, WriteError  # noqa: E402
 
 VERSION = "0.3.1"
@@ -190,7 +191,21 @@ clone_once()
 borrow_reference()
 state = State(DB, REPO)
 garden = Garden(REPO, SUBDIR, state, private=PRIVATE)
-garden.konbini = Konbini(server_url(os.environ.get("NIWA_KONBINI_API_URL"), shell.BOARD_URL), login=os.environ.get("NIWA_KONBINI_TEST_LOGIN", ""))
+def konbini_token(path):
+    """NIWA_KONBINI_TOKEN_FILE: Niwa's service token for Konbini (a Machiya identity token), sent as Authorization on
+    every call. "" when unset; a set file that holds no token refuses to start rather than call Konbini without it."""
+    path = (path or "").strip()
+    if not path:
+        return ""
+    token = read_secret(path)
+    if not token:
+        raise SystemExit("niwa: NIWA_KONBINI_TOKEN_FILE: no token in %s" % path)
+    return token
+
+
+garden.konbini = Konbini(server_url(os.environ.get("NIWA_KONBINI_API_URL"), shell.BOARD_URL),
+                         login=os.environ.get("NIWA_KONBINI_TEST_LOGIN", ""),
+                         token=konbini_token(os.environ.get("NIWA_KONBINI_TOKEN_FILE")))
 hister = Hister(os.environ["NIWA_HISTER_URL"], os.environ.get("NIWA_HISTER_PUBLIC", "")) \
     if os.environ.get("NIWA_HISTER_URL") else None
 garden.hister = hister
@@ -581,9 +596,9 @@ def main():
         users = "from %s (NIWA_AUTH=%s)" % (IDENTITY.path, AUTH)
     else:
         users = "anyone (NIWA_AUTH=open)" if AUTH == "open" else ",".join(sorted(USERS)) or "NOBODY (set NIWA_USERS)"
-    print("niwa %s (vaultkit %s): %d notes, %d published; repo %s, subdir %r; konbini %s; hister %s; users %s" % (
+    print("niwa %s (vaultkit %s): %d notes, %d published; repo %s, subdir %r; konbini %s%s; hister %s; users %s" % (
         VERSION, vk_verify.version().split(" - ")[0], len(garden.notes), len(garden.published()), REPO, SUBDIR,
-        shell.BOARD_URL or "off", "on" if hister else "off",
+        shell.BOARD_URL or "off", " (service token)" if garden.konbini.token else "", "on" if hister else "off",
         users), flush=True)
     print("niwa: link archive %s; hister save %s" % (ARCHIVE, "on" if HISTER_SAVE else "off"), flush=True)
     print("niwa: listening on %s: web %d, gemini 1965, gopher 7070%s" % (
