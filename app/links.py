@@ -29,6 +29,12 @@ from html import escape, unescape
 
 
 URL_RE = re.compile(r"https?://[^\s<>\"'()\[\]`]+")
+
+
+def web_url(url):
+    """url when it is an http(s) address, else "": a copy's address comes from another service (the Wayback Machine,
+    Hister, the cold map), and only a web address may become a link on a page."""
+    return url if isinstance(url, str) and re.match(r"https?://[^\s\x00-\x1f]+\Z", url, re.I) else ""
 ARCHIVE_HOSTS = ("web.archive.org", "archive.org")
 # Only links some published note still has are checked and archived (collect() clears `notes` for the others).
 IN_USE = "COALESCE(notes, '') != ''"
@@ -362,10 +368,10 @@ class Links:
             rec = by_url.get(url)
             if not rec or rec.get("status") != "dead":
                 return m.group(0)
-            if private and rec.get("private_url"):
+            if private and web_url(rec.get("private_url")):
                 return '<a class="dead" title="dead link, private copy from %s" href="%s"' % (
                     escape(rec.get("private_at") or "?"), escape(rec["private_url"]))
-            if rec.get("archive_url"):
+            if web_url(rec.get("archive_url")):
                 return '<a class="dead" title="dead link, archived copy from %s" href="%s"' % (
                     escape(rec.get("archived_at") or "?"), escape(rec["archive_url"]))
             return '<a class="dead" title="dead link, no archived copy" href="%s"' % escape(url)

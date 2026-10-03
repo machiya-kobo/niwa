@@ -25,6 +25,7 @@ from urllib.parse import parse_qs, quote, unquote, urlsplit
 from vaultkit import envfile
 ENV_FILE = envfile.load_for("niwa")
 
+import feed  # noqa: E402
 import gmodern  # noqa: E402
 import links as linkrot  # noqa: E402
 import shell  # noqa: E402
@@ -341,8 +342,10 @@ def make_handler(listener):
             if IDENTITY is not None:
                 who = self.who()
                 status = who.status if not who else 403
-                if status == 401 and IDENTITY.signin and self.browser_page():
-                    return self.send(401, shell.signin_needed(self.ctx(), self.path), headers=[NO_STORE])
+                if status == 401 and self.browser_page():     # vaultkit's 401 page: the plain header, the way in
+                    page = signin.needed(shell.ROOM, self.path, shell.prefs(self.headers.get("Cookie")),
+                                         signin=IDENTITY.signin)
+                    return self.reply(401, list(signin.PAGE_HEADERS), page.encode())
                 body = (who.error if not who else "not allowed in niwa") + "\n"
                 return self.send(status, body, "text/plain", headers=[NO_STORE])
             return self.send(403, "forbidden\n", "text/plain")
@@ -365,6 +368,9 @@ def make_handler(listener):
             self.send_response(status)
             for k, v in headers:
                 self.send_header(k, v)
+            if any(k.lower() == "content-type" and v.startswith("text/html") for k, v in headers):
+                for k, v in shell.house.security_headers():     # the sign-in pages: Niwa's CSP on top of theirs
+                    self.send_header(k, v)
             self.send_header("Content-Length", str(len(body)))
             if status == 413:
                 self.close_connection = True
@@ -402,8 +408,42 @@ def make_handler(listener):
         def agent(self):
             return (self.headers.get("X-Agent") or "web")[:80]
 
+        def principal(self):
+            """Whose preferences these are, once the gate admitted the request: the identity file's principal, or
+            without one identity.ambient (the Tailscale login, or open mode's owner). None otherwise."""
+            if not self.allowed():
+                return None
+            if IDENTITY is not None:
+                return self.who().principal
+            return identity.ambient(AUTH, self.headers)
+
         def ctx(self):
-            return shell.prefs(self.headers.get("Cookie"))     # theme and text size (machiya.js writes the cookies)
+            """Theme and text size (machiya.js writes the cookies), /api/prefs when the request has a principal (the
+            page then syncs them with the server), and the signed-in name for the header's person button."""
+            ctx = shell.prefs(self.headers.get("Cookie"))
+            ctx.prefs_url = "/api/prefs" if self.principal() is not None else ""
+            ctx.who = self.signed_in()
+            return ctx
+
+        def origins(self):
+            """Where a cookie- or login-borne prefs PUT may come from: NIWA_PUBLIC_URL; else, in open mode with no
+            identity file, this request's own Host, which host_ok() already checked (an IP literal, localhost or a
+            listed name, never a name a stranger's page pointed here), so the settings page works over plain http on
+            localhost."""
+            if ORIGINS or IDENTITY is not None or AUTH != "open":
+                return ORIGINS
+            host = (self.headers.get("Host") or "").strip().lower()
+            return ("http://" + host, "https://" + host) if host and host_allowed(host, ALLOWED_HOSTS) else ()
+
+        def prefs(self, method, body=b""):
+            """GET/PUT /api/prefs as this request's principal (after the gate)."""
+            origins = self.origins()
+            if IDENTITY is not None:
+                secure = IDENTITY.secure
+            else:                   # the open-mode Host origin may be plain http (localhost); else NIWA_PUBLIC_URL's
+                secure = SECURE and origins == ORIGINS
+            return self.reply(*signin.handle_prefs(prefs_store(), self.principal(), method, self.headers, body,
+                                                   secure=secure, origins=origins))
 
         def send(self, status, body, ctype="text/html", headers=()):
             if isinstance(body, str):
@@ -416,6 +456,9 @@ def make_handler(listener):
             self.send_header("Content-Length", str(len(data)))
             if status == 413:
                 self.send_header("Connection", "close")
+            if ctype.startswith("text/html"):           # every page: the CSP (no inline script), nosniff, Referrer
+                for k, v in shell.house.security_headers():
+                    self.send_header(k, v)
             for k, v in headers:
                 self.send_header(k, v)
             for c in (self._who.cookies if self._who is not None else ()):
@@ -431,20 +474,16 @@ def make_handler(listener):
             self.do_GET()
 
         def do_PUT(self):
-            """PUT /api/prefs only, after the gate (the niwa read grant); with no identity file, 404."""
+            """PUT /api/prefs only, after the gate (the niwa read grant, or the old gate without an identity file)."""
             path = unquote(urlsplit(self.path).path)
             if path != "/api/prefs":
                 return self.send_error(501, "Unsupported method ('PUT')")
             if not self.allowed():
                 return self.refuse()
-            if IDENTITY is None:
-                self.drain(self.content_length())
-                return self.send_json(404, {"error": "not found"})
             body = self.signin_body(signin.MAX_PREFS)
             if body is None:
                 return self.too_large(True)
-            return self.reply(*signin.handle_prefs(prefs_store(), self.who().principal, "PUT", self.headers, body,
-                                                   secure=IDENTITY.secure, origins=ORIGINS))
+            return self.prefs("PUT", body)
 
         # -- reads ---------------------------------------------------------------------------------------------
 
@@ -462,11 +501,8 @@ def make_handler(listener):
                 return self.static(path[8:], query)      # the sign-in page's stylesheet and icons: vendored, no notes
             if not self.allowed():
                 return self.refuse()
-            if path == "/api/prefs":        # the principal's own preferences (404 without an identity file)
-                if IDENTITY is None:
-                    return self.send_json(404, {"error": "not found"})
-                return self.reply(*signin.handle_prefs(prefs_store(), self.who().principal, "GET", self.headers,
-                                                       secure=IDENTITY.secure, origins=ORIGINS))
+            if path == "/api/prefs":        # the principal's own preferences (identity.ambient without a file)
+                return self.prefs("GET")
             if path == "/api/offline":      # the notes the service worker keeps for good (frontmatter offline: true)
                 return self.send_json(200, {"urls": ["/n/" + quote(n.slug) for n in garden.published()
                                                      if n.fm.get("offline") is True and not n.rel.startswith(NO_STORE_DIRS)]})
@@ -480,15 +516,19 @@ def make_handler(listener):
                                                              "date": s["date"]} for rel, s in found], "days": days})
             ctx = self.ctx()
             if path == "/manifest.webmanifest":
-                return self.send(200, json.dumps(shell.manifest("garden", ctx.theme), indent=1),
+                return self.send(200, json.dumps(shell.manifest(shell.ROOM, ctx.theme), indent=1),
                                  "application/manifest+json", headers=[("Cache-Control", "no-cache")])
             if path == "/sw.js":
-                return self.send(200, shell.service_worker("garden"), "text/javascript",
+                return self.send(200, shell.service_worker(shell.ROOM), "text/javascript",
                                  headers=[("Cache-Control", "no-cache")])
             if path == "/offline":
-                return self.send(200, shell.offline(ctx, "garden"))
+                return self.send(200, shell.offline(shell.prefs(self.headers.get("Cookie")), shell.ROOM))   # nobody's
             if path.startswith("/static/"):
                 return self.static(path[8:], query)
+            if path == shell.FEED:          # published notes only, behind the same gate as the garden's pages
+                base = PUBLIC_URL or "https://%s" % (self.headers.get("Host") or "localhost")
+                return self.send(200, feed.rss(base, "Niwa", gmodern.INTRO, feed.notes(garden, NO_STORE_DIRS)),
+                                 "application/rss+xml", headers=[("Cache-Control", "max-age=300")])
             if path == "/settings":
                 return self.send(200, shell.settings(ctx, VERSION, footer_status()["text"],
                                                      vk_verify.version().split(" - ")[0], self.signed_in()),
@@ -507,6 +547,11 @@ def make_handler(listener):
         def static(self, name, query):
             if name.startswith("icons/"):
                 icon = name[6:]
+                old = shell.OLD_ICON_PREFIX
+                if icon.startswith((old + "-", old + ".")) and shell.ROOM + icon[len(old):] in shell.ICONS:
+                    return self.send(301, "", "text/plain", headers=[      # the icon's old name (before 0.4.0)
+                        ("Location", "/static/icons/" + shell.ROOM + icon[len(old):]),
+                        ("Cache-Control", "public, max-age=604800")])
                 if icon in shell.ICONS:
                     with open(os.path.join(shell.ICON_DIR, icon), "rb") as f:
                         return self.send(200, f.read(), "image/svg+xml" if icon.endswith(".svg") else "image/png",
@@ -528,12 +573,12 @@ def make_handler(listener):
                 n = garden.get(gpath[3:])
                 if n and (query.get("preview") or [""])[0] == "1":
                     self.send_json(200, garden.preview(n))
-                elif n:
-                    private = n.rel.startswith(NO_STORE_DIRS)
+                elif n:         # Archive/ and an unpublished note (the owner's preview) never stay on a device
+                    private = n.rel.startswith(NO_STORE_DIRS) or not n.published
                     self.send(200, gmodern.note(ctx, base, garden, n, cards),
                               headers=[("Cache-Control", "no-store")] if private else ())
                 else:
-                    self.send(404, self.message(ctx, "Not found", gpath[3:]))
+                    self.send(404, shell.not_found(ctx, gpath))
             elif gpath.startswith("/t/"):
                 self.send(200, gmodern.tag_page(ctx, base, garden, gpath[3:], cards))
             elif gpath == "/search":
@@ -542,9 +587,10 @@ def make_handler(listener):
                 self.send(200, gmodern.tags_page(ctx, base, garden))
             elif gpath == "/stream":
                 reading = hister.saved_between if hister else None  # owner-only (never gemini or gopher)
-                self.send(200, gmodern.stream(ctx, base, garden, stream.build(garden, links=links, reading=reading)))
+                self.send(200, gmodern.stream(ctx, base, garden, stream.build(garden, links=links, reading=reading)),
+                          headers=[NO_STORE])           # the board and Hister: the owner's, never on a device
             elif gpath == "/queue":
-                self.send(200, gmodern.queue(ctx, base, garden, cards))
+                self.send(200, gmodern.queue(ctx, base, garden, cards), headers=[NO_STORE])   # unpublished notes
             elif gpath.startswith("/a/"):
                 full = garden.asset_path(gpath[3:])
                 ctype = IMAGE_TYPES.get(os.path.splitext(gpath)[1].lower())
@@ -556,10 +602,7 @@ def make_handler(listener):
                 else:
                     self.send(404, "not found\n", "text/plain")
             else:
-                self.send(404, self.message(ctx, "Not found", gpath))
-
-        def message(self, ctx, title, text):
-            return shell.message(ctx, title, text)
+                self.send(404, shell.not_found(ctx, gpath))
 
         # -- writes --------------------------------------------------------------------------------------------
 
@@ -691,7 +734,7 @@ def make_handler(listener):
                     self.send_json(e.status, dict(error=e.message, **e.extra))
                 else:
                     ctx = self.ctx()
-                    self.send(e.status, self.message(ctx, "Not saved", e.message))
+                    self.send(e.status, shell.message(ctx, "Not Saved", e.message))
 
     return Handler
 

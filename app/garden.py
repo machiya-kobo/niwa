@@ -25,6 +25,11 @@ from vaultkit.notes import (CONFIDENCE, LINK_RE, STAGE_MARK, STAGES, TYPES, Note
                             first_paragraph, relative, stage_of, type_of)
 from vaultkit.vault import CALLOUT_RE, EMBED_RE, IMAGE_EXT, MDIMG_RE, Vault         # noqa: F401
 
+# The landing page's intro while no Garden.md is published, on the web, gemini and gopher: NIWA_INTRO (plain text,
+# HTML-escaped when shown), else this.
+DEFAULT_INTRO = "Notes from the vault, shared as they grow."
+INTRO = os.environ.get("NIWA_INTRO", "").strip() or DEFAULT_INTRO
+
 # Pre-publish scan
 CHECKS = [
     ("error", "LAN or tailnet address", re.compile(
@@ -232,6 +237,7 @@ class Garden(Vault):
 
     def preview(self, note):
         return {"title": note.title, "description": note.description, "stage": note.stage,
+                "stage_name": dict((k, n) for k, n, _ in STAGES).get(note.stage, note.stage),
                 "confidence": note.confidence, "planted": note.planted, "tended": self.tended.get(note.rel, ""),
                 "type": note.ntype}
 

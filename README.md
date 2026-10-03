@@ -4,7 +4,7 @@
 
 Niwa is one app of [Machiya](https://github.com/machiya-kobo/machiya), a small set of self-hosted apps that read the same Markdown vault (a Git repo); each app is a **room** (Niwa is the garden). The **owner** is the person whose vault it is: the one who publishes and tends the garden from the web UI.
 
-- **Pages:** the landing page (intro from `Garden.md`, pinned, maps, recent, "in bloom"), notes, tags, the stream (what changed), the queue (suggested and well-linked unpublished notes), random, images, and `/settings` (Appearance, Garden: Link Previews, Apps, About; per device).
+- **Pages:** the landing page (intro from `Garden.md`, pinned, maps, recent, "in bloom"), notes, tags, the stream (what changed), the queue (suggested and well-linked unpublished notes), random, images, an RSS feed of the published notes (`/feed.xml`), and `/settings` (Appearance, Garden: Link Previews and Offline Copies, Apps, Account when signed in, About; theme and text size follow the person to another device through `/api/prefs`, the rest is per device).
 - **Growth stages** (seedling, budding, evergreen), confidence, pins, backlinks, "nearby" notes, and topic maps.
 - **Pre-publish scan:** addresses, keys and tokens, links to notes in private folders (`NIWA_PRIVATE_FOLDERS`), links to unpublished notes, dead links, a missing summary.
 - **Link rot:** every external link in a published note is checked. A dead link is swapped for its Wayback copy; the owner's pages also get a Hister copy.
@@ -180,11 +180,11 @@ You should see the status, the page titles, the gemini capsule and the first lin
 "published": 9
 "ready": true
 "error": null
-<title>niwa
-<title>Lantern
+<title>Niwa
+<title>Lantern - Niwa
 20 text/gemini
-# niwa
-niwa - notes from the vault
+# Niwa
+NIWA
 ```
 
 Niwa has no read-only mode: a real vault needs a deploy key with write access (see "Install" below). Stop a container
@@ -280,7 +280,7 @@ On first start Niwa asks `openssl` for a self-signed certificate (EC P-256, vali
 | `NIWA_POLL` | `60` | seconds between pulls |
 | `TZ` | `UTC` | the time zone for the stream's days and "this week" counts, e.g. `Europe/Berlin` |
 | `NIWA_IGNORE_AUTHORS` | — | comma-separated git author names of bots that commit to the vault: their commits don't count as "tended" in the stream (Niwa's own `NIWA_GIT_NAME` is always ignored) |
-| `NIWA_INTRO` | `Notes from the vault, shared as they grow.` | the landing page's intro while no `Garden.md` is published: plain text (HTML-escaped), one line. Publish `Garden.md` to write your own |
+| `NIWA_INTRO` | `Notes from the vault, shared as they grow.` | the landing page's intro while no `Garden.md` is published, on the web, gemini and gopher: plain text (HTML-escaped), one line. Publish `Garden.md` to write your own (gemini and gopher show it too) |
 | `NIWA_AUTH` | `tailscale` | `tailscale`: the owner's pages and writes need a `Tailscale-User-Login` in `NIWA_USERS`. `open`: no identity check (a startup warning), for localhost or a trusted LAN only; it serves only requests whose `Host` is an IP address, `localhost`, `NIWA_HOST`, `NIWA_PUBLIC_URL`'s host or a name in `NIWA_ALLOWED_HOSTS` (a guard against DNS rebinding), so an HTTP/1.0 client that sends no `Host` header gets 403. `header`: with `MACHIYA_IDENTITY_FILE` only, a trusted proxy's login header (`NIWA_AUTH_HEADER`). Either way, form posts must be same-origin and agents may only suggest. Any other value refuses to start |
 | `NIWA_USERS` | — | allowed `Tailscale-User-Login`s; `*` = anyone; unset = nobody (`/api/status` is open) |
 | `NIWA_BIND` | `0.0.0.0` | the IPv4 address all three listeners bind (web, gemini, gopher). Behind `tailscale serve` on a native install, bind `127.0.0.1`: on a public bind anyone who reaches the port could send the `Tailscale-User-Login` header |
@@ -304,23 +304,24 @@ On first start Niwa asks `openssl` for a self-signed certificate (EC P-256, vali
 | `NIWA_COLD_MAP` | — | optional: the URL of a JSON map of static page snapshots, `{"urls": {norm(url): {"snapshot", "date"}}}` (keys from `app/urlnorm.py`), used as the owner's private copy of a link |
 | `NIWA_ARCHIVE` | `none` | `wayback` asks the Wayback Machine for a snapshot of each link in the published notes (it sends those URLs to archive.org) and swaps a dead link for its snapshot. `none` never contacts archive.org; links are still checked for life and snapshots already recorded still show. Any other value counts as `none`, with a startup warning |
 | `NIWA_HISTER_SAVE` | — | `1`, `on` or `true`: link rot may index a live link into Hister when Hister doesn't have it. Unset: Hister is only looked up (the owner's copy is shown), never written to |
-| `NIWA_DB` | `/data/niwa.sqlite3` | link records; the gemini certificate and, with an identity file, `prefs.sqlite3` (per-user preferences, 0600) sit next to it |
+| `NIWA_DB` | `/data/niwa.sqlite3` | link records; the gemini certificate and `prefs.sqlite3` (per-user preferences, 0600) sit next to it |
 | `NIWA_GIT_NAME`, `NIWA_GIT_EMAIL` | `garden`, `garden@niwa` | commit author |
 | `NIWA_PORT` | `8080` | web listener; gemini 1965, gopher 7070 |
 
 ## API
 
 - `POST /api/suggest {"path": "Notes/X.md" | "slug", "reason": "…"}`: an agent suggests a note for the garden (the old Konbini path `/api/garden/suggest` also works). 201, or 409 if it's already published.
+- `GET /feed.xml`: RSS 2.0 of the published notes, the 50 most recently tended first (title, link, summary; never an unpublished note, the queue, `Archive/` or a private folder). Behind the same gate as the pages; every page links it in its head and footer.
 - `GET /api/status`: head, notes, published, sync, konbini, hister. Open to anyone for monitoring; only the owner sees the Konbini and Hister addresses and their errors, and credentials in a remote URL are never shown.
 
-With an identity file (`MACHIYA_IDENTITY_FILE`), vaultkit's `signin` adds these (without one they answer 404):
+With an identity file (`MACHIYA_IDENTITY_FILE`), vaultkit's `signin` adds the first three (without one they answer 404):
 
 - `GET /signin[?next=/path]`, `POST /signin`: the built-in sign-in (`NIWA_SIGNIN=1`, else 404). The post is a same-origin form (`name`, `password`, `next`, at most 4 KB); success is 303 to `next` (a local path only) with the session cookie; a wrong name or password 401, too many tries 429.
 - `POST /signout`: same-origin only; clears the session cookie, 303 to `/`.
 - `POST /api/pair {"code": "ABCD-EFGH", "device": "iPhone"}`: a Shiori device pairs with a one-time code (`python3 -m vaultkit.identity pair NAME --label iPhone`) and gets `{"token": "mcd_…", "principal"}`, its own token to send as `Authorization: Bearer`. No cookie, so no same-origin rule; 401 for an unknown or expired code, 429 when throttled; at most 1 KB.
-- `GET /api/prefs`, `PUT /api/prefs {"prefs": {"key": "value" or null}}`: the caller's own preferences (keys `[a-z0-9_.-]`, string values up to 4 KB, 100 keys; `null` removes one), stored in `prefs.sqlite3` next to `NIWA_DB`. Needs the `niwa` `read` grant. A PUT made with a session cookie, a Tailscale or proxy login must be same-origin; one with a token needn't.
+- `GET /api/prefs`, `PUT /api/prefs {"prefs": {"key": "value" or null}}`: the caller's own preferences (keys `[a-z0-9_.-]`, string values up to 4 KB, 100 keys; `null` removes one), stored in `prefs.sqlite3` next to `NIWA_DB`. Needs the `niwa` `read` grant. A PUT made with a session cookie, a Tailscale or proxy login must be same-origin; one with a token needn't. Without an identity file it is there too: `NIWA_USERS` (or open mode) decides who gets in, and the preferences are the Tailscale login's (stored under a hash of it) or, with `NIWA_AUTH=open`, the one local owner's. Every page then carries `<meta name="machiya-prefs">`, so theme and text size follow the person to another device.
 
-These four come before the gate (they are how you get past it), after the `NIWA_AUTH=open` `Host` check; `/api/prefs` comes after it. Gemini and gopher have none of them.
+The first three come before the gate (they are how you get past it), after the `NIWA_AUTH=open` `Host` check; `/api/prefs` comes after it. Gemini and gopher have none of them.
 
 Publishing, stages and dismissals are form posts from the owner's pages (same origin only; agents get 403). With an
 identity file the power comes from the `niwa` `publish` grant, not from the request's `Origin` or a missing
@@ -331,7 +332,7 @@ identity file the power comes from the `niwa` `publish` grant, not from the requ
 
 - `app/niwa.py` — the server: settings, listeners, routes, forms, sync, status
 - `app/garden.py` — the garden over vaultkit's `Vault`: published notes, relations, the pre-publish check, the queue
-- `app/gmodern.py` — the pages; `app/shell.py` — Machiya's shared shell (`vaultkit.shell`) as the room `niwa`: header with the Rooms switcher (`MACHIYA_ROOMS`, or Niwa's own Konbini/Kura URLs standing alone), tab bar, footer status line, /settings, PWA
+- `app/gmodern.py` — the pages; `app/feed.py` — `/feed.xml`; `app/shell.py` — Machiya's shared shell (`vaultkit.shell`) as the room `niwa`: header with the Rooms switcher (`MACHIYA_ROOMS`, or Niwa's own Konbini/Kura URLs standing alone), tab bar, footer status line, /settings, PWA
 - `app/stream.py` — the stream (garden half here, board half from Konbini)
 - `app/smallweb.py` — gemini and gopher
 - `app/links.py`, `app/hister.py`, `app/urlnorm.py` — link rot, the Hister client and the URL rule (`urlnorm.py` is the URL rule used to match a note's link to a cold-archive snapshot; Konbini carries an identical copy)

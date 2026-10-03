@@ -21,6 +21,7 @@ import textwrap
 import threading
 from urllib.parse import quote, unquote
 
+import garden as garden_module
 from garden import CALLOUT_RE, EMBED_RE, FRONT_RE, IMAGE_EXT, LINK_RE, MDIMG_RE, STAGES
 
 # Gopher text is ASCII/ISO-8859-1; replace what it can't carry with ASCII.
@@ -176,6 +177,25 @@ def to_gopher_text(gemtext, host, port):
 
 # -- page builders shared by both protocols ------------------------------------
 
+def intro_gemtext(garden):
+    """The landing intro, as the web shows it: a published Garden.md (as gemtext), else NIWA_INTRO."""
+    n = garden.notes.get("Garden.md")
+    if n and n.published:
+        return to_gemtext(garden, n).strip()
+    return garden_module.INTRO
+
+
+def intro_rows(garden):
+    """The intro for a gopher menu: info lines wrapped at 70 columns (its links stay on the gemini and web pages)."""
+    rows = []
+    for line in intro_gemtext(garden).splitlines():
+        if line.startswith("=>") or line.startswith("```"):
+            continue
+        line = line.lstrip("#> ").strip() if line.startswith(("#", ">")) else line
+        rows += [("i", w, "") for w in textwrap.wrap(line, 70)] or [("i", "", "")]
+    return rows
+
+
 def index_items(garden):
     """(heading, [(path, label)]) groups for the garden index."""
     notes = garden.published()
@@ -236,7 +256,7 @@ class GeminiHandler(socketserver.StreamRequestHandler):
         g = self.garden
         g.index()
         if path == "/":
-            lines = ["# niwa", "", "Notes from the vault.", ""]
+            lines = ["# Niwa", "", intro_gemtext(g), ""]
             for heading, items in index_items(g):
                 lines += ["## " + heading] + ["=> %s %s" % (quote(p), t) for p, t in items] + [""]
             if not g.published():
@@ -346,7 +366,7 @@ def gopher_handler(garden, timeline, host, port, allow=None):
             garden.index()
             sel = selector if selector.startswith("/") or not selector else "/" + selector
             if sel in ("", "/"):
-                rows = [("i", "niwa - notes from the vault", ""), ("i", "", "")]
+                rows = [("i", "NIWA", ""), ("i", "", "")] + intro_rows(garden) + [("i", "", "")]
                 for heading, items in index_items(garden):
                     rows.append(("i", heading.upper(), ""))
                     rows += [("0", t, p) for p, t in items]

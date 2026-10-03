@@ -2,12 +2,12 @@
 under ("" when Niwa serves them at its root).
 Links to garden notes wear the garden's colour (.thing.is-garden), links into Kura the notes' (.thing.is-note)."""
 import datetime
-import os
 from urllib.parse import quote
 
 import shell as modern
 import re
 
+from links import web_url
 from garden import CONFIDENCE, FRONT_RE, STAGES, TYPES, relative, stage_of
 from vaultkit import _str
 from shell import COLUMN_TITLES, e
@@ -16,7 +16,7 @@ STAGE_NAME = {k: n for k, n, _ in STAGES}
 
 
 def top(ctx, base, current, title="", search=True):
-    return modern.header(current, title, search)
+    return modern.header(current, title, search, ctx)
 
 
 def gpage(ctx, base, title, body, current, head=""):
@@ -66,9 +66,7 @@ def stage_groups(ctx, base, g, notes, cards):
     return "".join(parts)
 
 
-# The landing page's intro while no Garden.md is published: NIWA_INTRO (plain text, HTML-escaped when shown), else this.
-DEFAULT_INTRO = "Notes from the vault, shared as they grow."
-INTRO = os.environ.get("NIWA_INTRO", "").strip() or DEFAULT_INTRO
+from garden import DEFAULT_INTRO, INTRO  # noqa: E402,F401  (the landing intro; gemini and gopher use the same)
 
 
 def home(ctx, base, g, cards, ntype=""):
@@ -83,7 +81,7 @@ def home(ctx, base, g, cards, ntype=""):
         parts.append(empty("Nothing Published Yet", 'Pick notes from the <a href="%s/queue">Queue</a>: publishing only adds '
                            '<code>publish: true</code> to a note, and maps, tags and the stream fill in from there.' % base))
         parts.append("</main>")
-        return gpage(ctx, base, "niwa", "\n".join(parts), "garden")
+        return gpage(ctx, base, "", "\n".join(parts), "garden")
     st = g.stats()
     chips = ['<a href="%s/"%s>all</a>' % (base, ' class="here"' if not ntype else "")]
     chips += ['<a href="%s/?type=%s"%s>%s <span class="n">%d</span></a>' % (base, k, ' class="here"' if ntype == k else "", label.lower(), st["types"][k])
@@ -98,7 +96,7 @@ def home(ctx, base, g, cards, ntype=""):
         parts.append(stage_groups(ctx, base, g, shown, cards) or empty(
             "No Published %s" % e(label), 'Nothing of this type is in the garden yet. <a href="%s/">Show All</a>' % base))
         parts.append("</main>")
-        return gpage(ctx, base, label.lower() + " - niwa", "\n".join(parts), "garden")
+        return gpage(ctx, base, label, "\n".join(parts), "garden")
     maps = g.maps()
     if maps:
         tiles = "".join('<a class="maptile" href="%s/n/%s"><b>%s</b><span class="count">%d note%s</span>%s</a>'
@@ -134,7 +132,7 @@ def home(ctx, base, g, cards, ntype=""):
             for n, why in needs)))
     parts.append(section("Everything", "", stage_groups(ctx, base, g, notes, cards)))
     parts.append("</main>")
-    return gpage(ctx, base, "niwa", "\n".join(parts), "garden")
+    return gpage(ctx, base, "", "\n".join(parts), "garden")
 
 
 def meta_form(base, n, g):
@@ -199,11 +197,11 @@ def note(ctx, base, g, n, cards, checks=None):
                     {"live": "ok", "dead": "err"}.get(r["status"], "warn"), e(r["status"] or "unchecked"), e(r["url"]),
                     e(r["url"] if len(r["url"]) <= 70 else r["url"][:67] + "\u2026"),
                     ((' <a class="nlink" href="%s" title="archived %s">archived copy</a>' % (e(r["archive_url"]), e(r.get("archived_at") or "")))
-                     if r.get("archive_url") else "")
+                     if web_url(r.get("archive_url")) else "")
                     + ((' <a class="nlink" href="%s" title="%s %s">private copy</a>' % (
                         e(r["private_url"]), "Archived snapshot" if r.get("private_backend") == "cold" else "Hister copy",
-                        e(r.get("private_at") or ""))) if r.get("private_url") else ""))
-                for r in recs)
+                        e(r.get("private_at") or ""))) if web_url(r.get("private_url")) else ""))
+                for r in recs if web_url(r["url"]))
             rel_links.append(section("Links", "", '<ul class="garden-list plain linklist">%s</ul>' % rows))
     main = ('<main class="garden"><article class="note">%s<header class="nhead">%s'
             '<p class="nmeta">%s<br>%s</p></header><div class="nbody is-garden">%s</div></article>%s'
@@ -211,7 +209,7 @@ def note(ctx, base, g, n, cards, checks=None):
             % (banner, heading, " &middot; ".join(meta), tags, body, "".join(rel_links),
                meta_form(base, n, g), publish_form(ctx, base, n, checks)))
     pin = modern.house.OFFLINE_PIN if n.fm.get("offline") is True else ""       # offline: true -> kept for good
-    return gpage(ctx, base, n.title + " - niwa", top(ctx, base, "", n.title) + main, "", pin)
+    return gpage(ctx, base, n.title, top(ctx, base, "", n.title) + main, "", pin)
 
 
 def publish_form(ctx, base, n, checks=None):
@@ -247,13 +245,13 @@ def tag_page(ctx, base, g, tag, cards):
     if not notes:
         parts.append(empty("No Published Notes", "Nothing in the garden is tagged <code>%s</code> yet." % e(tag)))
     parts.append("</main>")
-    return gpage(ctx, base, tag + " - niwa", "\n".join(parts), "tags")
+    return gpage(ctx, base, tag, "\n".join(parts), "tags")
 
 
 def tags_page(ctx, base, g):
     items = "".join('<a class="tag" href="%s/t/%s">%s <span class="n">%d</span></a>' % (base, quote(t), e(t), c)
                     for t, c in g.tags())
-    return gpage(ctx, base, "tags - niwa", top(ctx, base, "tags") +
+    return gpage(ctx, base, "Tags", top(ctx, base, "tags") +
                  '<main class="garden">%s</main>' % (('<p class="tagcloud">%s</p>' % items) if items else empty(
                      "No Tags Yet", "Topic and area tags appear here once their notes are published.")), "tags")
 
@@ -322,7 +320,7 @@ def stream(ctx, base, g, d):
                          '%s<ul class="digest">%s</ul></details></section>'
                          % (e(w["label"]), e(summary_text(w["summary"])), reading_line(w), "".join(entry(x) for x in w["entries"])))
     parts.append("</main>")
-    return gpage(ctx, base, "stream - niwa", "\n".join(parts), "stream")
+    return gpage(ctx, base, "Stream", "\n".join(parts), "stream")
 
 
 def queue(ctx, base, g, cards):
@@ -380,7 +378,7 @@ def queue(ctx, base, g, cards):
         parts.append(empty("Nothing to Publish", "Every note%s is already in the garden." % (
             " outside " + " and ".join(e(p) for p in g.private) if g.private else "")))
     parts.append("</main>")
-    return gpage(ctx, base, "queue - niwa", "\n".join(parts), "queue")
+    return gpage(ctx, base, "Queue", "\n".join(parts), "queue")
 
 
 def today():
@@ -461,4 +459,4 @@ def search_page(ctx, base, g, q):
             parts.append(empty("No Matches", "Nothing in the garden matches “%s”." % e(q)))
         parts.append(modern.house.handoff(q, modern.rooms()))
     parts.append("</main>")
-    return gpage(ctx, base, (q + " - " if q else "") + "search - niwa", "\n".join(parts), "")
+    return gpage(ctx, base, (q + " - " if q else "") + "Search", "\n".join(parts), "")

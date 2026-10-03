@@ -35,7 +35,7 @@ if (document.body.dataset.offline !== undefined) {
     const mins = Math.max(1, Math.round((Date.now() - at) / 60000));
     when = mins < 60 ? mins + " min ago" : mins < 1440 ? Math.round(mins / 60) + " h ago" : Math.round(mins / 1440) + " d ago";
   }
-  banner("offline", "<span><b>Offline.</b> Showing a saved copy" + (when ? " from " + when : "") + ". Check your network or VPN.</span>");
+  banner("offline", "<span><b>Offline.</b> Niwa can't be reached right now; this is a saved copy" + (when ? " from " + when : "") + ".</span>");
 }
 const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
 const standalone = navigator.standalone === true || matchMedia("(display-mode: standalone)").matches;
@@ -73,7 +73,7 @@ if (matchMedia("(hover: hover)").matches) {
           if (!r.ok) return;
           const p = await r.json();
           if (!pop) { pop = document.createElement("div"); pop.className = "popover"; document.body.append(pop); }
-          pop.innerHTML = "<b>" + esc(p.title) + "</b> <span class='stage stage-" + esc(p.stage) + "'>" + esc(p.stage) + "</span>"
+          pop.innerHTML = "<b>" + esc(p.title) + "</b> <span class='stage stage-" + esc(p.stage) + "'>" + esc(p.stage_name || p.stage) + "</span>"
             + (p.description ? "<p>" + esc(p.description) + "</p>" : "")
             + (p.tended ? "<span class='when'>tended " + esc(p.tended) + "</span>" : "");
           const box = a.getBoundingClientRect();

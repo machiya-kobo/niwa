@@ -136,7 +136,7 @@ def remote_file(rel):
 class ReadTest(unittest.TestCase):
     def test_pages_standalone(self):
         for p in ("/", "/n/MOC/Crafts", "/tags", "/t/topic/retro", "/stream", "/queue", "/api/status",
-                  "/manifest.webmanifest", "/sw.js", "/offline", "/static/niwa.css", "/static/icons/garden.svg",
+                  "/manifest.webmanifest", "/sw.js", "/offline", "/static/niwa.css", "/static/icons/niwa.svg",
                   "/settings", "/static/machiya.css", "/static/machiya.js"):
             self.assertEqual(req(p)[0], 200, p)
         self.assertEqual(req("/n/Notes/Paper%20lanterns")[0], 200)    # unpublished notes are readable by the owner
@@ -178,13 +178,90 @@ class ReadTest(unittest.TestCase):
         finally:
             del os.environ["MACHIYA_ROOMS"]
 
+    def test_icons_and_manifest(self):
+        body = req("/")[1]
+        for icon in ("/static/icons/niwa.svg", "/static/icons/niwa-apple-180.png"):
+            self.assertIn('href="%s"' % icon, body)
+            self.assertEqual(req(icon)[0], 200, icon)
+        for old in ("garden.svg", "garden-192.png", "garden-512.png", "garden-apple-180.png", "garden-maskable-512.png"):
+            st, headers, _ = call("GET", "/static/icons/" + old, {"Tailscale-User-Login": "owner@test"})
+            self.assertEqual((st, headers["Location"]), (301, "/static/icons/niwa" + old[6:]), old)
+        self.assertEqual(req("/static/icons/garden-nope.png")[0], 404)
+        m = json.loads(req("/manifest.webmanifest")[1])
+        self.assertEqual((m["lang"], m["categories"]), ("en", ["productivity", "education"]))
+        self.assertEqual([s["url"] for s in m["shortcuts"]], ["/search", "/tags", "/random"])
+        self.assertTrue(all(s["icons"] for s in m["shortcuts"]))
+        for i in m["icons"] + [ic for s in m["shortcuts"] for ic in s["icons"]]:
+            self.assertTrue(i["src"].startswith("/static/icons/niwa"), i)
+            self.assertEqual(req(i["src"])[0], 200, i["src"])
+        _, sw = req("/sw.js")
+        self.assertIn("/static/icons/niwa.svg", sw)
+        self.assertNotIn("garden-", sw)
+
+    def test_link_preview_names_the_stage_as_the_badges_do(self):
+        p = json.loads(req("/n/Projects/Lantern?preview=1")[1])
+        from vaultkit.notes import STAGES
+        name = dict((k, n) for k, n, _ in STAGES)[p["stage"]]
+        self.assertEqual(p["stage_name"], name)
+        self.assertTrue(name[0].isupper())
+        self.assertIn('<span class="stage stage-%s">%s</span>' % (p["stage"], name), req("/n/Projects/Lantern")[1])
+
+    def test_feed_carries_published_notes_only(self):
+        import xml.etree.ElementTree as ET
+        path = write_note("Notes/Fish & <chips>.md", '---\ntitle: Fish & <chips> "x"\npublish: true\n'
+                          'summary: "<script>alert(1)</script> & more"\n---\nBody <b>text</b> never in the feed.\n')
+        try:
+            st, headers, body = call("GET", "/feed.xml", {"Tailscale-User-Login": "owner@test"})
+            self.assertEqual(st, 200)
+            self.assertTrue(headers["Content-Type"].startswith("application/rss+xml"))
+            channel = ET.fromstring(body).find("channel")                  # well-formed: everything escaped
+            items = {i.findtext("title"): i for i in channel.findall("item")}
+            self.assertLessEqual({"Crafts", 'Fish & <chips> "x"'}, set(items))
+            published = {n.title for n in niwa.garden.notes.values() if n.published}
+            self.assertLessEqual(set(items), published - {"Garden", "Old map"})  # no intro, Archive/ or unpublished
+            self.assertNotIn("Paper lanterns", items)
+            fish = items['Fish & <chips> "x"']
+            self.assertEqual(fish.findtext("description"), "<script>alert(1)</script> & more")
+            self.assertNotIn("<script>", body)
+            self.assertNotIn("never in the feed", body)
+            self.assertTrue(fish.findtext("link").endswith("/n/Notes/Fish%20%26%20%3Cchips%3E"))
+            self.assertTrue(items["Crafts"].findtext("pubDate").endswith("GMT"))
+            self.assertEqual(req("/feed.xml", user=None)[0], 403)           # the garden's gate
+            page = req("/")[1]
+            self.assertIn('<link rel="alternate" type="application/rss+xml" title="Niwa" href="/feed.xml">', page)
+            self.assertIn('<a href="/feed.xml">RSS</a>', page)
+        finally:
+            os.remove(path)
+            niwa.garden.revision += "x"
+        import feed
+        dates = [d for _, d in feed.notes(niwa.garden)]
+        self.assertEqual(dates, sorted(dates, reverse=True))                 # newest-tended first
+        self.assertLessEqual(feed.LIMIT, 50)
+
     def test_settings_and_theme(self):
         _, body = req("/settings")
-        for want in ("<h2>Appearance</h2>", "<h2>Garden</h2>", 'data-set="linkPreviews"', "<h2>About</h2>", 'data-set="theme"'):
+        for want in ('<h2 id="appearance">Appearance</h2>', '<h2 id="garden">Garden</h2>', 'data-set="linkPreviews"', '<h2 id="about">About</h2>', 'data-set="theme"'):
             self.assertIn(want, body)
         self.assertIn('class="iconbtn gear" href="/settings"', req("/")[1])
         status, _ = req("/theme?set=auto")
         self.assertEqual(status, 302)
+
+    def test_titles_404_and_offline_are_the_shared_pages(self):
+        for page, want in (("/", "Niwa"), ("/n/Projects/Lantern", "Lantern - Niwa"), ("/tags", "Tags - Niwa"),
+                           ("/stream", "Stream - Niwa"), ("/queue", "Queue - Niwa"), ("/settings", "Settings - Niwa"),
+                           ("/search", "Search - Niwa"), ("/t/topic/retro", "topic/retro - Niwa"),
+                           ("/offline", "Offline - Niwa"), ("/nope", "Not Found - Niwa"), ("/n/Nope", "Not Found - Niwa")):
+            self.assertIn("<title>%s</title>" % want, req(page)[1], page)
+        status, body = req("/n/Nope")
+        self.assertEqual(status, 404)
+        self.assertIn("There&#x27;s nothing at /n/Nope.", body)
+        self.assertIn('<a class="button primary" href="/">Go to Niwa</a>', body)
+        for want in ('<nav class="nav">', 'class="tabbar"', 'action="/search"', 'class="status'):
+            self.assertIn(want, body)                                        # never a dead end
+        status, body = req("/offline")
+        self.assertIn("<h2>Offline</h2>", body)
+        for gone in ("Tailscale", 'class="status', 'action="/search"'):
+            self.assertNotIn(gone, body)
 
     def test_empty_states(self):
         self.assertIn('<div class="empty"><h2>No Published Notes</h2>', req("/t/topic/nothing")[1])
@@ -212,6 +289,11 @@ class ReadTest(unittest.TestCase):
         cfg = json.loads(sw.split("machiyaSW(", 1)[1].rsplit(");", 1)[0])
         self.assertEqual((cfg["notes"], cfg["pins"], cfg["offline"]), ({"match": "^/n/", "limit": 200}, "/api/offline", "/offline"))
         self.assertIn("/offline", cfg["precache"])
+        for page in ("^/queue$", "^/stream$", "^/signin$", "^/settings$", "^/search$"):
+            self.assertIn(page, cfg["network"])                                 # owner-only or unpublished: never stored
+        for page in ("/queue", "/stream", "/n/Notes/Paper%20lanterns"):
+            self.assertEqual(call("GET", page, {"Tailscale-User-Login": "owner@test"})[1]["Cache-Control"], "no-store", page)
+        self.assertIsNone(call("GET", "/n/MOC/Crafts", {"Tailscale-User-Login": "owner@test"})[1]["Cache-Control"])
         code, core = req(sw.split('"', 2)[1])
         self.assertEqual(code, 200)
         install = core.split('addEventListener("install"', 1)[1].split("});", 1)[0]
@@ -597,6 +679,83 @@ class HardeningTest(unittest.TestCase):
         finally:
             server.shutdown()
             server.server_close()
+
+    def test_gemini_and_gopher_open_with_the_webs_intro(self):
+        import smallweb
+        self.assertEqual(smallweb.intro_gemtext(niwa.garden), "Welcome to the garden.")      # the published Garden.md
+        rows = smallweb.intro_rows(niwa.garden)
+        self.assertEqual(rows, [("i", "Welcome to the garden.", "")])
+        saved = niwa.garden.notes.pop("Garden.md")
+        try:
+            self.assertEqual(smallweb.intro_gemtext(niwa.garden), niwa.gmodern.INTRO)       # else NIWA_INTRO
+            self.assertEqual(smallweb.intro_gemtext(niwa.garden), "Notes from the vault, shared as they grow.")
+        finally:
+            niwa.garden.notes["Garden.md"] = saved
+        import socket
+        server = smallweb.GopherServer(("127.0.0.1", 0), smallweb.gopher_handler(niwa.garden, None, "garden.test", 70))
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        try:
+            with socket.create_connection(server.server_address, timeout=5) as c:
+                c.sendall(b"/\r\n")
+                menu = b""
+                while not menu.endswith(b".\r\n"):
+                    chunk = c.recv(65536)
+                    if not chunk:
+                        break
+                    menu += chunk
+            self.assertIn(b"iWelcome to the garden.\tfake", menu)
+            self.assertNotIn(b"notes from the vault", menu)
+        finally:
+            server.shutdown()
+            server.server_close()
+
+    def test_a_note_is_data_never_code(self):
+        """Raw HTML in a note never runs on its page (vaultkit's clean rendering), and every page carries the CSP."""
+        path = write_note("Notes/Hostile.md", "---\ntitle: Hostile\npublish: true\n---\nHi <script>alert(1)</script>\n\n"
+                          '<img src="x.png" onerror="alert(2)"> <a href="javascript:alert(3)">click</a> '
+                          "[md](javascript:alert(4)) <iframe src=\"https://evil.test/\"></iframe>\n")
+        try:
+            status, headers, body = call("GET", "/n/Notes/Hostile", {"Tailscale-User-Login": "owner@test"})
+            self.assertEqual(status, 200)
+            note = body[body.index('<div class="nbody'):body.index("</article>")]
+            for bad in ("<script", "onerror", "javascript:", "<iframe", "alert("):
+                self.assertNotIn(bad, note.replace("alert(1)", ""), bad)
+            self.assertIn("script-src 'self'", headers["Content-Security-Policy"])
+            self.assertEqual((headers["X-Content-Type-Options"], headers["Referrer-Policy"]), ("nosniff", "same-origin"))
+            for page in ("/", "/stream", "/queue", "/settings", "/offline", "/search?q=x", "/nope"):
+                self.assertIn("script-src 'self'", call("GET", page, {"Tailscale-User-Login": "owner@test"})[1]
+                              .get("Content-Security-Policy", ""), page)
+            self.assertNotIn("Content-Security-Policy", call("GET", "/api/status", {})[1])
+        finally:
+            os.remove(path)
+            niwa.garden.revision += "x"
+
+    def test_task_lists(self):
+        """vaultkit renders "- [ ]" / "- [x]" as disabled checkboxes; gemini and gopher say [ ] and [x] in text."""
+        import smallweb
+        path = write_note("Notes/Tasks.md", "---\ntitle: Tasks\npublish: true\n---\n- [ ] sand the frame\n- [x] cut paper\n")
+        try:
+            body = req("/n/Notes/Tasks")[1]
+            self.assertIn('<li class="task"><input type="checkbox" disabled> sand the frame', body)
+            self.assertIn('<li class="task"><input type="checkbox" checked disabled> cut paper', body)
+            text = smallweb.to_gemtext(niwa.garden, niwa.garden.get("Notes/Tasks"))
+            self.assertIn("* [ ] sand the frame\n* [x] cut paper", text)
+            self.assertNotIn("<input", smallweb.to_gopher_text(text, "garden.test", 70))
+        finally:
+            os.remove(path)
+            niwa.garden.revision += "x"
+
+    def test_only_web_addresses_become_copy_links(self):
+        from links import web_url
+        self.assertEqual(web_url("https://web.archive.org/web/1/x"), "https://web.archive.org/web/1/x")
+        for bad in ("javascript:alert(1)", "data:text/html,x", "//evil.test/", "", None, "https://a b"):
+            self.assertEqual(web_url(bad), "", bad)
+
+    def test_no_inline_script_in_niwa_markup(self):
+        for page in ("/", "/n/Projects/Lantern", "/stream", "/queue", "/tags", "/settings", "/offline", "/search?q=a"):
+            body = req(page)[1]
+            self.assertNotRegex(body, r"<script(?![^>]*\bsrc=)", page)
+            self.assertNotRegex(body, r"<[^>]+\son[a-z]+=", page)
 
     def test_a_silent_gemini_client_holds_up_nobody(self):
         import socket
@@ -997,6 +1156,13 @@ class IdentityTest(unittest.TestCase):
             niwa.IDENTITY = current
 
 
+def prefs_rows(uid):
+    """What prefs.sqlite3 holds for one principal id."""
+    import sqlite3
+    with sqlite3.connect(niwa.PREFS_DB) as db:
+        return dict(db.execute("SELECT key, value FROM prefs WHERE principal = ?", (uid,)).fetchall())
+
+
 def call(method, path, headers, body=None, ctype=None):
     """Any method with exactly these headers (plus urllib's Host): (status, headers, body)."""
     headers = dict(headers)
@@ -1059,6 +1225,11 @@ class SigninTest(unittest.TestCase):
         self.assertIn('href="/signin?next=%2F"', body)
         self.assertNotIn("published", body)                                          # nothing of the garden on it
         self.assertEqual(headers["Cache-Control"], "no-store")
+        self.assertEqual(headers["X-Frame-Options"], "DENY")                         # signin.PAGE_HEADERS
+        self.assertIn("script-src 'self'", ";".join(headers.get_all("Content-Security-Policy")))
+        self.assertIn("<title>Sign In - Niwa</title>", body)
+        self.assertNotIn('class="rooms"', body)                                      # no Rooms switcher
+        self.assertNotIn("/settings", body)
         self.assertEqual(call("GET", "/", {})[0], 401)                               # an API client: plain 401
         self.assertNotIn("/signin", call("GET", "/api/suggestions", {"Accept": "text/html"})[2])
         st, headers, body = call("GET", "/signin?next=/stream", {})
@@ -1168,6 +1339,58 @@ class SigninTest(unittest.TestCase):
         self.assertEqual(niwa.PREFS_DB, os.path.join(os.path.dirname(niwa.DB), "prefs.sqlite3"))
         self.assertEqual(os.stat(niwa.PREFS_DB).st_mode & 0o777, 0o600)
 
+    def test_prefs_without_an_identity_file(self):
+        """No identity file: the old gate decides who gets in, identity.ambient whose preferences these are (the
+        Tailscale login, hashed), and every page asks machiya.js to sync with /api/prefs."""
+        from vaultkit import identity
+        niwa.IDENTITY = None
+        self.addCleanup(setattr, niwa, "SECURE", niwa.SECURE)
+        niwa.SECURE = False                                     # NIWA_PUBLIC_URL=http://…, as the tests serve it
+        owner = {"Tailscale-User-Login": "owner@test"}
+        put = json.dumps({"prefs": {"theme": "day"}}).encode()
+        self.assertEqual(call("PUT", "/api/prefs", owner, put, "application/json")[0], 403)          # same-origin
+        st, headers, body = call("PUT", "/api/prefs", dict(owner, Origin=self.ME), put, "application/json")
+        self.assertEqual((st, json.loads(body)), (200, {"prefs": {"theme": "day"}}))
+        self.assertEqual(json.loads(call("GET", "/api/prefs", owner)[2]), {"prefs": {"theme": "day"}})
+        self.assertEqual(call("GET", "/api/prefs", {"Tailscale-User-Login": "guest@test"})[0], 403)   # the old gate
+        self.assertEqual(prefs_rows(identity.tailscale_uid("owner@test")), {"theme": "day"})
+        for page in ("/", "/n/MOC/Crafts", "/settings", "/nope"):
+            self.assertIn('<meta name="machiya-prefs" content="/api/prefs">', call("GET", page, owner)[2], page)
+        self.assertIn("Saved to your account", call("GET", "/settings", owner)[2])
+        self.assertNotIn('class="iconbtn who"', call("GET", "/", owner)[2])         # nobody signed in by name
+
+    def test_open_mode_over_plain_http(self):
+        """NIWA_AUTH=open on localhost without NIWA_PUBLIC_URL: the request's own (allowed) Host is the origin, so a
+        prefs PUT from the settings page works over http; a page on another name never gets past the Host check."""
+        saved = (niwa.AUTH, niwa.ORIGINS, niwa.IDENTITY)
+        niwa.AUTH, niwa.ORIGINS, niwa.IDENTITY = "open", (), None
+        port = SERVER.server_address[1]
+        put = json.dumps({"prefs": {"theme": "night"}}).encode()
+
+        def put_as(host, origin):
+            return raw("PUT", "/api/prefs", [("Host", host), ("Origin", origin), ("Content-Type", "application/json"),
+                                             ("Content-Length", str(len(put)))], put)
+        try:
+            st, _, body = put_as("localhost:%d" % port, "http://localhost:%d" % port)
+            self.assertEqual((st, json.loads(body)), (200, {"prefs": {"theme": "night"}}))
+            self.assertEqual(put_as("localhost:%d" % port, "http://evil.test")[0], 403)
+            self.assertEqual(put_as("evil.test:%d" % port, "http://evil.test:%d" % port)[0], 403)
+            niwa.AUTH = "tailscale"                     # only open mode borrows the Host
+            self.assertEqual(niwa.make_handler("t").origins(type("H", (), {"headers": {"Host": "localhost"}})()), ())
+        finally:
+            niwa.AUTH, niwa.ORIGINS, niwa.IDENTITY = saved
+
+    def test_signed_in_pages_name_the_person(self):
+        cookie = self.cookie()
+        body = call("GET", "/", {"Cookie": cookie})[2]
+        self.assertIn('<meta name="machiya-prefs" content="/api/prefs">', body)
+        self.assertIn('class="iconbtn who" href="/settings#account" title="Signed in as owner"', body)
+        settings = call("GET", "/settings", {"Cookie": cookie})[2]
+        self.assertIn('<h2 id="account">Account</h2>', settings)
+        st, headers, body = call("GET", "/", {"Accept": "text/html"})              # the 401 page: nobody to sync
+        self.assertEqual(st, 401)
+        self.assertNotIn("machiya-prefs", body)
+
     def test_the_sign_in_page_has_its_stylesheet(self):
         """A signed-out browser loads the shared UI the sign-in page needs, and nothing of Niwa's own."""
         self.assertEqual(call("GET", "/static/machiya.css", {})[0], 200)
@@ -1179,15 +1402,16 @@ class SigninTest(unittest.TestCase):
         niwa.IDENTITY = identity.Identity(self.file, "niwa")                         # NIWA_SIGNIN unset
         self.assertEqual(call("GET", "/signin", {})[0], 404)
         self.assertEqual(self.sign_in()[0], 404)
-        self.assertNotIn("/signin", call("GET", "/", {"Accept": "text/html"})[2])  # no link to a sign-in that's off
+        st, _, body = call("GET", "/", {"Accept": "text/html"})
+        self.assertEqual(st, 401)
+        self.assertNotIn("/signin", body)                                            # no link to a sign-in that's off
+        self.assertIn("Who Are You?", body)
         niwa.IDENTITY = None                                                          # no identity file: no new routes
         owner = {"Tailscale-User-Login": "owner@test", "Origin": self.ME}
         self.assertEqual(call("GET", "/signin", owner)[0], 404)
         for path in ("/signin", "/signout"):
             self.assertEqual(call("POST", path, owner, b"name=owner", "application/x-www-form-urlencoded")[0], 404, path)
         self.assertEqual(call("POST", "/api/pair", owner, b"{}", "application/json")[0], 404)
-        self.assertEqual(call("GET", "/api/prefs", owner)[0], 404)
-        self.assertEqual(call("PUT", "/api/prefs", owner, b'{"prefs": {}}', "application/json")[0], 404)
         self.assertEqual(call("GET", "/signin", {})[0], 403)                          # the old gate first, as before
         self.assertNotIn("/signout", call("GET", "/settings", owner)[2])
 

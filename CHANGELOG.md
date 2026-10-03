@@ -24,9 +24,19 @@ field is a minor bump, and a fix or wording change is a patch. Settings are list
   a PUT made with a cookie or login must be same-origin, one with a token needn't).
 - `NIWA_PUBLIC_URL`: Niwa's web address, an origin with no path. `http://` turns off the session cookie's `Secure`
   and is the only origin the sign-in accepts there; its host joins the names `NIWA_AUTH=open` serves.
-- Without an identity file `/signin`, `/signout`, `/api/pair` and `/api/prefs` answer 404, as before.
+- Without an identity file `/signin`, `/signout` and `/api/pair` answer 404, as before. `/api/prefs` works there too
+  (vaultkit 0.12's `identity.ambient`: the Tailscale login's preferences, or open mode's owner), and every page
+  carries `<meta name="machiya-prefs">`, so theme and text size follow the person. Signed in, the header has a person
+  button to Settings, Account.
 - `/settings` is `Cache-Control: no-store`.
-- vaultkit 0.11.0.
+- Gemini and gopher open with the web's intro (a published `Garden.md`, else `NIWA_INTRO`) instead of a fixed
+  "Notes from the vault.".
+- `/feed.xml`: RSS 2.0 of the published notes, the 50 most recently tended first, behind the garden's gate;
+  autodiscovery in every page's head and an RSS link in the footer.
+- The icons are named after the room (`/static/icons/niwa*.svg|png`, which every page already asked for: the favicon
+  and the iOS icon were 404); the old `garden*` names answer 301 to them. The manifest has `lang`, `categories` and
+  shortcuts (Search, Tags, Random Note).
+- vaultkit 0.13.0.
 
 ## 0.3.1
 
