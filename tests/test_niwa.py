@@ -198,6 +198,17 @@ class ReadTest(unittest.TestCase):
         self.assertIn("/static/icons/niwa.svg", sw)
         self.assertNotIn("garden-", sw)
 
+    def test_a_light_device_gets_a_light_splash(self):
+        self.assertEqual(json.loads(req("/manifest.webmanifest")[1])["background_color"], "#1a1b26")
+        st, headers, body = call("GET", "/manifest.webmanifest", {"Tailscale-User-Login": "owner@test",
+                                                                  "Sec-CH-Prefers-Color-Scheme": "light"})
+        m = json.loads(body)
+        self.assertEqual((m["background_color"], m["theme_color"]), ("#e1e2e7", "#d0d5e3"))
+        self.assertEqual(m["user_preferences"]["color_scheme_dark"]["background_color"], "#1a1b26")
+        self.assertIn("Sec-CH-Prefers-Color-Scheme", headers["Vary"])
+        st, headers, _ = call("GET", "/", {"Tailscale-User-Login": "owner@test"})
+        self.assertEqual(headers["Accept-CH"], "Sec-CH-Prefers-Color-Scheme")
+
     def test_link_preview_names_the_stage_as_the_badges_do(self):
         p = json.loads(req("/n/Projects/Lantern?preview=1")[1])
         from vaultkit.notes import STAGES

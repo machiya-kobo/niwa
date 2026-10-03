@@ -73,15 +73,13 @@ def shell_urls(app):
             "/static/icons/%s.svg" % app, "/static/icons/%s-192.png" % app, "/offline"]
 
 
-def manifest(app, theme):
+def manifest(app, theme, headers=None):
+    """headers: the request's (Sec-CH-Prefers-Color-Scheme picks System's colours: house.manifest_colors)."""
     a = APPS[app]
-    dark = theme != "day"
-    return {k: v for k, v in {
+    return {**{k: v for k, v in {
         "name": a["name"], "short_name": a["name"], "description": a["desc"],
         "id": "/", "start_url": a["start"], "scope": "/", "display": "standalone", "lang": "en",
         "categories": ["productivity", "education"],
-        "background_color": "#1a1b26" if dark else "#e1e2e7",
-        "theme_color": "#16161e" if dark else "#d0d5e3",
         "icons": [
             {"src": "/static/icons/%s-192.png" % app, "sizes": "192x192", "type": "image/png"},
             {"src": "/static/icons/%s-512.png" % app, "sizes": "512x512", "type": "image/png"},
@@ -91,7 +89,7 @@ def manifest(app, theme):
         "shortcuts": [{"name": name, "short_name": name, "url": url, "description": desc,
                        "icons": [{"src": "/static/icons/%s-192.png" % app, "sizes": "192x192", "type": "image/png"}]}
                       for name, url, desc in SHORTCUTS],
-    }.items() if v is not None}
+    }.items() if v is not None}, **house.manifest_colors(theme, headers)}
 
 
 # Navigations the worker never stores: the network, else /offline.

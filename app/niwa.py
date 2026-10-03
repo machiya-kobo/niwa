@@ -516,8 +516,9 @@ def make_handler(listener):
                                                              "date": s["date"]} for rel, s in found], "days": days})
             ctx = self.ctx()
             if path == "/manifest.webmanifest":
-                return self.send(200, json.dumps(shell.manifest(shell.ROOM, ctx.theme), indent=1),
-                                 "application/manifest+json", headers=[("Cache-Control", "no-cache")])
+                return self.send(200, json.dumps(shell.manifest(shell.ROOM, ctx.theme, self.headers), indent=1),
+                                 "application/manifest+json", headers=[("Cache-Control", "no-cache"),
+                                                                       ("Vary", shell.house.MANIFEST_VARY)])
             if path == "/sw.js":
                 return self.send(200, shell.service_worker(shell.ROOM), "text/javascript",
                                  headers=[("Cache-Control", "no-cache")])
