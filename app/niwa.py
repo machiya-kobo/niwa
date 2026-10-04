@@ -37,6 +37,7 @@ from konbini import Konbini  # noqa: E402
 from state import EVENTS_DIR, State  # noqa: E402
 from vaultkit import GitSync  # noqa: E402
 from vaultkit import borrow as vk_borrow  # noqa: E402
+from vaultkit import changelog  # noqa: E402
 from vaultkit import verify as vk_verify  # noqa: E402
 from vaultkit import EditError  # noqa: E402
 from vaultkit import identity  # noqa: E402
@@ -278,6 +279,15 @@ garden.revision = sync.head()
 writer = Writer(sync, garden, state)
 
 
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
+# GET /api/changelog serves Niwa's own CHANGELOG.md: beside the code in the image, one level up in a clone.
+CHANGELOG_FILES = [os.path.join(APP_DIR, "CHANGELOG.md"), os.path.join(APP_DIR, "..", "CHANGELOG.md")]
+
+
+def changelog_file():
+    return next((f for f in CHANGELOG_FILES if os.path.isfile(f)), CHANGELOG_FILES[0])
+
+
 def make_handler(listener):
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.0"  # no keep-alive, no chunked encoding
@@ -286,7 +296,7 @@ def make_handler(listener):
         _who = None                    # the identity file's answer, worked out once per request (who())
 
         def log_message(self, fmt, *args):
-            if self.path == "/api/status":
+            if self.path in ("/api/status", "/api/changelog"):
                 return
             sys.stderr.write("%s %s %s\n" % (listener, self.login(), fmt % args))
 
@@ -492,6 +502,9 @@ def make_handler(listener):
             path, query = unquote(url.path), parse_qs(url.query)
             if path == "/api/status":
                 return self.send_json(200, status(owner=self.owner()))
+            if path == "/api/changelog":        # open like /api/status: the landing page's "recent deploys"
+                code, body, headers = changelog.handle(changelog_file(), self.headers)
+                return self.reply(code, headers, body)
             if path == "/signin" and IDENTITY is not None:      # before the gate: the way past it
                 if not self.host_ok():
                     return self.refuse()
