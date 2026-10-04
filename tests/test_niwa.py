@@ -208,6 +208,11 @@ class ReadTest(unittest.TestCase):
         self.assertIn("Sec-CH-Prefers-Color-Scheme", headers["Vary"])
         st, headers, _ = call("GET", "/", {"Tailscale-User-Login": "owner@test"})
         self.assertEqual(headers["Accept-CH"], "Sec-CH-Prefers-Color-Scheme")
+        st, _, body = call("GET", "/manifest.webmanifest", {"Tailscale-User-Login": "owner@test",
+                                                            "Cookie": "palette=gruvbox; theme=night"})
+        self.assertEqual(json.loads(body)["background_color"], "#282828")      # the chosen theme's colours
+        st, _, body = call("GET", "/", {"Tailscale-User-Login": "owner@test", "Cookie": "palette=gruvbox; theme=night"})
+        self.assertIn('class="theme-night palette-gruvbox', body)
 
     def test_link_preview_names_the_stage_as_the_badges_do(self):
         p = json.loads(req("/n/Projects/Lantern?preview=1")[1])
@@ -251,7 +256,7 @@ class ReadTest(unittest.TestCase):
 
     def test_settings_and_theme(self):
         _, body = req("/settings")
-        for want in ('<h2 id="appearance">Appearance</h2>', '<h2 id="garden">Garden</h2>', 'data-set="linkPreviews"', '<h2 id="about">About</h2>', 'data-set="theme"'):
+        for want in ('<h2 id="display">Display</h2>', 'data-set="palette"', '<h2 id="garden">Garden</h2>', 'data-set="linkPreviews"', '<h2 id="about">About</h2>', 'data-set="theme"'):
             self.assertIn(want, body)
         self.assertIn('class="iconbtn gear" href="/settings"', req("/")[1])
         status, _ = req("/theme?set=auto")

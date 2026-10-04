@@ -73,7 +73,7 @@ def shell_urls(app):
             "/static/icons/%s.svg" % app, "/static/icons/%s-192.png" % app, "/offline"]
 
 
-def manifest(app, theme, headers=None):
+def manifest(app, theme, headers=None, palette=None):
     """headers: the request's (Sec-CH-Prefers-Color-Scheme picks System's colours: house.manifest_colors)."""
     a = APPS[app]
     return {**{k: v for k, v in {
@@ -89,7 +89,7 @@ def manifest(app, theme, headers=None):
         "shortcuts": [{"name": name, "short_name": name, "url": url, "description": desc,
                        "icons": [{"src": "/static/icons/%s-192.png" % app, "sizes": "192x192", "type": "image/png"}]}
                       for name, url, desc in SHORTCUTS],
-    }.items() if v is not None}, **house.manifest_colors(theme, headers)}
+    }.items() if v is not None}, **house.manifest_colors(theme, headers, palette or house.palettes.DEFAULT)}
 
 
 # Navigations the worker never stores: the network, else /offline.
