@@ -3,6 +3,10 @@
 Niwa follows [SemVer](https://semver.org). Before 1.0, a new feature, a changed default or setting, or a changed API
 field is a minor bump, and a fix or wording change is a patch. Settings are listed in the README.
 
+## 0.4.9
+
+- A "Machiya · status" row in the Rooms menu and a link from the footer's "Part of Machiya" to the stack's status page, and `GET /api/changelog` serves this changelog for its recent deploys (vaultkit 0.18.0).
+
 ## 0.4.8
 
 - A search pill under the header on every page, at every width, as Shiori's: results appear as you type, Escape or the X puts the page back, and on a phone a magnifier submits (vaultkit 0.17.2). The Search tab and nav link are gone; the tab bar has its old tabs again.
