@@ -147,12 +147,14 @@ doas pkg_add python%3 py3-markdown py3-yaml git curl
 <!-- quickstart: packages-freebsd -->
 ```bash
 sudo pkg install -y python312 py312-sqlite3 py312-markdown py312-pyyaml git-lite curl
+sudo ln -sf /usr/local/bin/python3.12 /usr/local/bin/python3
 ```
 
 <!-- quickstart: packages-netbsd -->
 ```bash
 sudo env PKG_PATH="https://cdn.NetBSD.org/pub/pkgsrc/packages/NetBSD/$(uname -p)/$(uname -r | cut -d_ -f1)/All" \
   /usr/sbin/pkg_add python313 py313-markdown py313-yaml git-base curl
+sudo ln -sf /usr/pkg/bin/python3.13 /usr/pkg/bin/python3
 ```
 
 <!-- quickstart: native-run-bsd background -->
@@ -162,8 +164,9 @@ NIWA_AUTH=open NIWA_BIND=127.0.0.1 NIWA_HOST=localhost NIWA_REPO_SUBDIR=personal
   NIWA_DB="$PWD/demo-data/niwa.sqlite3" ${PYTHON:-python3} app/niwa.py
 ```
 
-On the BSDs the interpreter is the one your packages installed: set `PYTHON=python3.12` (FreeBSD) or
-`PYTHON=python3.13` (NetBSD) first if there is no `python3`. `docs/install/bsd.md` in
+On FreeBSD and NetBSD the packages install `python3.12` or `python3.13`, so the install lines above also link it as
+`python3` (OpenBSD's package already does). Without the link, set `PYTHON=python3.12` (FreeBSD) or `PYTHON=python3.13`
+(NetBSD) before the run block. `docs/install/bsd.md` in
 [machiya-kobo/machiya](https://github.com/machiya-kobo/machiya) is the full guide, with rc.d scripts and the env file.
 
 ### Check all three listeners
