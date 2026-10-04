@@ -3,6 +3,10 @@
 Niwa follows [SemVer](https://semver.org). Before 1.0, a new feature, a changed default or setting, or a changed API
 field is a minor bump, and a fix or wording change is a patch. Settings are listed in the README.
 
+## 0.4.3
+
+- On a phone the tabs are Garden, Stream, Search and Queue (then Rooms): Search is third, as in every room, and the header has no search field at phone width (vaultkit 0.16.2). Tags stays on the desktop navigation and in the links.
+
 ## 0.4.2
 
 - The phone tab bar is more see-through, frosted glass like Shiori's (vaultkit 0.16.1). 0.4.1 was tagged but never deployed.
