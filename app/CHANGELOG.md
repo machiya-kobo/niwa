@@ -3,6 +3,12 @@
 Niwa follows [SemVer](https://semver.org). Before 1.0, a new feature, a changed default or setting, or a changed API
 field is a minor bump, and a fix or wording change is a patch. Settings are listed in the README.
 
+## 0.5.0
+
+- Settings follow the signed-in person (vaultkit 0.21.0, Machiya's `docs/contracts/prefs.md`). With `NIWA_AUTH=hister` and the sign-in helper, `/api/prefs` is the account's: Niwa forwards it with the caller's own credential, and a fresh browser's first page is drawn in the account's theme. In the Tailscale fallback there is no account (503) and the page keeps its local values.
+- `/api/prefs` answers `{"v", "rev", "prefs", "updated"}` with an `ETag` (304 on a matching `If-None-Match`), and accepts only the schema's keys (`theme`, `palette`, `text_size`, `apps_hidden`, `niwa.link_previews`, ...); any other key is a 400. Niwa's own store answers the same way where there is no helper.
+- Settings has the house order: Shared (Theme, Appearance, Text Size, Apps, with where they are kept), Garden, This Device (Use This Device's Size, Offline Copies), Account, About. Link Previews follows the person (`niwa.link_previews`).
+
 ## 0.4.13
 
 - `MACHIYA_SSO_COOKIE` names the Hister sign-in cookie (default `machiya_sso`, unchanged), so a second stack on the same domain (the dev stack) can use its own (vaultkit 0.20.0).
