@@ -24,6 +24,8 @@ KURA_URL = ""        # Kura (owner links to the full note)
 STATUS = None        # niwa.py: a function returning the footer's {"text": …, "state": "ok|stale|down"}
 ROOM = "niwa"
 NAV = [("/", "garden", "Garden"), ("/stream", "stream", "Stream"), ("/tags", "tags", "Tags"), ("/queue", "queue", "Queue")]
+# The phone's tab bar: Search third (phones have no search field in the top bar), Tags only on the desktop nav.
+TABS = [("/", "garden", "Garden"), ("/stream", "stream", "Stream"), ("/search", "search", "Search"), ("/queue", "queue", "Queue")]
 
 
 def static_path(name):
@@ -141,7 +143,7 @@ def page(ctx, what, body, current="", head="", status=True):
     room's in <title> (shell.title: "Lantern - Niwa"; "" for the home page, "Niwa"). ctx.prefs_url (/api/prefs when
     the request has a principal) lets machiya.js sync theme and text size; ctx.who is the signed-in name.
     status=False: no status line in the footer (the precached /offline)."""
-    return house.page(ctx, ROOM, house.title(ROOM, what), body + footer(status), NAV, current, links=rooms(),
+    return house.page(ctx, ROOM, house.title(ROOM, what), body + footer(status), TABS, current, links=rooms(),
                       head=FEED_LINK + head, stylesheets=[static_url("niwa.css")], scripts=[static_url("niwa.js")], icons=ICON,
                       prefs_url=getattr(ctx, "prefs_url", ""), who=getattr(ctx, "who", ""))
 

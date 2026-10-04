@@ -8,6 +8,7 @@ Run in the image (the host lacks markdown/pyyaml):
 """
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -278,6 +279,18 @@ class ReadTest(unittest.TestCase):
         self.assertIn("<h2>Offline</h2>", body)
         for gone in ("Tailscale", 'class="status', 'action="/search"'):
             self.assertNotIn(gone, body)
+
+    def test_phone_tabs_put_search_third_and_tags_stay_on_the_desktop_nav(self):
+        for page in ("/", "/search", "/search?q=lantern"):
+            body = req(page)[1]
+            tabbar = body[body.index('<nav class="tabbar"'):]
+            tabbar = tabbar[:tabbar.index("</nav>")]
+            hrefs = re.findall(r'<a href="([^"]*)"', tabbar)
+            self.assertEqual(hrefs[:4], ["/", "/stream", "/search", "/queue"], page)
+            self.assertNotIn("/tags", hrefs, page)
+            self.assertIn('href="/tags"', body[body.index('<nav class="nav">'):body.index('<nav class="tabbar"')], page)
+        body = req("/search")[1]
+        self.assertIn('<a href="/search" class="here" aria-current="page">', body)   # the Search tab is the current one
 
     def test_empty_states(self):
         self.assertIn('<div class="empty"><h2>No Published Notes</h2>', req("/t/topic/nothing")[1])
