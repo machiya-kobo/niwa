@@ -3,6 +3,10 @@
 Niwa follows [SemVer](https://semver.org). Before 1.0, a new feature, a changed default or setting, or a changed API
 field is a minor bump, and a fix or wording change is a patch. Settings are listed in the README.
 
+## 0.4.10
+
+- `NIWA_HISTER_TOKEN_FILE`: the owner's Hister token, sent as `X-Access-Token` on every call to Hister (and to the `hister` command's environment, never its arguments), for the coming Hister sign-in. Unset sends nothing, as before.
+
 ## 0.4.9
 
 - A "Machiya · status" row in the Rooms menu and a link from the footer's "Part of Machiya" to the stack's status page, and `GET /api/changelog` serves this changelog for its recent deploys (vaultkit 0.18.0).
