@@ -3,6 +3,10 @@
 Niwa follows [SemVer](https://semver.org). Before 1.0, a new feature, a changed default or setting, or a changed API
 field is a minor bump, and a fix or wording change is a patch. Settings are listed in the README.
 
+## 0.4.12
+
+- The Rooms menu's Machiya row reads "Machiya · home": the stack's front door; its status page moved to /status (vaultkit 0.19.1).
+
 ## 0.4.11
 
 - `NIWA_AUTH=hister`: Hister's sign-in (through the hister-login helper) as Niwa's gate; when sign-in is unavailable the owner's tailnet login still gets in, with a banner (vaultkit 0.19.0). Off by default; `tailscale` is unchanged.
