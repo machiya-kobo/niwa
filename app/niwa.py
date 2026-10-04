@@ -257,7 +257,10 @@ def konbini_token(path):
 garden.konbini = Konbini(server_url(os.environ.get("NIWA_KONBINI_API_URL"), shell.BOARD_URL),
                          login=os.environ.get("NIWA_KONBINI_TEST_LOGIN", ""),
                          token=konbini_token(os.environ.get("NIWA_KONBINI_TOKEN_FILE")))
-hister = Hister(os.environ["NIWA_HISTER_URL"], os.environ.get("NIWA_HISTER_PUBLIC", "")) \
+HISTER_TOKEN_FILE = os.environ.get("NIWA_HISTER_TOKEN_FILE", "").strip()   # the owner's Hister token; unset: none sent
+if HISTER_TOKEN_FILE and not read_secret(HISTER_TOKEN_FILE):
+    raise SystemExit("niwa: NIWA_HISTER_TOKEN_FILE: no token in %s" % HISTER_TOKEN_FILE)
+hister = Hister(os.environ["NIWA_HISTER_URL"], os.environ.get("NIWA_HISTER_PUBLIC", ""), token_file=HISTER_TOKEN_FILE) \
     if os.environ.get("NIWA_HISTER_URL") else None
 garden.hister = hister
 ARCHIVE = archive_mode(os.environ.get("NIWA_ARCHIVE"))

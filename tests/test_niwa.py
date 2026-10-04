@@ -6,6 +6,8 @@ every write test also proves commit, rebase and push over borrowed objects and a
 Run in the image (the host lacks markdown/pyyaml):
   docker build -t niwa-test app && docker run --rm --user 1000:1000 -v "$PWD":/n -w /n --entrypoint python3 niwa-test -m unittest discover -s tests
 """
+import http.server
+import io
 import json
 import os
 import re
@@ -16,6 +18,7 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest import mock
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -615,6 +618,122 @@ class ReleaseDefaultsTest(unittest.TestCase):
             self.assertNotIn("left out", req("/queue")[1])
         finally:
             niwa.garden.private = ()
+
+
+class HisterTokenTest(unittest.TestCase):
+    """NIWA_HISTER_TOKEN_FILE: the owner's Hister token goes out as X-Access-Token on every call, and to the hister CLI
+    in its environment only; unset, nothing is sent; it is never logged."""
+    TOKEN = "tok-owner-1234567890"
+
+    def setUp(self):
+        import hister
+        self.hister = hister
+        self.dir = tempfile.mkdtemp(prefix="hister-token-", dir=TMP)
+        self.seen = []
+        seen = self.seen
+
+        class Fake(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                seen.append(dict(self.headers))
+                body = b'{"documents": []}'
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            do_POST = do_GET
+
+            def log_message(self, *a):
+                pass
+        self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Fake)
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.api = "http://127.0.0.1:%d" % self.server.server_address[1]
+        self.addCleanup(self.server.shutdown)
+
+    def tokenfile(self, text=None):
+        path = os.path.join(self.dir, "token")
+        with open(path, "w") as f:
+            f.write(self.TOKEN + "\n" if text is None else text)
+        return path
+
+    def test_header_present_on_every_call_when_set_and_absent_when_unset(self):
+        h = self.hister.Hister(self.api, "", token_file=self.tokenfile())
+        h.call("GET", "/search?q=x")
+        h.add({"url": "https://a.example/", "title": "a"})
+        h.delete("https://a.example/")
+        self.assertEqual(len(self.seen), 3)
+        for headers in self.seen:
+            self.assertEqual(headers.get("X-Access-Token"), self.TOKEN)
+            self.assertEqual(headers.get("Origin"), "hister://")
+        self.seen.clear()
+        for h in (self.hister.Hister(self.api, ""), self.hister.Hister(self.api, "", token_file="")):
+            h.call("GET", "/search?q=x")
+        self.assertEqual(len(self.seen), 2)
+        for headers in self.seen:
+            self.assertNotIn("X-Access-Token", headers)
+            self.assertEqual(headers.get("Origin"), "hister://")
+
+    def test_a_rotated_token_is_read_again_and_an_unreadable_file_sends_none(self):
+        path = self.tokenfile()
+        h = self.hister.Hister(self.api, "", token_file=path)
+        h.call("GET", "/search?q=x")
+        with open(path, "w") as f:
+            f.write("rotated-token-0987654321\n")
+        os.utime(path, ns=(time.time_ns() + 10**9, time.time_ns() + 10**9))     # a changed mtime, however fast the test
+        h.call("GET", "/search?q=x")
+        os.remove(path)
+        h.call("GET", "/search?q=x")
+        self.assertEqual([x.get("X-Access-Token") for x in self.seen], [self.TOKEN, "rotated-token-0987654321", None])
+
+    def test_the_cli_gets_the_token_in_its_environment_never_its_arguments(self):
+        out = os.path.join(self.dir, "cli.out")
+        fake = os.path.join(self.dir, "hister")
+        with open(fake, "w") as f:
+            f.write('#!/bin/sh\nprintf "%%s\\n" "$*" > "%s"\nprintf "%%s\\n" "$HISTER__APP__ACCESS_TOKEN" >> "%s"\n'
+                    'echo "failed with $HISTER__APP__ACCESS_TOKEN" >&2\nexit 1\n' % (out, out))
+        os.chmod(fake, 0o755)
+        h = self.hister.Hister(self.api, "", cli=fake, token_file=self.tokenfile())
+        self.assertFalse(h.index("https://a.example/"))
+        with open(out) as f:
+            args, env_token = f.read().splitlines()
+        self.assertEqual(env_token, self.TOKEN)
+        self.assertNotIn(self.TOKEN, args)
+        self.assertIn("index --label konbini https://a.example/", args)
+        self.assertIn("failed with ***", h.error)                       # the CLI echoed it: it never reaches the error
+        self.assertNotIn(self.TOKEN, h.error)
+        unset = self.hister.Hister(self.api, "", cli=fake)
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop(self.hister.TOKEN_ENV, None)
+            unset.index("https://a.example/")
+        with open(out) as f:
+            self.assertEqual(f.read().splitlines()[1], "")              # unset: the CLI gets no token
+
+    def test_the_token_is_never_logged(self):
+        h = self.hister.Hister(self.api, "", token_file=self.tokenfile())
+        err, out = io.StringIO(), io.StringIO()
+        with mock.patch.object(sys, "stderr", err), mock.patch.object(sys, "stdout", out):
+            h.search("x")
+            h.add({"url": "https://a.example/", "title": "a"})
+            self.server.shutdown()
+            self.server.server_close()
+            h.call("GET", "/search?q=x")                                # now unreachable: its error text
+        self.assertIn("unreachable", h.error)
+        self.assertNotIn(self.TOKEN, err.getvalue() + out.getvalue() + h.error)
+
+    def test_a_set_token_file_with_no_token_stops_startup(self):
+        code = "import niwa; print(niwa.hister.token())"
+        env = dict(os.environ, NIWA_BIND="127.0.0.1", NIWA_HISTER_URL=self.api,
+                   NIWA_DB=os.path.join(self.dir, "data", "niwa.sqlite3"))
+        app = os.path.join(HERE, "..", "app")
+
+        def run(path):
+            return subprocess.run([sys.executable, "-c", code], cwd=app, env=dict(env, NIWA_HISTER_TOKEN_FILE=path),
+                                  capture_output=True, text=True, timeout=60)
+        r = run(self.tokenfile(""))
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("NIWA_HISTER_TOKEN_FILE: no token", r.stderr)
+        r = run(self.tokenfile())
+        self.assertEqual((r.returncode, r.stdout.splitlines()[-1]), (0, self.TOKEN), r.stderr)
+        self.assertNotIn(self.TOKEN, r.stderr)                          # not in the start-up log either
 
 
 class ArchiveAndHisterSaveTest(unittest.TestCase):

@@ -6,14 +6,18 @@ happens with NIWA_HISTER_SAVE on), and the owner's stream says how many pages
 were saved each week and lists a few of them.
 
 Every call sends `Origin: hister://` (without it Hister answers 500/403).
-There is no token: whatever network rule guards the Hister server is the
-gate. API calls go to NIWA_HISTER_URL; links shown in the browser use
-NIWA_HISTER_PUBLIC.
+With NIWA_HISTER_TOKEN_FILE set, every call also sends the owner's Hister token
+as `X-Access-Token`, and the `hister` command-line tool gets it as
+HISTER__APP__ACCESS_TOKEN in its own environment (never argv). The token is
+never logged, and never kept in an error message. Unset: nothing is sent, and
+whatever network rule guards the Hister server is the gate. API calls go to
+NIWA_HISTER_URL; links shown in the browser use NIWA_HISTER_PUBLIC.
 
 Privacy: everything from here is owner-only. Search results, copies and
 private_url must never reach gemini or gopher."""
 import datetime
 import json
+import os
 import subprocess
 import threading
 import time
@@ -21,10 +25,13 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+from vaultkit import read_secret
+
 CACHE_SECONDS = 600
 # The label Machiya's rooms put on the pages they save into Hister. The saved-pages count leaves these out, and
 # index() uses it unless a caller passes another.
 ROOM_LABEL = "konbini"
+TOKEN_ENV = "HISTER__APP__ACCESS_TOKEN"     # how the hister CLI takes its token
 
 
 def ts_date(value):
@@ -40,22 +47,52 @@ def domain_of(url):
 
 
 class Hister:
-    def __init__(self, api, public, cli="hister"):
+    def __init__(self, api, public, cli="hister", token_file=""):
         self.api = api.rstrip("/")
         self.public = (public or api).rstrip("/")
         self.cli = cli
+        self.token_file = (token_file or "").strip()
+        self._token = ("", None)        # (token, the file's mtime) as last read
         self.lock = threading.Lock()
         self.cache = {}
         self.error = ""
         self.last_ok = ""
+
+    # -- the owner's token -------------------------------------------------------
+
+    def token(self):
+        """The Hister token in token_file, read again when the file changes (a rotation needs no restart); "" when
+        no file is set or it can't be read."""
+        if not self.token_file:
+            return ""
+        try:
+            mtime = os.stat(self.token_file).st_mtime_ns
+        except OSError:
+            return ""
+        if self._token[1] != mtime:
+            self._token = (read_secret(self.token_file), mtime)
+        return self._token[0]
+
+    @property
+    def error(self):
+        return self._error
+
+    @error.setter
+    def error(self, text):
+        """The last failure, for /api/status: with the token taken out of it, whatever produced the text."""
+        token = self.token()
+        self._error = text.replace(token, "***") if token and text else text
 
     # -- transport ---------------------------------------------------------------
 
     def call(self, method, path, body=None, timeout=10):
         """(status, parsed JSON or text); status 0 when Hister can't be reached."""
         data = json.dumps(body).encode() if body is not None else None
-        req = urllib.request.Request(self.api + path, data=data, method=method, headers={
-            "Origin": "hister://", "Accept": "application/json", "Content-Type": "application/json"})
+        headers = {"Origin": "hister://", "Accept": "application/json", "Content-Type": "application/json"}
+        token = self.token()
+        if token:
+            headers["X-Access-Token"] = token
+        req = urllib.request.Request(self.api + path, data=data, method=method, headers=headers)
         try:
             with urllib.request.urlopen(req, timeout=timeout) as r:
                 raw, status = r.read(), r.status
@@ -127,8 +164,10 @@ class Hister:
         Callers check find() first: --force on an existing document would
         replace its metadata (imported tags and the archive link)."""
         try:
+            token = self.token()
+            env = {**os.environ, TOKEN_ENV: token} if token else None      # in the child's environment only, never argv
             r = subprocess.run([self.cli, "-u", self.api, "index", "--label", label, url],
-                               capture_output=True, text=True, timeout=120)
+                               capture_output=True, text=True, timeout=120, env=env)
         except (subprocess.SubprocessError, OSError) as e:
             self.error = "hister index failed: %s" % e
             return False
