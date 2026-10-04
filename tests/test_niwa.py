@@ -620,6 +620,170 @@ class ReleaseDefaultsTest(unittest.TestCase):
             niwa.garden.private = ()
 
 
+class HisterSignInTest(unittest.TestCase):
+    """NIWA_AUTH=hister with the Tailscale fallback (vaultkit.histerauth), against a fake sign-in helper: signed out
+    never falls back, only "nobody answered" does; a Hister user outside NIWA_HISTER_USERS is a 403."""
+    SID = "mhs_" + "A" * 43
+    SID2 = "mhs_" + "B" * 43
+    TOKEN = "owner-hister-token"
+    SIGNIN = "https://hister.test/machiya/signin"
+    PAGE = {"Accept": "text/html"}
+    LOGIN = {"Tailscale-User-Login": "owner@test"}
+
+    def setUp(self):
+        from vaultkit import histerauth
+        self.helper = FakeHelper(self)
+        self.saved = (niwa.HISTER_AUTH, niwa.SECURE, niwa.ORIGINS, niwa.shell.SIGNIN)
+        niwa.SECURE, niwa.ORIGINS = False, (BASE,)               # http, as the tests serve it
+        niwa.HISTER_AUTH = histerauth.HisterAuth("niwa", self.SIGNIN, ["owner"], BASE, "http://helper", "tailscale",
+                                                 ["owner@test"], secure=False, fetch=self.helper)
+        niwa.shell.SIGNIN = True
+        self.addCleanup(lambda: (setattr(niwa, "HISTER_AUTH", self.saved[0]), setattr(niwa, "SECURE", self.saved[1]),
+                                 setattr(niwa, "ORIGINS", self.saved[2]), setattr(niwa.shell, "SIGNIN", self.saved[3])))
+
+    def cookie(self, sid=None):
+        return {"Cookie": "machiya_sso=%s" % (sid or self.SID)}
+
+    def test_signed_out_is_a_redirect_for_a_page_and_401_json_for_an_api_never_a_fallback(self):
+        status, headers, _ = as_("/", self.PAGE)
+        self.assertEqual(status, 302)
+        self.assertTrue(headers["Location"].startswith(self.SIGNIN + "?return="), headers["Location"])
+        self.assertIn(urllib.parse.quote(BASE + "/", safe=""), headers["Location"])     # the way back is NIWA_PUBLIC_URL's
+        self.assertTrue(any(c.startswith("machiya_sso_try=1") for c in headers.get_all("Set-Cookie")))
+        status, headers, body = as_("/", dict(self.PAGE, Cookie="machiya_sso_try=1"))   # the loop guard: a page, no 302
+        self.assertEqual(status, 401)
+        self.assertIn("Sign In", body)
+        status, headers, body = as_("/api/suggestions", {})
+        self.assertEqual(status, 401)
+        data = json.loads(body)
+        self.assertEqual((data["error"], sorted(data)), ("sign in", ["error", "signin"]))
+        self.assertTrue(data["signin"].startswith(self.SIGNIN + "?return="))
+        self.assertNotIn("Location", headers)
+        for extra in (self.LOGIN, dict(self.LOGIN, **self.PAGE)):                       # signed out + a tailnet login
+            self.assertEqual(as_("/", extra)[0], 302 if "Accept" in extra else 401)       # still signed out
+            self.assertEqual(as_("/api/suggestions", extra)[0], 401)
+
+    def test_a_session_or_a_token_admits_the_owner_other_hister_users_get_403(self):
+        self.helper.sessions[self.SID] = "owner"
+        status, _, body = as_("/", dict(self.cookie(), **self.PAGE))
+        self.assertEqual(status, 200)
+        self.assertIn('<meta name="machiya-signin" content="/signout">', body)
+        self.assertNotIn("machiya-banner", body)
+        self.helper.sessions[self.SID2] = "stranger"
+        for extra in ({}, self.LOGIN):                                  # a tailnet login doesn't rescue a stranger
+            self.assertEqual(as_("/api/suggestions", dict(self.cookie(self.SID2), **extra))[0], 403)
+        self.helper.tokens[self.TOKEN] = "owner"
+        self.assertEqual(as_("/api/suggestions", {"X-Access-Token": self.TOKEN})[0], 200)
+        self.assertEqual(as_("/api/suggestions", {"Authorization": "Bearer " + self.TOKEN})[0], 200)
+        self.assertEqual(as_("/api/suggestions", {"Authorization": "Bearer " + self.SID})[0], 200)   # an app's mhs_ id
+        # a present but invalid token is 401, even beside a good cookie or a tailnet login
+        self.assertEqual(as_("/api/suggestions", dict(self.cookie(), **{"X-Access-Token": "wrong"}))[0], 401)
+        self.assertEqual(as_("/api/suggestions", dict(self.LOGIN, **{"X-Access-Token": "wrong"}))[0], 401)
+        self.assertEqual(as_("/api/status", {})[0], 200)                # the probe stays open
+
+    def test_the_tailscale_fallback_only_when_nobody_answers_with_a_banner(self):
+        self.helper.down = True
+        status, headers, body = as_("/", dict(self.LOGIN, **self.PAGE))
+        self.assertEqual(status, 200)
+        self.assertIn('<div class="machiya-banner" role="status">Signed in through the tailnet: sign-in is unavailable</div>',
+                      body)
+        self.assertNotIn("Set-Cookie", headers)                         # nothing cached, nothing set
+        self.assertEqual(niwa.HISTER_AUTH.fallback_total, 1)
+        self.assertEqual(as_("/", self.PAGE)[0], 503)                   # no tailnet login: nobody
+        self.assertEqual(as_("/", dict(self.PAGE, **{"Tailscale-User-Login": "other@test"}))[0], 403)
+        self.assertEqual(as_("/api/suggestions", self.LOGIN)[0], 200)
+        self.helper.down = False
+        self.helper.off = True                                          # Hister's user handling is off: the check says so
+        status, _, body = as_("/", dict(self.cookie(), **dict(self.LOGIN, **self.PAGE)))
+        self.assertEqual((status, "machiya-banner" in body), (200, True))
+
+    def test_sign_out_is_same_origin_only_ends_the_session_and_clears_the_cookie(self):
+        self.helper.sessions[self.SID] = "owner"
+        self.assertEqual(as_("/api/suggestions", self.cookie())[0], 200)
+        status, _, _ = as_("/signout", dict(self.cookie(), Origin="http://evil.test"), data={})
+        self.assertEqual(status, 403)
+        self.assertNotIn(("POST", "/v1/signout"), [c[:2] for c in self.helper.calls])
+        status, headers, _ = as_("/signout", dict(self.cookie(), Origin=BASE), data={})
+        self.assertEqual((status, headers["Location"]), (303, "/"))
+        self.assertTrue(any(c.startswith("machiya_sso=;") and "Max-Age=0" in c for c in headers.get_all("Set-Cookie")))
+        ended = [c for c in self.helper.calls if c[:2] == ("POST", "/v1/signout")]
+        self.assertEqual(len(ended), 1)
+        self.assertEqual(ended[0][2]["X-Machiya-Session"], self.SID)
+        self.assertEqual(as_("/api/suggestions", self.cookie())[0], 401)   # signed out at once (the helper dropped it)
+        self.helper.down = True                                         # it works while the helper is down too
+        self.assertEqual(as_("/signout", dict(self.cookie(), Origin=BASE), data={})[0], 303)
+
+    def test_a_cookie_borne_write_must_be_same_origin_a_token_need_not(self):
+        self.helper.sessions[self.SID] = "owner"
+        self.helper.tokens[self.TOKEN] = "owner"
+        body = {"path": "Notes/No-Such-Note"}
+        self.assertEqual(as_("/api/suggest", self.cookie(), json_body=body)[0], 403)             # no Origin at all
+        self.assertEqual(as_("/api/suggest", dict(self.cookie(), Origin="http://evil.test"), json_body=body)[0], 403)
+        self.assertEqual(as_("/api/suggest", dict(self.cookie(), Origin=BASE), json_body=body)[0], 404)   # past the gate
+        self.assertEqual(as_("/api/suggest", {"X-Access-Token": self.TOKEN}, json_body=body)[0], 404)
+
+    def test_it_is_inert_unless_asked_for(self):
+        niwa.HISTER_AUTH, niwa.shell.SIGNIN = self.saved[0], self.saved[3]
+        self.assertIsNone(niwa.HISTER_AUTH)
+        self.assertNotIn("machiya-signin", req("/")[1])
+        self.assertEqual(req("/", user=None)[0], 403)
+
+    def test_start_up_settings(self):
+        code = "import niwa; print(sorted(niwa.HISTER_AUTH.users), niwa.HISTER_AUTH.fallback, niwa.HISTER_AUTH.standalone)"
+        base = dict(os.environ, NIWA_AUTH="hister", NIWA_BIND="127.0.0.1",
+                    NIWA_DB=os.path.join(TMP, "hister-start", "niwa.sqlite3"))
+        for k in ("NIWA_AUTH_URL", "NIWA_AUTH_SIGNIN_URL", "NIWA_HISTER_USERS", "NIWA_PUBLIC_URL", "NIWA_USERS",
+                  "MACHIYA_IDENTITY_FILE", "NIWA_AUTH_FALLBACK"):
+            base.pop(k, None)
+        app = os.path.join(HERE, "..", "app")
+
+        def run(**extra):
+            return subprocess.run([sys.executable, "-c", code], cwd=app, env=dict(base, **extra), capture_output=True,
+                                  text=True, timeout=60)
+        r = run()
+        self.assertIn("NIWA_AUTH=hister needs NIWA_AUTH_SIGNIN_URL", r.stderr)
+        full = dict(NIWA_AUTH_SIGNIN_URL="https://hister.test/machiya/signin", NIWA_HISTER_USERS="owner",
+                    NIWA_PUBLIC_URL="https://niwa.test", NIWA_USERS="owner@test")
+        for missing, text in (("NIWA_HISTER_USERS", "needs NIWA_HISTER_USERS"), ("NIWA_PUBLIC_URL", "needs NIWA_PUBLIC_URL")):
+            r = run(**{k: v for k, v in full.items() if k != missing})
+            self.assertNotEqual(r.returncode, 0, missing)
+            self.assertIn(text, r.stderr)
+        r = run(**dict(full, NIWA_HISTER_USERS="*"))
+        self.assertIn("'*' is refused", r.stderr)
+        r = run(**dict(full, NIWA_AUTH_FALLBACK="none"))
+        self.assertIn("needs NIWA_AUTH_URL", r.stderr)
+        r = run(**dict(full, MACHIYA_IDENTITY_FILE=os.path.join(TMP, "identity.toml")))
+        self.assertIn("identity file", r.stderr)
+        r = run(**full)                                                 # no helper address: the tailnet identity alone
+        self.assertEqual((r.returncode, r.stdout.splitlines()[-1]), (0, "['owner'] tailscale True"), r.stderr)
+        self.assertIn("Tailscale identity only", r.stderr)
+
+
+class FakeHelper:
+    """The hister-login helper as a room sees it: GET /v1/check, /healthz and POST /v1/signout."""
+
+    def __init__(self, test):
+        self.calls, self.sessions, self.tokens = [], {}, {}
+        self.down = self.off = False
+
+    def __call__(self, method, path, headers, timeout):
+        self.calls.append((method, path, dict(headers or {})))
+        if self.down:
+            raise OSError("helper down")
+        if path == "/healthz":
+            return 200, b"{}"
+        if path == "/v1/signout":
+            self.sessions.pop((headers or {}).get("X-Machiya-Session"), None)
+            return 204, b""
+        if self.off:
+            return 503, b'{"reason": "user-handling-off"}'
+        headers = headers or {}
+        user = self.sessions.get(headers.get("X-Machiya-Session")) or self.tokens.get(headers.get("X-Access-Token"))
+        if user:
+            return 200, json.dumps({"username": user, "user_id": 1}).encode()
+        return 401, b"{}"
+
+
 class HisterTokenTest(unittest.TestCase):
     """NIWA_HISTER_TOKEN_FILE: the owner's Hister token goes out as X-Access-Token on every call, and to the hister CLI
     in its environment only; unset, nothing is sent; it is never logged."""

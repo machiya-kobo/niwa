@@ -37,6 +37,7 @@ from konbini import Konbini  # noqa: E402
 from state import EVENTS_DIR, State  # noqa: E402
 from vaultkit import GitSync  # noqa: E402
 from vaultkit import borrow as vk_borrow  # noqa: E402
+from vaultkit import histerauth  # noqa: E402
 from vaultkit import changelog  # noqa: E402
 from vaultkit import verify as vk_verify  # noqa: E402
 from vaultkit import EditError  # noqa: E402
@@ -52,10 +53,11 @@ USERS = set(filter(None, (u.strip() for u in os.environ.get("NIWA_USERS", "").sp
 
 def auth_mode(value, identity_file=""):
     """NIWA_AUTH: "tailscale" (the default: Tailscale-User-Login must be in NIWA_USERS, or in the identity file),
-    "open" (no identity check, for localhost or a trusted LAN), or with an identity file "header" (a trusted proxy's
-    login header, NIWA_AUTH_HEADER). Anything else refuses to start rather than guess."""
+    "open" (no identity check, for localhost or a trusted LAN), "hister" (Hister's users as the sign-in, with the
+    Tailscale identity as the fallback: vaultkit.histerauth, never with an identity file), or with an identity file
+    "header" (a trusted proxy's login header, NIWA_AUTH_HEADER). Anything else refuses to start rather than guess."""
     value = (value or "tailscale").strip().lower()
-    allowed = ("tailscale", "open", "header") if identity_file else ("tailscale", "open")
+    allowed = ("tailscale", "open", "hister", "header") if identity_file else ("tailscale", "open", "hister")
     if value not in allowed:
         raise SystemExit("niwa: NIWA_AUTH must be %s, not %r" % (" or ".join(allowed), value))
     return value
@@ -143,6 +145,11 @@ BIND = os.environ.get("NIWA_BIND", "0.0.0.0").strip() or "0.0.0.0"
 # accepts only this origin; unset means https, as before.
 PUBLIC_URL = public_url(os.environ.get("NIWA_PUBLIC_URL"))
 SECURE = urlsplit(PUBLIC_URL).scheme != "http"            # unset or https: Secure cookies, https pages only
+try:        # NIWA_AUTH=hister: Hister's users as the sign-in (NIWA_AUTH_URL, NIWA_AUTH_SIGNIN_URL, NIWA_HISTER_USERS, ...)
+    HISTER_AUTH = histerauth.load_for("niwa", os.environ, bind=BIND, secure=SECURE)       # None in any other mode
+except identity.IdentityError as err:
+    raise SystemExit("niwa: hister sign-in: %s" % err)
+shell.SIGNIN = HISTER_AUTH is not None          # the pages carry <meta name="machiya-signin"> (a Sign Out row, 401 -> sign-in)
 try:        # Machiya's identity file (MACHIYA_IDENTITY_FILE); None without one: the NIWA_USERS gate, as before
     IDENTITY = identity.load_for("niwa", os.environ, bind=BIND, secure=SECURE)
 except identity.IdentityError as err:
@@ -293,6 +300,7 @@ def make_handler(listener):
         server_version = "niwa/" + VERSION
         timeout = 30                   # a client that stops sending lets its thread go
         _who = None                    # the identity file's answer, worked out once per request (who())
+        _hres = None                   # the Hister sign-in's answer, worked out once per request (hres())
 
         def log_message(self, fmt, *args):
             if self.path in ("/api/status", "/api/changelog"):
@@ -302,6 +310,8 @@ def make_handler(listener):
         def login(self):
             """Who is asking, for the log: the principal and how it was proven, or the Tailscale login. Never a
             token."""
+            if HISTER_AUTH is not None:      # hister:<user>, app:<user>, token:<user> or fallback:<login>
+                return (self._hres.actor or "-") if self._hres is not None else "-"
             if IDENTITY is not None:
                 who = self._who
                 return "%s(%s)" % (who.principal.name, who.principal.via) if who else "-"
@@ -314,6 +324,13 @@ def make_handler(listener):
                 self._who = IDENTITY.resolve(self.headers, self.client_address[0] if self.client_address else "")
             return self._who
 
+        def hres(self):
+            """The Hister sign-in's answer for this request (vaultkit.histerauth.Result), worked out once: a browser
+            page that is signed out gets a redirect, an API call a 401 with the sign-in address."""
+            if self._hres is None:
+                self._hres = HISTER_AUTH.resolve(self.headers, is_page=self.browser_page(), path=self.path)
+            return self._hres
+
         def host_ok(self):
             """NIWA_AUTH=open's Host allow-list (DNS rebinding); every request in the other modes."""
             return AUTH != "open" or host_allowed(self.headers.get("Host"), ALLOWED_HOSTS)
@@ -321,6 +338,8 @@ def make_handler(listener):
         def allowed(self):
             if not self.host_ok():
                 return False
+            if HISTER_AUTH is not None:      # one owner: whoever is signed in to Hister as a listed user, or the fallback
+                return bool(self.hres())
             if IDENTITY is not None:
                 who = self.who()
                 return bool(who) and who.principal.can("niwa", "read")
@@ -348,6 +367,10 @@ def make_handler(listener):
             if not self.host_ok():
                 return self.send(403, "forbidden: NIWA_AUTH=open serves localhost, IP addresses, NIWA_HOST, "
                                       "NIWA_PUBLIC_URL and NIWA_ALLOWED_HOSTS, not %r\n" % self.headers.get("Host", ""), "text/plain")
+            if HISTER_AUTH is not None:      # a 302 to the helper's sign-in, a 401 page or JSON, a 403, or a 503
+                status, headers, body = HISTER_AUTH.respond(self.hres(), is_page=self.browser_page(),
+                                                            ctx=shell.prefs(self.headers.get("Cookie")))
+                return self.reply(status, headers, body)
             if IDENTITY is not None:
                 who = self.who()
                 status = who.status if not who else 403
@@ -372,8 +395,15 @@ def make_handler(listener):
                 return ""
             return self.who().principal.name if self.who().principal.via == "session" else ""
 
+        def session_cookies(self, headers=()):
+            """The Set-Cookie values this request's identity asks for: a renewed session, or a bad one cleared (the
+            identity file), or the loop guard and machiya_sso (Hister sign-in); not those the answer already carries."""
+            have = {v for k, v in headers if k.lower() == "set-cookie"}
+            mine = self._who.cookies if self._who is not None else self._hres.cookies if self._hres is not None else ()
+            return [c for c in mine if c not in have]
+
         def reply(self, status, headers, body):
-            """A vaultkit.signin answer: (status, [(header, value)], bytes)."""
+            """A vaultkit.signin or histerauth answer: (status, [(header, value)], bytes)."""
             self.send_response(status)
             for k, v in headers:
                 self.send_header(k, v)
@@ -384,7 +414,7 @@ def make_handler(listener):
             if status == 413:
                 self.close_connection = True
                 self.send_header("Connection", "close")
-            for c in (self._who.cookies if self._who is not None else ()):
+            for c in self.session_cookies(headers):
                 self.send_header("Set-Cookie", c)          # a renewed session, or a bad one cleared
             self.end_headers()
             if self.command != "HEAD":
@@ -408,6 +438,8 @@ def make_handler(listener):
             return self.send(413, "request body too large\n", "text/plain", headers=[NO_STORE])
 
         def actor(self):
+            if HISTER_AUTH is not None:  # the Hister username, or the Tailscale login in the fallback
+                return self.hres().principal.name
             if IDENTITY is not None:  # the principal's name ("local" in open mode, as before)
                 return self.who().principal.name
             if AUTH == "open":        # nothing vouches for the header without Tailscale: never let it name the actor
@@ -422,6 +454,8 @@ def make_handler(listener):
             without one identity.ambient (the Tailscale login, or open mode's owner). None otherwise."""
             if not self.allowed():
                 return None
+            if HISTER_AUTH is not None:
+                return self.hres().principal
             if IDENTITY is not None:
                 return self.who().principal
             return identity.ambient(AUTH, self.headers)
@@ -432,6 +466,7 @@ def make_handler(listener):
             ctx = shell.prefs(self.headers.get("Cookie"))
             ctx.prefs_url = "/api/prefs" if self.principal() is not None else ""
             ctx.who = self.signed_in()
+            ctx.banner = HISTER_AUTH is not None and self._hres is not None and self._hres.banner   # sign-in is down
             return ctx
 
         def origins(self):
@@ -470,7 +505,7 @@ def make_handler(listener):
                     self.send_header(k, v)
             for k, v in headers:
                 self.send_header(k, v)
-            for c in (self._who.cookies if self._who is not None else ()):
+            for c in self.session_cookies(headers):
                 self.send_header("Set-Cookie", c)          # a renewed session, or a bad one cleared
             self.end_headers()
             if self.command != "HEAD":
@@ -508,7 +543,7 @@ def make_handler(listener):
                 if not self.host_ok():
                     return self.refuse()
                 return self.reply(*signin.handle_get(IDENTITY, self.headers, url.query))
-            if IDENTITY is not None and IDENTITY.signin and self.host_ok() \
+            if (HISTER_AUTH is not None or IDENTITY is not None and IDENTITY.signin) and self.host_ok() \
                     and (path in SHARED_UI or path.startswith("/static/icons/")):
                 return self.static(path[8:], query)      # the sign-in page's stylesheet and icons: vendored, no notes
             if not self.allowed():
@@ -661,9 +696,21 @@ def make_handler(listener):
             ref = self.headers.get("Origin") or self.headers.get("Referer") or ""
             return bool(host) and urlsplit(ref).netloc == host
 
+        def hister_signout(self):
+            """POST /signout with NIWA_AUTH=hister: same-origin only (the cookie rides along on any site's post). The
+            helper ends the Hister session and every id on it, this clears machiya_sso here, and the browser goes to
+            the front door, which sends it to sign in. Dropped from the cache either way, even if the helper is down."""
+            self.drain(self.content_length())
+            if not signin.same_origin(self.headers, SECURE, ORIGINS):
+                return self.send(403, "cross-site sign-out refused\n", "text/plain", headers=[NO_STORE])
+            _, cookies = HISTER_AUTH.signout(self.headers)
+            return self.reply(303, [NO_STORE, ("Location", "/")] + [("Set-Cookie", c) for c in cookies], b"")
+
         def do_POST(self):
             path = unquote(urlsplit(self.path).path)
             api = path.startswith("/api/")
+            if path == "/signout" and HISTER_AUTH is not None:   # before the gate: it works while sign-in is down
+                return self.hister_signout()
             if path in SIGNIN_LIMITS and IDENTITY is not None:  # before the gate: sign-in, sign-out, pairing
                 if not self.host_ok():
                     return self.refuse()
@@ -689,6 +736,8 @@ def make_handler(listener):
                     raise WriteError(403, "cross-site form post refused")
                 if IDENTITY is not None and self.who().principal.via == "session" and not self.same_origin():
                     raise WriteError(403, "cross-site post refused")       # a cookie rides along on any site's post
+                if HISTER_AUTH is not None and self.hres().principal.via == "hister" and not self.same_origin():
+                    raise WriteError(403, "cross-site post refused")       # the machiya_sso cookie does too
                 actor, agent = self.actor(), self.agent()
                 if api and agent == "web" and not self.same_origin():
                     agent = "api"
@@ -794,7 +843,11 @@ def main():
     for p in vk_verify.check():
         print("niwa: vaultkit drift: %s" % p, flush=True)
     garden.index()
-    if IDENTITY is not None:
+    if HISTER_AUTH is not None:
+        users = "Hister users %s, sign-in at %s, fallback %s%s" % (
+            ",".join(sorted(HISTER_AUTH.users)), HISTER_AUTH.signin, HISTER_AUTH.fallback,
+            " (%s)" % ",".join(sorted(HISTER_AUTH.fallback_users)) if HISTER_AUTH.fallback == "tailscale" else "")
+    elif IDENTITY is not None:
         users = "from %s (NIWA_AUTH=%s)" % (IDENTITY.path, AUTH)
     else:
         users = "anyone (NIWA_AUTH=open)" if AUTH == "open" else ",".join(sorted(USERS)) or "NOBODY (set NIWA_USERS)"
