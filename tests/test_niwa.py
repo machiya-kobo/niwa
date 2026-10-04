@@ -159,7 +159,7 @@ class ReadTest(unittest.TestCase):
         status, headers, body = get()                                          # no Tailscale login: still open
         self.assertEqual(status, 200)
         self.assertEqual(headers["Content-Type"], "text/markdown; charset=utf-8")
-        with open(niwa.changelog_file(), "rb") as f:
+        with open(niwa.CHANGELOG_FILE, "rb") as f:
             self.assertEqual(body, f.read())
         self.assertIn("## ", body.decode())
         status, _, body = get({"If-None-Match": headers["ETag"]})
@@ -167,12 +167,12 @@ class ReadTest(unittest.TestCase):
         self.assertEqual(get({"If-None-Match": '"nope"'})[0], 200)
         status, headers2, body = get(method="HEAD")
         self.assertEqual((status, body, headers2["ETag"]), (200, b"", headers["ETag"]))
-        saved = niwa.CHANGELOG_FILES
-        niwa.CHANGELOG_FILES = [os.path.join(HERE, "no-such-changelog.md")]
+        saved = niwa.CHANGELOG_FILE
+        niwa.CHANGELOG_FILE = os.path.join(HERE, "no-such-changelog.md")
         try:
             self.assertEqual(get()[0], 404)
         finally:
-            niwa.CHANGELOG_FILES = saved
+            niwa.CHANGELOG_FILE = saved
 
     def test_borrowed_objects_and_sparse_checkout(self):
         with open(os.path.join(CLONE, ".git", "objects", "info", "alternates")) as f:
@@ -445,7 +445,7 @@ class ReleaseDefaultsTest(unittest.TestCase):
 
     def test_version_is_reported_and_in_the_changelog(self):
         self.assertEqual(json.loads(req("/api/status")[1])["version"], niwa.VERSION)
-        with open(os.path.join(HERE, "..", "CHANGELOG.md")) as f:
+        with open(os.path.join(HERE, "..", "app", "CHANGELOG.md")) as f:
             self.assertIn("\n## %s\n" % niwa.VERSION, f.read())
 
     def test_gemini_and_gopher_stream_never_carry_the_board_or_unpublished_notes(self):

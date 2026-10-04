@@ -280,12 +280,8 @@ writer = Writer(sync, garden, state)
 
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
-# GET /api/changelog serves Niwa's own CHANGELOG.md: beside the code in the image, one level up in a clone.
-CHANGELOG_FILES = [os.path.join(APP_DIR, "CHANGELOG.md"), os.path.join(APP_DIR, "..", "CHANGELOG.md")]
-
-
-def changelog_file():
-    return next((f for f in CHANGELOG_FILES if os.path.isfile(f)), CHANGELOG_FILES[0])
+# GET /api/changelog serves Niwa's own CHANGELOG.md, which lives in app/ so the image carries it.
+CHANGELOG_FILE = os.path.join(APP_DIR, "CHANGELOG.md")
 
 
 def make_handler(listener):
@@ -503,7 +499,7 @@ def make_handler(listener):
             if path == "/api/status":
                 return self.send_json(200, status(owner=self.owner()))
             if path == "/api/changelog":        # open like /api/status: the landing page's "recent deploys"
-                code, body, headers = changelog.handle(changelog_file(), self.headers)
+                code, body, headers = changelog.handle(CHANGELOG_FILE, self.headers)
                 return self.reply(code, headers, body)
             if path == "/signin" and IDENTITY is not None:      # before the gate: the way past it
                 if not self.host_ok():
