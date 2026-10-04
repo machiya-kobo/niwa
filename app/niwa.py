@@ -31,6 +31,7 @@ import links as linkrot  # noqa: E402
 import shell  # noqa: E402
 import smallweb  # noqa: E402
 import stream  # noqa: E402
+from capped import Capped  # noqa: E402
 from garden import Garden  # noqa: E402
 from hister import Hister  # noqa: E402
 from konbini import Konbini  # noqa: E402
@@ -46,7 +47,7 @@ from vaultkit import read_secret  # noqa: E402
 from vaultkit import signin  # noqa: E402
 from writer import Writer, WriteError  # noqa: E402
 
-VERSION = "0.5.0"
+VERSION = "0.5.1"
 PORT = int(os.environ.get("NIWA_PORT", "8080"))
 USERS = set(filter(None, (u.strip() for u in os.environ.get("NIWA_USERS", "").split(","))))
 
@@ -195,6 +196,7 @@ def prefs_store():
 
 IMAGE_TYPES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif",
                ".webp": "image/webp", ".svg": "image/svg+xml"}
+ASSET_CSP = "default-src 'none'; style-src 'unsafe-inline'; sandbox"    # for a vault image served as a response of its own
 STATIC_TYPES = {"niwa.css": "text/css", "niwa.js": "text/javascript", "mermaid.min.js": "text/javascript",
                 "machiya.css": "text/css", "machiya.js": "text/javascript",       # machiya.*: the vendored shared UI
                 "machiya-sw.js": "text/javascript"}
@@ -516,6 +518,8 @@ def make_handler(listener):
             if ctype.startswith("text/html"):           # every page: the CSP (no inline script), nosniff, Referrer
                 for k, v in shell.house.security_headers():
                     self.send_header(k, v)
+            else:
+                self.send_header("X-Content-Type-Options", "nosniff")
             for k, v in headers:
                 self.send_header(k, v)
             for c in self.session_cookies(headers):
@@ -661,8 +665,11 @@ def make_handler(listener):
                 if full and ctype:
                     private = gpath[3:].startswith(NO_STORE_DIRS)      # Archive/ attachments never stay on a device
                     with open(full, "rb") as f:
+                        # a vault image is untrusted: sandboxed, so a script in an SVG opened as a page has no origin, no
+                        # cookies and no way to post to Niwa (it never runs inside an <img>)
                         self.send(200, f.read(), ctype,
-                                  headers=[("Cache-Control", "no-store" if private else "max-age=86400")])
+                                  headers=[("Cache-Control", "no-store" if private else "max-age=86400"),
+                                           ("Content-Security-Policy", ASSET_CSP)])
                 else:
                     self.send(404, "not found\n", "text/plain")
             else:
@@ -722,6 +729,17 @@ def make_handler(listener):
             _, cookies = HISTER_AUTH.signout(self.headers)
             return self.reply(303, [NO_STORE, ("Location", "/")] + [("Set-Cookie", c) for c in cookies], b"")
 
+        def cross_site_post(self):
+            """A browser posting from another site (or another host of this tailnet): Sec-Fetch-Site says so, or its
+            Origin isn't this site's. A caller that sends an Authorization or X-Access-Token header can't be a hostile
+            page's form (a browser adds neither to another site's request), and a non-browser agent sends no Origin
+            at all; both pass."""
+            if self.headers.get("Authorization") or self.headers.get("X-Access-Token"):
+                return False
+            if (self.headers.get("Sec-Fetch-Site") or "").lower() in ("cross-site", "same-site"):
+                return True
+            return bool(self.headers.get("Origin")) and not self.same_origin()
+
         def do_POST(self):
             path = unquote(urlsplit(self.path).path)
             api = path.startswith("/api/")
@@ -750,6 +768,8 @@ def make_handler(listener):
                 data = self.body()
                 if not api and not self.same_origin():
                     raise WriteError(403, "cross-site form post refused")
+                if api and self.cross_site_post():       # the login header rides along on any site's post (CSRF)
+                    raise WriteError(403, "cross-site post refused")
                 if IDENTITY is not None and self.who().principal.via == "session" and not self.same_origin():
                     raise WriteError(403, "cross-site post refused")       # a cookie rides along on any site's post
                 if HISTER_AUTH is not None and self.hres().principal.via == "hister" and not self.same_origin():
@@ -849,8 +869,14 @@ def status(owner=False):
             "error": redact(sync.error) or None, "auth": AUTH}
 
 
+class CappedHTTPServer(Capped, ThreadingHTTPServer):
+    """The web listener: at most max_connections at once, none open longer than `lifetime` seconds."""
+    max_connections = 64
+    lifetime = 120
+
+
 def serve(port, listener):
-    server = ThreadingHTTPServer((BIND, port), make_handler(listener))
+    server = CappedHTTPServer((BIND, port), make_handler(listener))
     server.daemon_threads = True
     server.serve_forever()
 
@@ -874,6 +900,11 @@ def main():
     print("niwa: link archive %s; hister save %s" % (ARCHIVE, "on" if HISTER_SAVE else "off"), flush=True)
     print("niwa: listening on %s: web %d, gemini 1965, gopher 7070%s" % (
         BIND, PORT, ("; settings from " + ENV_FILE) if ENV_FILE else ""), flush=True)
+    if IDENTITY is None and HISTER_AUTH is None and AUTH == "tailscale" and BIND not in ("127.0.0.1", "::1", "localhost") \
+            and os.environ.get("NIWA_BIND_BEHIND_PROXY", "").strip().lower() not in ("1", "on", "true", "yes"):
+        print("niwa: WARNING: NIWA_AUTH=tailscale trusts the Tailscale-User-Login header, but %s is listening on %s: anything "
+              "that can reach the port can send that header. Bind 127.0.0.1 behind `tailscale serve` (or set "
+              "NIWA_BIND_BEHIND_PROXY=1 when a proxy is the only way in)." % ("the web port", BIND), flush=True)
     if AUTH == "open":
         print("niwa: WARNING: NIWA_AUTH=open: no identity check. Anyone who can reach %s:%d can read every note, "
               "publish and change the garden. Use it only on localhost or a trusted LAN." % (BIND, PORT), flush=True)

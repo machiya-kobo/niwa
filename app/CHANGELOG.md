@@ -3,6 +3,20 @@
 Niwa follows [SemVer](https://semver.org). Before 1.0, a new feature, a changed default or setting, or a changed API
 field is a minor bump, and a fix or wording change is a patch. Settings are listed in the README.
 
+## 0.5.1
+
+Fixes from the 2026-10 security sweep.
+
+- A vault image served from `/a/` (an SVG with script in it) is sandboxed (`Content-Security-Policy: sandbox`), so it can't read the owner's pages or post to Niwa when opened on its own; every response now carries `X-Content-Type-Options: nosniff`.
+- A note in a `NIWA_PRIVATE_FOLDERS` folder is never published, whatever its `publish:` line says: not on the web, gemini, gopher or the feed, and "Publish" (and "Publish anyway") refuses it.
+- A cross-site `POST /api/...` (a hostile page's form, with the tailnet login riding along) is refused; scripts that send no `Origin`, or an `Authorization` or `X-Access-Token` header, are unaffected.
+- Gemini and gopher: control characters in titles, tags and echoed paths become spaces, so a title can't add a menu row or a link line.
+- The link checker (and the Hister save) only connect to public addresses: any spelling of an inside address, a name that resolves inside, and every redirect hop are refused, and such a link is shown as unknown, never dead.
+- The Hister client never follows a redirect (the owner's token rides on every call).
+- Garden writes hold the git sync's lock, so a publish can't be lost to a conflict replay.
+- Each listener caps its concurrent connections (web 64, gemini and gopher 32) and closes any connection open past 120 s (60 s).
+- Start-up warns when `NIWA_AUTH=tailscale` (no identity file) listens on a non-loopback address.
+
 ## 0.5.0
 
 - Settings follow the signed-in person (vaultkit 0.21.0, Machiya's `docs/contracts/prefs.md`). With `NIWA_AUTH=hister` and the sign-in helper, `/api/prefs` is the account's: Niwa forwards it with the caller's own credential, and a fresh browser's first page is drawn in the account's theme. In the Tailscale fallback there is no account (503) and the page keeps its local values.

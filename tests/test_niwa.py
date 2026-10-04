@@ -843,6 +843,266 @@ class FakeHelper:
         return 401, b"{}"
 
 
+class SweepFixesTest(unittest.TestCase):
+    """The 2026-10 security sweep's items for Niwa (NIWA-1 to NIWA-8 and NIWA-10)."""
+    OWNER = {"Tailscale-User-Login": "owner@test"}
+
+    @staticmethod
+    def gemini(path):
+        import smallweb
+
+        class Sock:
+            def do_handshake(self):
+                pass
+        h = object.__new__(smallweb.GeminiHandler)
+        h.garden, h.timeline, h.request = niwa.garden, None, Sock()
+        h.rfile, h.wfile = io.BytesIO(("gemini://garden.test" + path + "\r\n").encode()), io.BytesIO()
+        h.handle()
+        return h.wfile.getvalue().decode("utf-8", "replace")
+
+    @staticmethod
+    def gopher(selector):
+        import socket
+        import smallweb
+        server = smallweb.GopherServer(("127.0.0.1", 0), smallweb.gopher_handler(niwa.garden, None, "garden.test", 70))
+        threading.Thread(target=server.handle_request, daemon=True).start()
+        try:
+            with socket.create_connection(("127.0.0.1", server.server_address[1]), timeout=5) as c:
+                c.sendall(selector.encode("latin-1") + b"\r\n")
+                data = b""
+                while True:
+                    chunk = c.recv(4096)
+                    if not chunk:
+                        break
+                    data += chunk
+        finally:
+            server.server_close()
+        return data.decode("latin-1")
+
+    # -- NIWA-1
+
+    def test_a_vault_svg_is_served_sandboxed_with_nosniff(self):
+        path = os.path.join(TMP, "evil.svg")
+        with open(path, "w") as f:
+            f.write('<svg xmlns="http://www.w3.org/2000/svg"><script>fetch("/queue")</script></svg>')
+        saved = niwa.garden.asset_path
+        niwa.garden.asset_path = lambda rel: path if rel == "evil.svg" else saved(rel)
+        try:
+            status, headers, _ = as_("/a/evil.svg", self.OWNER)
+        finally:
+            niwa.garden.asset_path = saved
+        self.assertEqual(status, 200)
+        self.assertEqual(headers["Content-Type"], "image/svg+xml")
+        self.assertEqual(headers["Content-Security-Policy"], "default-src 'none'; style-src 'unsafe-inline'; sandbox")
+        self.assertEqual(headers["X-Content-Type-Options"], "nosniff")
+        self.assertEqual(as_("/api/status", {})[1]["X-Content-Type-Options"], "nosniff")      # every response, not only HTML
+
+    # -- NIWA-2
+
+    def test_publish_true_in_a_private_folder_is_never_published(self):
+        crafts = niwa.garden.get("MOC/Crafts")
+        self.assertTrue(crafts.published)
+        self.assertIn("/n/MOC/Crafts", self.gemini("/"))
+        self.assertIn("MOC/Crafts", self.gopher("/"))
+        niwa.garden.private = ("MOC/",)
+        try:
+            self.assertFalse(crafts.published)
+            self.assertNotIn(crafts, niwa.garden.published())
+            self.assertNotIn("/n/MOC/Crafts", self.gemini("/"))
+            self.assertTrue(self.gemini("/n/MOC/Crafts").startswith("51 "))          # not found
+            self.assertNotIn("MOC/Crafts", self.gemini("/tags") + self.gemini("/stream"))
+            gopher = self.gopher("/n/MOC/Crafts")
+            self.assertIn("not found", gopher)
+            self.assertNotIn("MOC/Crafts", self.gopher("/"))
+            self.assertNotIn("MOC/Crafts", req("/feed.xml")[1])
+            status, body = req("/publish", data={"rel": "MOC/Crafts.md", "on": "1", "confirm": "1"})
+            self.assertEqual(status, 422)                                             # "Publish anyway" can't get past it
+            self.assertIn("private folder", body)
+        finally:
+            niwa.garden.private = ()
+        self.assertTrue(crafts.published)                                            # a setting, not a change to the note
+        self.assertIn("/n/MOC/Crafts", self.gemini("/"))
+
+    # -- NIWA-3
+
+    def test_a_cross_site_api_post_is_refused_a_client_is_not(self):
+        body = {"path": "Notes/No-Such-Note"}
+        hdr = dict(self.OWNER, Host=HOST)
+        self.assertEqual(as_("/api/suggest", dict(hdr, Origin="http://evil.test"), json_body=body)[0], 403)
+        self.assertEqual(as_("/api/suggest", dict(hdr, Origin="null"), json_body=body)[0], 403)
+        self.assertEqual(as_("/api/suggest", dict(hdr, **{"Sec-Fetch-Site": "cross-site"}), json_body=body)[0], 403)
+        self.assertEqual(as_("/api/suggest", dict(hdr, **{"Sec-Fetch-Site": "same-site"}), json_body=body)[0], 403)
+        self.assertEqual(as_("/api/suggest", dict(hdr, Origin="http://" + HOST), json_body=body)[0], 404)   # past the gate
+        self.assertEqual(as_("/api/suggest", dict(hdr, **{"Sec-Fetch-Site": "same-origin"}), json_body=body)[0], 404)
+        self.assertEqual(as_("/api/suggest", dict(hdr), json_body=body)[0], 404)             # curl: no Origin at all
+        self.assertEqual(as_("/api/suggest", dict(hdr, Origin="http://evil.test", Authorization="Bearer x"),
+                             json_body=body)[0], 404)                                       # a header a page can't add
+
+    # -- NIWA-4
+
+    def test_control_characters_cannot_start_a_line_in_gemini_or_gopher(self):
+        crafts = niwa.garden.get("MOC/Crafts")
+        title = crafts.title
+        crafts.title = "Crafts\r\n=> https://evil.test/ fake\r\n1Fake\tmenu\t/\tevil.test\t70"
+        try:
+            gem = self.gemini("/")
+            self.assertNotIn("\n=> https://evil.test", gem)
+            self.assertIn("Crafts => https://evil.test/ fake 1Fake menu / evil.test 70", gem)   # one line, the text kept
+            self.assertNotIn("\n=> https://evil.test", self.gemini("/n/MOC/Crafts") + self.gemini("/stream"))
+            menu = self.gopher("/")
+            self.assertNotIn("\r\n1Fake", menu)
+            self.assertEqual([l for l in menu.split("\r\n") if "evil.test" in l and l.startswith("1")], [])
+            self.assertTrue(all(len(l.split("\t")) <= 4 for l in menu.split("\r\n")))     # no row grew a tab-separated field
+        finally:
+            crafts.title = title
+        echoed = self.gemini("/t/x%0A=> https://evil.test/")
+        self.assertNotIn("\n=> https://evil.test", echoed)
+        self.assertNotIn("\r\n1", self.gopher("/t/x\t1evil"))      # a tab in the selector doesn't add a row either
+
+    # -- NIWA-5
+
+    def test_the_link_checker_only_connects_to_public_addresses(self):
+        import links
+        hits = {"a": [], "b": []}
+
+        def serve(bind, name, redirect_to=None):
+            class H(http.server.BaseHTTPRequestHandler):
+                def do_HEAD(self):
+                    hits[name].append(self.path)
+                    if redirect_to and self.path == "/go":
+                        self.send_response(302)
+                        self.send_header("Location", redirect_to)
+                    else:
+                        self.send_response(404 if self.path == "/missing" else 200)
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+                do_GET = do_HEAD
+
+                def log_message(self, *a):
+                    pass
+            server = http.server.ThreadingHTTPServer((bind, 0), H)
+            threading.Thread(target=server.serve_forever, daemon=True).start()
+            self.addCleanup(server.shutdown)
+            return server.server_address[1]
+        pb = serve("127.0.0.2", "b")                                   # another loopback address: "inside"
+        pa = serve("127.0.0.1", "a", "http://127.0.0.2:%d/secret" % pb)
+        saved = links._global
+        try:
+            # nothing is public: every spelling of an inside address is refused before a connection
+            for url in ("http://127.0.0.1:%d/" % pa, "http://127.1:%d/" % pa, "http://0x7f.0.0.1:%d/" % pa,
+                        "http://localhost:%d/" % pa, "http://user@127.0.0.1:%d/" % pa, "http://10.0.0.1/",
+                        "http://[::1]:%d/" % pa):
+                with self.assertRaises(OSError, msg=url):             # NotPublic, or a userinfo URL refused outright
+                    links.fetch_status(url)
+            self.assertEqual(hits, {"a": [], "b": []})
+            self.assertFalse(links.public_url("http://127.0.0.1:%d/" % pa))
+            self.assertFalse(links.public_url("ftp://example.com/"))
+            # with 127.0.0.1 allowed (a stand-in for a public host), a redirect to 127.0.0.2 is still refused on its hop
+            links._global = lambda address: address == "127.0.0.1"
+            self.assertEqual(links.fetch_status("http://127.0.0.1:%d/" % pa), (200, "http://127.0.0.1:%d/" % pa))
+            self.assertEqual(links.fetch_status("http://127.0.0.1:%d/missing" % pa)[0], 404)
+            with self.assertRaises(links.NotPublic):
+                links.fetch_status("http://127.0.0.1:%d/go" % pa)
+            self.assertEqual(hits["b"], [])                             # the redirect target never saw a request
+            self.assertEqual(hits["a"], ["/", "/missing", "/go"])
+        finally:
+            links._global = saved
+
+    def test_a_link_to_an_inside_address_is_never_probed_and_never_dead(self):
+        import links
+        calls = []
+        checker = links.Links.__new__(links.Links)
+        checker.store = type("S", (), {"link_set": lambda self, url, **f: calls.append((url, f))})()
+        self.assertEqual(checker.check({"url": "http://127.0.0.1:9/", "fails": 5, "status": "live"}), "unknown")
+        self.assertEqual(calls[0][1]["status"], "unknown")
+        self.assertNotIn("fails", calls[0][1])
+
+    # -- NIWA-6
+
+    def test_the_hister_client_never_follows_a_redirect_with_its_token(self):
+        import hister
+        seen = []
+
+        class Target(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                seen.append(dict(self.headers))
+                self.send_response(200)
+                self.send_header("Content-Length", "2")
+                self.end_headers()
+                self.wfile.write(b"{}")
+
+            def log_message(self, *a):
+                pass
+        target = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Target)
+        threading.Thread(target=target.serve_forever, daemon=True).start()
+        self.addCleanup(target.shutdown)
+
+        class Redirect(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(302)
+                self.send_header("Location", "http://127.0.0.1:%d/steal" % target.server_address[1])
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+
+            def log_message(self, *a):
+                pass
+        redirect = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Redirect)
+        threading.Thread(target=redirect.serve_forever, daemon=True).start()
+        self.addCleanup(redirect.shutdown)
+        tokenfile = os.path.join(TMP, "sweep-token")
+        with open(tokenfile, "w") as f:
+            f.write("sweep-secret-token\n")
+        h = hister.Hister("http://127.0.0.1:%d" % redirect.server_address[1], "", token_file=tokenfile)
+        status, _ = h.call("GET", "/search?q=x")
+        self.assertEqual(status, 302)                                   # the redirect is the answer, not followed
+        self.assertEqual(seen, [])                                      # the token never reached the other server
+
+    # -- NIWA-8
+
+    def test_garden_writes_hold_the_git_sync_lock(self):
+        self.assertIs(niwa.writer.lock, niwa.sync.lock)
+
+    # -- NIWA-10
+
+    def test_a_listener_caps_its_connections_and_their_lifetime(self):
+        import socket
+        import socketserver
+        import capped
+
+        class Hold(socketserver.BaseRequestHandler):
+            def handle(self):
+                try:
+                    self.request.recv(1)             # waits for a byte that never comes
+                except OSError:
+                    pass
+
+        class Server(capped.Capped, socketserver.ThreadingTCPServer):
+            allow_reuse_address = True
+            daemon_threads = True
+            max_connections = 2
+            lifetime = 1
+        server = Server(("127.0.0.1", 0), Hold)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.shutdown)
+        self.addCleanup(server.server_close)
+        port = server.server_address[1]
+        held = [socket.create_connection(("127.0.0.1", port), timeout=5) for _ in range(2)]
+        self.addCleanup(lambda: [c.close() for c in held])
+        time.sleep(0.2)
+        third = socket.create_connection(("127.0.0.1", port), timeout=5)
+        self.addCleanup(third.close)
+        third.settimeout(3)
+        self.assertEqual(third.recv(1), b"")                            # over the cap: closed at once
+        held[0].settimeout(4)
+        self.assertEqual(held[0].recv(1), b"")                          # still open after `lifetime`: shut down
+        time.sleep(0.3)
+        again = socket.create_connection(("127.0.0.1", port), timeout=5)    # the slots came back
+        self.addCleanup(again.close)
+        again.settimeout(0.5)
+        with self.assertRaises(socket.timeout):
+            again.recv(1)                                               # accepted and held, not refused
+
+
 class HisterTokenTest(unittest.TestCase):
     """NIWA_HISTER_TOKEN_FILE: the owner's Hister token goes out as X-Access-Token on every call, and to the hister CLI
     in its environment only; unset, nothing is sent; it is never logged."""

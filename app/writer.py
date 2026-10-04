@@ -28,7 +28,9 @@ def owner_only(agent, power, message):
 class Writer:
     def __init__(self, sync, garden, state):
         self.sync, self.garden, self.state = sync, garden, state
-        self.lock = threading.RLock()
+        # The git sync's own lock: a write can't land in the middle of its commit, pull or conflict replay (which would
+        # reset it away together with its event line).
+        self.lock = getattr(sync, "lock", None) or threading.RLock()
         self.counter = itertools.count(1)
 
     def full(self, rel):
@@ -60,6 +62,8 @@ class Writer:
         owner_only(agent, power, "only the owner publishes to the garden, from the web UI")
         with self.lock:
             self.checked(rel)
+            if value and self.garden.is_private(rel):       # no "publish anyway": a private folder is never published
+                raise WriteError(422, "notes in a private folder (NIWA_PRIVATE_FOLDERS) are never published")
             self.write_file(rel, edit_front(self.read(rel), {"publish": bool(value)}))
             self.state.add_event("publish" if value else "unpublish", actor, agent, path=rel)
             self.changed(("publish " if value else "unpublish ") + os.path.splitext(os.path.basename(rel))[0])

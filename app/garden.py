@@ -51,7 +51,7 @@ class Garden(Vault):
     def __init__(self, repo, subdir, state, git=None, private=()):
         super().__init__(repo, subdir, git=git)
         self.store = state
-        self.private = tuple(private)    # folder prefixes ("Private/") whose notes are never queued or published
+        self.private = private    # folder prefixes ("Private/") whose notes are never queued or published (see the setter)
         self.links = None    # set by niwa.py (links.Links)
         self.hister = None
         self.konbini = None
@@ -76,8 +76,29 @@ class Garden(Vault):
             self._public_assets, self._public_assets_key = shown - {None}, key
         return self.asset_path(rel) if rel in self._public_assets else None
 
+    @property
+    def private(self):
+        return self._private
+
+    @private.setter
+    def private(self, folders):
+        self._private = tuple(folders)
+        self._apply_private()
+
+    def _apply_private(self):
+        """`publish: true` in a private folder (NIWA_PRIVATE_FOLDERS) counts for nothing: such a note is never published
+        on the web, gemini, gopher or the feed, whatever its frontmatter says (so one edit can't leak it)."""
+        for n in getattr(self, "notes", {}).values():
+            n.published = n.fm.get("publish") is True and not self.is_private(n.rel)
+
+    def index(self):
+        stale = self.key() != self._key
+        super().index()
+        if stale:
+            self._apply_private()
+
     def is_private(self, rel):
-        return rel.startswith(self.private)
+        return rel.startswith(self._private)
 
     def published(self):
         """Published notes, without the landing intro (Garden.md), which is rendered above them."""

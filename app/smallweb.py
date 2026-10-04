@@ -22,6 +22,7 @@ import threading
 from urllib.parse import quote, unquote
 
 import garden as garden_module
+from capped import Capped
 from garden import CALLOUT_RE, EMBED_RE, FRONT_RE, IMAGE_EXT, LINK_RE, MDIMG_RE, STAGES
 
 # Gopher text is ASCII/ISO-8859-1; replace what it can't carry with ASCII.
@@ -30,6 +31,16 @@ TRANSLIT = {
     "‘": "'", "’": "'", "“": '"', "”": '"', "•": "*",
     "✅": "[x]", "⚠": "[!]", "️": "", "✓": "v", "·": "-",
 }
+
+
+CONTROL_RE = re.compile("[\x00-\x1f\x7f-\x9f\u2028\u2029]+")
+
+
+def clean(text):
+    """One line of plain text for a gemini link or heading and a gopher menu row: every control character (CR, LF, tab,
+    NEL, the Unicode line separators) becomes a space, so a title or a tag from a note or a URL can't start a new line,
+    a fake menu item or a fake link."""
+    return CONTROL_RE.sub(" ", str(text))
 
 
 def translit(text):
@@ -202,16 +213,17 @@ def index_items(garden):
     groups = []
     maps = garden.maps()
     if maps:
-        groups.append(("Maps", [("/n/" + n.slug, "%s (%d notes)" % (n.title, c)) for n, c in maps]))
+        groups.append(("Maps", [("/n/" + n.slug, "%s (%d notes)" % (clean(n.title), c)) for n, c in maps]))
     for key, name, _ in STAGES:
         group = sorted((n for n in notes if n.stage == key), key=lambda n: n.title.lower())
         if group:
-            groups.append((name, [("/n/" + n.slug, n.title) for n in group]))
+            groups.append((name, [("/n/" + n.slug, clean(n.title)) for n in group]))
     return groups
 
 
 def tag_items(garden, tag):
-    return sorted((("/n/" + n.slug, n.title) for n in garden.published() if tag in n.tags), key=lambda t: t[1].lower())
+    return sorted((("/n/" + n.slug, clean(n.title)) for n in garden.published() if tag in n.tags),
+                  key=lambda t: t[1].lower())
 
 
 def stream_lines(garden, timeline):
@@ -223,7 +235,7 @@ def stream_lines(garden, timeline):
     out = [("%d entries from the last %d days." % (d["entries"], d["days"]), None)]
 
     def entry(x):
-        return ("* %s: %s" % (x["event"], x["title"]), x.get("note_slug") or None)
+        return ("* %s: %s" % (clean(x["event"]), clean(x["title"])), x.get("note_slug") or None)
 
     for w in d["weeks"]:
         out.append(("## " + w["label"], None))
@@ -267,21 +279,21 @@ class GeminiHandler(socketserver.StreamRequestHandler):
             n = g.get(path[3:])
             if not n or not n.published:
                 return self.reply("51 not found")
-            head = "# %s\n\n%s · tended %s\n" % (n.title, n.stage, g.tended.get(n.rel, "?"))
+            head = "# %s\n\n%s · tended %s\n" % (clean(n.title), n.stage, g.tended.get(n.rel, "?"))
             body = to_gemtext(g, n)
             if body.startswith("# "):
                 head = ""
-            tags = "\n".join("=> /t/%s %s" % (quote(t), t) for t in n.tags
+            tags = "\n".join("=> /t/%s %s" % (quote(t), clean(t)) for t in n.tags
                              if t.startswith(("topic/", "area/")) and t != "area/projects")
-            back = "\n".join("=> /n/%s %s" % (quote(x.slug), x.title) for x in g.linked_from(n))
+            back = "\n".join("=> /n/%s %s" % (quote(x.slug), clean(x.title)) for x in g.linked_from(n))
             text = head + "\n" + body + ("\n## Tags\n" + tags if tags else "") + ("\n\n## Linked from\n" + back if back else "")
             return self.reply("20 text/gemini; charset=utf-8", text + "\n\n=> / garden\n")
         if path == "/tags":
-            lines = ["# Tags", ""] + ["=> /t/%s %s (%d)" % (quote(t), t, c) for t, c in g.tags()]
+            lines = ["# Tags", ""] + ["=> /t/%s %s (%d)" % (quote(t), clean(t), c) for t, c in g.tags()]
             return self.reply("20 text/gemini; charset=utf-8", "\n".join(lines) + "\n\n=> / garden\n")
         if path.startswith("/t/"):
             tag = path[3:]
-            lines = ["# " + tag, ""] + ["=> %s %s" % (quote(p), t) for p, t in tag_items(g, tag)]
+            lines = ["# " + clean(tag), ""] + ["=> %s %s" % (quote(p), t) for p, t in tag_items(g, tag)]
             return self.reply("20 text/gemini; charset=utf-8", "\n".join(lines) + "\n\n=> / garden\n")
         if path == "/stream":
             lines = ["# Stream", ""]
@@ -309,9 +321,10 @@ class GeminiHandler(socketserver.StreamRequestHandler):
             pass
 
 
-class TLSServer(socketserver.ThreadingTCPServer):
+class TLSServer(Capped, socketserver.ThreadingTCPServer):
     allow_reuse_address = True
     daemon_threads = True
+    max_connections = 32
 
     def __init__(self, addr, handler, context):
         super().__init__(addr, handler)
@@ -379,7 +392,8 @@ def gopher_handler(garden, timeline, host, port, allow=None):
                 n = garden.get(sel[3:])
                 if not n or not n.published:
                     return self.send(menu([("3", "not found", "")]))
-                text = "%s\n%s\n%s - tended %s\n\n" % (n.title.upper(), "=" * min(len(n.title), 70), n.stage,
+                title = clean(n.title)
+                text = "%s\n%s\n%s - tended %s\n\n" % (title.upper(), "=" * min(len(title), 70), n.stage,
                                                      garden.tended.get(n.rel, "?"))
                 return self.send(text + to_gopher_text(to_gemtext(garden, n), host, port), text_mode=True)
             if sel == "/tags":
@@ -419,7 +433,7 @@ def gopher_handler(garden, timeline, host, port, allow=None):
     def menu(rows):
         out = []
         for kind, label, sel in rows:
-            label = label.replace("\t", " ")
+            label, sel = clean(label), clean(sel)       # no tab, CR or LF can start another menu row
             if kind in ("i", "3"):
                 out.append("%s%s\tfake\t(NULL)\t0" % (kind, label))
             else:
@@ -429,9 +443,10 @@ def gopher_handler(garden, timeline, host, port, allow=None):
     return Handler
 
 
-class GopherServer(socketserver.ThreadingTCPServer):
+class GopherServer(Capped, socketserver.ThreadingTCPServer):
     allow_reuse_address = True      # a restart within a minute of the last connection must still bind (TIME_WAIT)
     daemon_threads = True
+    max_connections = 32
 
 
 def serve_gopher(garden, timeline, bind_port, host, port, allow=None, bind=""):

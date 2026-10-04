@@ -27,6 +27,15 @@ import urllib.request
 
 from vaultkit import read_secret
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Never follow a redirect: the owner's token rides on every call, and a redirect would carry it to wherever it
+    points. A 3xx comes back to the caller as the answer it is."""
+
+    def redirect_request(self, *args, **kwargs):
+        return None
+
+
+_OPENER = urllib.request.build_opener(_NoRedirect)
 CACHE_SECONDS = 600
 # The label Machiya's rooms put on the pages they save into Hister. The saved-pages count leaves these out, and
 # index() uses it unless a caller passes another.
@@ -94,7 +103,7 @@ class Hister:
             headers["X-Access-Token"] = token
         req = urllib.request.Request(self.api + path, data=data, method=method, headers=headers)
         try:
-            with urllib.request.urlopen(req, timeout=timeout) as r:
+            with _OPENER.open(req, timeout=timeout) as r:
                 raw, status = r.read(), r.status
         except urllib.error.HTTPError as e:
             raw, status = e.read(), e.code

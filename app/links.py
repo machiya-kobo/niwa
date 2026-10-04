@@ -16,13 +16,14 @@ Two kinds of copy, kept apart on purpose:
 Gemini and gopher read only archive_url; private_url is for the owner's web
 pages."""
 import datetime
+import http.client
 import ipaddress
 import json
 import os
 import re
+import socket
 import threading
 import time
-import urllib.error
 import urllib.parse
 import urllib.request
 from html import escape, unescape
@@ -74,6 +75,93 @@ def is_external(url):
     if not host or "." not in host:  # tailnet short names and localhost
         return False
     return not (is_internal(host) or any(host == h or host.endswith("." + h) for h in ARCHIVE_HOSTS))
+
+
+# -- fetching a link: only ever a public address ---------------------------------------------------------------------------
+# The checker (and the Hister save) fetch addresses an author typed into a note. Each connection is made to an address
+# this module resolved and found public (never loopback, private, link-local or tailnet), by whatever name the URL
+# spelled it ("127.1", "0x7f.0.0.1", a name that resolves inside), and every redirect hop is checked the same way: a
+# linked site can't send the checker to an internal host.
+MAX_HOPS = 5
+
+
+class NotPublic(OSError):
+    """A name or redirect that leads to an address that isn't on the public internet."""
+
+
+def _global(address):
+    try:
+        return ipaddress.ip_address(address.split("%")[0]).is_global
+    except ValueError:
+        return False
+
+
+def public_address(host, port):
+    """(family, sockaddr) to connect to when every address `host` resolves to is public, else NotPublic. A name that
+    doesn't resolve raises socket.gaierror (a dead domain: not the same thing)."""
+    infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    if not infos or not all(_global(i[4][0]) for i in infos):
+        raise NotPublic("%s is not a public address" % host)
+    return infos[0][0], infos[0][4]
+
+
+def _dial(conn):
+    family, addr = public_address(conn.host, conn.port)       # resolved and checked here, connected to exactly this
+    sock = socket.socket(family, socket.SOCK_STREAM)
+    sock.settimeout(conn.timeout)
+    try:
+        sock.connect(addr)
+    except OSError:
+        sock.close()
+        raise
+    return sock
+
+
+class _HTTP(http.client.HTTPConnection):
+    def connect(self):
+        self.sock = _dial(self)
+
+
+class _HTTPS(http.client.HTTPSConnection):
+    def connect(self):
+        sock = _dial(self)
+        try:
+            self.sock = self._context.wrap_socket(sock, server_hostname=self.host)
+        except OSError:
+            sock.close()
+            raise
+
+
+def fetch_status(url, method="HEAD", timeout=15):
+    """(status, final_url) of a link, following up to MAX_HOPS redirects itself. NotPublic (an OSError) when the name
+    or any hop leads to a non-public address; other OSErrors for an unreachable host."""
+    for _ in range(MAX_HOPS + 1):
+        u = urllib.parse.urlsplit(url)
+        if u.scheme not in ("http", "https") or not u.hostname or u.username or u.password:
+            raise OSError("not a plain web address")
+        conn = (_HTTPS if u.scheme == "https" else _HTTP)(u.hostname, u.port, timeout=timeout)
+        try:
+            conn.request(method, (u.path or "/") + ("?" + u.query if u.query else ""),
+                         headers={"User-Agent": UA, "Accept": "*/*"})
+            r = conn.getresponse()
+            status, where = r.status, r.getheader("Location")
+        finally:
+            conn.close()
+        if status in (301, 302, 303, 307, 308) and where:
+            url = urllib.parse.urljoin(url, where)
+            continue
+        return status, url
+    raise OSError("too many redirects")
+
+
+def public_url(url):
+    """True when url's host resolves only to public addresses (what may be handed to the hister command line)."""
+    u = urllib.parse.urlsplit(url)
+    try:
+        public_address(u.hostname or "", u.port or (443 if u.scheme == "https" else 80))
+        return u.scheme in ("http", "https") and not (u.username or u.password)
+    except (OSError, ValueError, UnicodeError):
+        return False
 
 
 def extract(text):
@@ -160,9 +248,7 @@ class HisterBackend:
     def final_url(self, url):
         """Where a URL redirects to: Hister stores the page under its final address."""
         try:
-            req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": UA})
-            with urllib.request.urlopen(req, timeout=15) as r:
-                return r.geturl()
+            return fetch_status(url, "HEAD")[1]
         except Exception:
             return url
 
@@ -170,6 +256,8 @@ class HisterBackend:
         found = self.lookup(url)
         if found:
             return found
+        if not public_url(url):             # the hister command fetches it: only a public address
+            return None
         final = self.final_url(url)
         if final != url:
             found = self.lookup(final)
@@ -229,21 +317,24 @@ class Links:
         """HTTP status of a link, or None when it can't be reached."""
         for method in ("HEAD", "GET"):
             try:
-                req = urllib.request.Request(url, method=method, headers={"User-Agent": UA, "Accept": "*/*"})
-                with urllib.request.urlopen(req, timeout=15) as r:
-                    return r.status
-            except urllib.error.HTTPError as e:
-                if method == "HEAD" and e.code in (405, 403, 501):
-                    continue
-                return e.code
+                code, _ = fetch_status(url, method)
+            except NotPublic:
+                raise
             except Exception:
                 if method == "HEAD":
                     continue
                 return None
+            if method == "HEAD" and code in (405, 403, 501):
+                continue
+            return code
         return None
 
     def check(self, rec):
-        code = self.probe(rec["url"])
+        try:
+            code = self.probe(rec["url"])
+        except NotPublic:           # an address that points inside: never fetched, never counted dead
+            self.store.link_set(rec["url"], last_checked=now_iso(), status="unknown")
+            return "unknown"
         fields = {"last_checked": now_iso(), "http": code}
         if code is not None and code < 400:
             fields.update(status="live", fails=0)
