@@ -280,7 +280,7 @@ class ReadTest(unittest.TestCase):
         for gone in ("Tailscale", 'class="status', 'action="/search"'):
             self.assertNotIn(gone, body)
 
-    def test_phone_tabs_put_search_third_and_tags_stay_on_the_desktop_nav(self):
+    def test_search_is_third_in_the_desktop_nav_and_the_phone_tabs_and_tags_stay_off_the_phone(self):
         for page in ("/", "/search", "/search?q=lantern"):
             body = req(page)[1]
             tabbar = body[body.index('<nav class="tabbar"'):]
@@ -288,9 +288,14 @@ class ReadTest(unittest.TestCase):
             hrefs = re.findall(r'<a href="([^"]*)"', tabbar)
             self.assertEqual(hrefs[:4], ["/", "/stream", "/search", "/queue"], page)
             self.assertNotIn("/tags", hrefs, page)
-            self.assertIn('href="/tags"', body[body.index('<nav class="nav">'):body.index('<nav class="tabbar"')], page)
+            nav = body[body.index('<nav class="nav">'):body.index('<nav class="tabbar"')]
+            nav = nav[:nav.index("</nav>")]
+            self.assertEqual(re.findall(r'<(?:a href="[^"]*"|b class="here")>([^<]*)<', nav),    # the current page is a <b>
+                             ["Garden", "Stream", "Search", "Tags", "Queue"], page)
         body = req("/search")[1]
         self.assertIn('<a href="/search" class="here" aria-current="page">', body)   # the Search tab is the current one
+        self.assertIn('<form class="search" role="search" action="/search">', req("/")[1])   # the header's form names the search URL "/" opens (hidden by machiya.css)
+        self.assertIn(".topbar form.search { display: none; }", req("/static/machiya.css")[1])
 
     def test_empty_states(self):
         self.assertIn('<div class="empty"><h2>No Published Notes</h2>', req("/t/topic/nothing")[1])

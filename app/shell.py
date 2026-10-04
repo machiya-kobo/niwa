@@ -23,9 +23,10 @@ BOARD_URL = ""       # Konbini, e.g. https://konbini.example.net
 KURA_URL = ""        # Kura (owner links to the full note)
 STATUS = None        # niwa.py: a function returning the footer's {"text": …, "state": "ok|stale|down"}
 ROOM = "niwa"
-NAV = [("/", "garden", "Garden"), ("/stream", "stream", "Stream"), ("/tags", "tags", "Tags"), ("/queue", "queue", "Queue")]
-# The phone's tab bar: Search third (phones have no search field in the top bar), Tags only on the desktop nav.
-TABS = [("/", "garden", "Garden"), ("/stream", "stream", "Stream"), ("/search", "search", "Search"), ("/queue", "queue", "Queue")]
+NAV = [("/", "garden", "Garden"), ("/stream", "stream", "Stream"), ("/search", "search", "Search"), ("/tags", "tags", "Tags"),
+       ("/queue", "queue", "Queue")]   # the header has no search field (v0.16.4): Search is a nav link, third like the phone tab
+# The phone's tab bar: the same, without Tags (the owner's choice; Tags stays on the desktop nav and in the links).
+TABS = [t for t in NAV if t[1] != "tags"]
 
 
 def static_path(name):
