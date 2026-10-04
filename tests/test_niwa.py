@@ -290,16 +290,16 @@ class ReadTest(unittest.TestCase):
             nav = nav[:nav.index("</nav>")]
             self.assertEqual(re.findall(r'<(?:a href="[^"]*"|b class="here")>([^<]*)<', nav),    # the current page is a <b>
                              ["Garden", "Stream", "Tags", "Queue"], page)
-            self.assertEqual(body.count('<form class="search bar"'), 1, page)               # one pill, in the header
+            self.assertEqual(body.count('<form class="search searchbar"'), 1, page)               # one pill, in the header
             self.assertIn('action="/search"', body)
             self.assertNotIn('<main class="garden search"><form', body, page)
         _, body = req("/search?q=lantern")
-        self.assertIn('<form class="search bar" role="search" action="/search"><div class="field"><input type="search" '
+        self.assertIn('<form class="search searchbar" role="search" action="/search"><div class="field"><input type="search" '
                       'name="q" value="lantern"', body)                                    # the pill carries the query
         main = body[body.index("<main"):]
         self.assertNotIn("<form", main)                                                    # /search has no field of its own
         self.assertIn('class="ntl"', main)                                                 # the results are in <main>, for the live swap
-        self.assertNotIn("search bar", req("/offline")[1])                                 # nothing to search offline
+        self.assertNotIn("search searchbar", req("/offline")[1])                                 # nothing to search offline
 
     def test_empty_states(self):
         self.assertIn('<div class="empty"><h2>No Published Notes</h2>', req("/t/topic/nothing")[1])
