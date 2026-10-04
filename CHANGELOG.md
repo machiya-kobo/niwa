@@ -3,6 +3,10 @@
 Niwa follows [SemVer](https://semver.org). Before 1.0, a new feature, a changed default or setting, or a changed API
 field is a minor bump, and a fix or wording change is a patch. Settings are listed in the README.
 
+## 0.4.2
+
+- The phone tab bar is more see-through, frosted glass like Shiori's (vaultkit 0.16.1). 0.4.1 was tagged but never deployed.
+
 ## 0.4.1
 
 - On a phone the tab bar is a floating pill like Shiori's (vaultkit 0.16.0): it fits five tabs on any phone, the current tab sits on a raised pill, and it follows the light or dark variant as Shiori does.
