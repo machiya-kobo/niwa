@@ -58,33 +58,40 @@ if (ios && !standalone && !stored("app.hint", false)) {
 
 // -- hover previews for wikilinks (pointer devices only; Settings > Garden > Link Previews) --
 if (matchMedia("(hover: hover)").matches) {
-  let pop, timer;
+  let pop, timer, hovered = null;
   let previews = stored("niwaSettings", {}).linkPreviews !== false;
   const hide = () => { clearTimeout(timer); if (pop) pop.hidden = true; };
   document.addEventListener("machiya:setting", (ev) => {
     if (ev.detail.key === "linkPreviews") { previews = ev.detail.value !== false; if (!previews) hide(); }
   });
-  for (const a of $$("a.wikilink, .maps a.maptile, ul.garden-list a.ntl, ul.garden-list a.is-garden")) {
-    a.addEventListener("mouseenter", () => {
-      if (!previews) return;
-      timer = setTimeout(async () => {
-        try {
-          const r = await fetch(a.href + (a.href.includes("?") ? "&" : "?") + "preview=1", { headers: { Accept: "application/json" } });
-          if (!r.ok) return;
-          const p = await r.json();
-          if (!pop) { pop = document.createElement("div"); pop.className = "popover"; document.body.append(pop); }
-          pop.innerHTML = "<b>" + esc(p.title) + "</b> <span class='stage stage-" + esc(p.stage) + "'>" + esc(p.stage_name || p.stage) + "</span>"
-            + (p.description ? "<p>" + esc(p.description) + "</p>" : "")
-            + (p.tended ? "<span class='when'>tended " + esc(p.tended) + "</span>" : "");
-          const box = a.getBoundingClientRect();
-          pop.style.left = Math.max(8, Math.min(box.left + scrollX, innerWidth - 340)) + "px";
-          pop.style.top = (box.bottom + scrollY + 6) + "px";
-          pop.hidden = false;
-        } catch (e) { /* no preview */ }
-      }, 250);
-    });
-    a.addEventListener("mouseleave", hide);
-  }
+  // delegated, so the live search results (machiya.js swaps <main> as you type) get previews too
+  const links = "a.wikilink, .maps a.maptile, ul.garden-list a.ntl, ul.garden-list a.is-garden";
+  document.addEventListener("mouseover", (ev) => {
+    const a = ev.target.closest?.(links);
+    if (!a || a === hovered) return;
+    hovered = a;
+    if (!previews) return;
+    clearTimeout(timer);
+    timer = setTimeout(async () => {
+      try {
+        const r = await fetch(a.href + (a.href.includes("?") ? "&" : "?") + "preview=1", { headers: { Accept: "application/json" } });
+        if (!r.ok || hovered !== a) return;
+        const p = await r.json();
+        if (!pop) { pop = document.createElement("div"); pop.className = "popover"; document.body.append(pop); }
+        pop.innerHTML = "<b>" + esc(p.title) + "</b> <span class='stage stage-" + esc(p.stage) + "'>" + esc(p.stage_name || p.stage) + "</span>"
+          + (p.description ? "<p>" + esc(p.description) + "</p>" : "")
+          + (p.tended ? "<span class='when'>tended " + esc(p.tended) + "</span>" : "");
+        const box = a.getBoundingClientRect();
+        pop.style.left = Math.max(8, Math.min(box.left + scrollX, innerWidth - 340)) + "px";
+        pop.style.top = (box.bottom + scrollY + 6) + "px";
+        pop.hidden = false;
+      } catch (e) { /* no preview */ }
+    }, 250);
+  });
+  document.addEventListener("mouseout", (ev) => {
+    const a = ev.target.closest?.(links);
+    if (a && a === hovered && !a.contains(ev.relatedTarget)) { hovered = null; hide(); }
+  });
   document.addEventListener("scroll", hide, { passive: true });
 }
 

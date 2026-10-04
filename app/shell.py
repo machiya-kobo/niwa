@@ -23,10 +23,7 @@ BOARD_URL = ""       # Konbini, e.g. https://konbini.example.net
 KURA_URL = ""        # Kura (owner links to the full note)
 STATUS = None        # niwa.py: a function returning the footer's {"text": …, "state": "ok|stale|down"}
 ROOM = "niwa"
-NAV = [("/", "garden", "Garden"), ("/stream", "stream", "Stream"), ("/search", "search", "Search"), ("/tags", "tags", "Tags"),
-       ("/queue", "queue", "Queue")]   # the header has no search field (v0.16.4): Search is a nav link, third like the phone tab
-# The phone's tab bar: the same, without Tags (the owner's choice; Tags stays on the desktop nav and in the links).
-TABS = [t for t in NAV if t[1] != "tags"]
+NAV = [("/", "garden", "Garden"), ("/stream", "stream", "Stream"), ("/tags", "tags", "Tags"), ("/queue", "queue", "Queue")]
 
 
 def static_path(name):
@@ -121,12 +118,12 @@ ICON = {    # Niwa's tabs; the garden is the house's niwa glyph
 }
 
 
-def header(current, subtitle="", search=True, ctx=None):
-    """The room's header: nav, the Garden search field (not on /search, which has its own), the switcher, the gear,
-    and (signed in with the built-in sign-in) the person button to Settings' Account. ctx.who: niwa.py's
-    Handler.ctx()."""
-    tools = house.search_box("", "/search", "Search the Garden", "Search the Garden") if search else ""
-    return house.header(ROOM, NAV, current, rooms(), subtitle, tools, who=getattr(ctx, "who", ""))
+def header(current, subtitle="", search=True, ctx=None, q=""):
+    """The room's header: nav, the switcher, the gear, the Garden search pill under the top bar (v0.17: results as you
+    type; q fills it on /search; none on the precached /offline) and (signed in with the built-in sign-in) the person
+    button to Settings' Account. ctx.who: niwa.py's Handler.ctx()."""
+    bar = house.search_bar(q, "/search", "Search the Garden", "Search the Garden") if search else ""
+    return house.header(ROOM, NAV, current, rooms(), subtitle, who=getattr(ctx, "who", ""), search=bar)
 
 
 def footer(with_status=True):
@@ -144,7 +141,7 @@ def page(ctx, what, body, current="", head="", status=True):
     room's in <title> (shell.title: "Lantern - Niwa"; "" for the home page, "Niwa"). ctx.prefs_url (/api/prefs when
     the request has a principal) lets machiya.js sync theme and text size; ctx.who is the signed-in name.
     status=False: no status line in the footer (the precached /offline)."""
-    return house.page(ctx, ROOM, house.title(ROOM, what), body + footer(status), TABS, current, links=rooms(),
+    return house.page(ctx, ROOM, house.title(ROOM, what), body + footer(status), NAV, current, links=rooms(),
                       head=FEED_LINK + head, stylesheets=[static_url("niwa.css")], scripts=[static_url("niwa.js")], icons=ICON,
                       prefs_url=getattr(ctx, "prefs_url", ""), who=getattr(ctx, "who", ""))
 

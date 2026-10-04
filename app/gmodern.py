@@ -15,8 +15,8 @@ from shell import COLUMN_TITLES, e
 STAGE_NAME = {k: n for k, n, _ in STAGES}
 
 
-def top(ctx, base, current, title="", search=True):
-    return modern.header(current, title, search, ctx)
+def top(ctx, base, current, title="", search=True, q=""):
+    return modern.header(current, title, search, ctx, q)
 
 
 def gpage(ctx, base, title, body, current, head=""):
@@ -443,8 +443,7 @@ def marked(text, marks):
 
 def search_page(ctx, base, g, q):
     q = " ".join((q or "").split())[:200]
-    box = modern.house.search_box(q, "/search", "Search the Garden", "Search the Garden")
-    parts = [top(ctx, base, "search", "Search", search=False), '<main class="garden search">', box]
+    parts = [top(ctx, base, "", "Search", q=q), '<main class="garden search">']      # the header's pill is the field
     if not q:
         parts.append(empty("Search the Garden", "Published notes: their titles, tags, summaries and text."))
     else:
@@ -459,4 +458,4 @@ def search_page(ctx, base, g, q):
             parts.append(empty("No Matches", "Nothing in the garden matches “%s”." % e(q)))
         parts.append(modern.house.handoff(q, modern.rooms()))
     parts.append("</main>")
-    return gpage(ctx, base, (q + " - " if q else "") + "Search", "\n".join(parts), "search")
+    return gpage(ctx, base, (q + " - " if q else "") + "Search", "\n".join(parts), "")

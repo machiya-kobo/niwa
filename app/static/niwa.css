@@ -156,5 +156,4 @@ li.qrow { display: flex; gap: var(--sp-3); align-items: flex-start; }
 }
 
 /* ---- search (the room's own: published notes) ------------------------------------------------------------------ */
-main.search form.search { margin: 0 0 var(--sp-3); }
-main.search mark { background: color-mix(in srgb, var(--yellow) 30%, transparent); color: inherit; border-radius: 3px; padding: 0 1px; }
+main.search mark, ul.garden-list mark { background: color-mix(in srgb, var(--yellow) 30%, transparent); color: inherit; border-radius: 3px; padding: 0 1px; }
