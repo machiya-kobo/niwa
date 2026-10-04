@@ -20,7 +20,8 @@ With the Machiya MCP connected, `garden_candidates` and `garden_suggest` wrap wh
 | 201 | suggestion recorded (the body is the event) |
 | 404 | no such note or card |
 | 409 | the note is already in the garden |
-| 403 | your request isn't from a device the owner's Niwa accepts |
+| 401 | no or a bad token (with Machiya's identity file) |
+| 403 | your token or login isn't allowed to suggest (or isn't one the owner's Niwa accepts) |
 
 The reason is kept to 300 characters; say what a reader gets from the note. A repeat suggestion for a note that is still unpublished is accepted, so check first: `GET $NIWA_URL/api/suggestions[?days=60]` returns `{"suggestions": [{"path", "reason", "agent", "date"}], "days": 60}`, the open suggestions newest first (`days` is capped at 365). A suggestion closes when the owner publishes or dismisses the note.
 

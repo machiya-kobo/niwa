@@ -2,7 +2,7 @@
 # Make the sample vault a git repository, for the Quickstarts and the screenshots.
 #
 #   tools/demo-vault <dir>            copies sample-vault/ into <dir> as a working repository (branch main, one commit)
-#   tools/demo-vault <dir> --bare     also makes <dir>.git, a bare clone: use file://<abs path>/<dir>.git as VAULT_REPO_URL
+#   tools/demo-vault <dir> --bare     also makes <dir>.git, a bare clone: use file://<abs path>/<dir>.git as NIWA_REPO_URL (VAULT_REPO_URL in Machiya's compose)
 #
 # <dir> must not exist. The commit is made by "Machiya Demo" so nothing here needs your git identity.
 set -eu
@@ -19,4 +19,4 @@ if [ "${2:-}" = "--bare" ]; then
     git clone -q --bare "$dir" "$dir.git"
     echo "bare repository: $(cd "$dir.git" && pwd)"
 fi
-echo "vault: $(cd "$dir" && pwd)  (folder personal/, so VAULT_SUBDIR=personal)"
+echo "vault: $(cd "$dir" && pwd)  (folder personal/, so NIWA_REPO_SUBDIR=personal)"

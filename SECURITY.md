@@ -19,8 +19,11 @@ affects. You'll get an answer within a week, and a fix or a plan before anything
   over plain http without `NIWA_PUBLIC_URL` as its origin; a password, a hash or a session or device token reaching
   a page, a log line or a JSON answer (other than the one token `/api/pair` hands out); one principal reading or
   writing another's preferences; any of these routes answering without an identity file.
-- **Tokens:** Niwa's Konbini token (`NIWA_KONBINI_TOKEN_FILE`) or a caller's token reaching a log line, a page,
-  `/api/status`, or any host but Konbini's.
+- **Tokens:** Niwa's Konbini token (`NIWA_KONBINI_TOKEN_FILE`), the owner's Hister token (`NIWA_HISTER_TOKEN_FILE`) or a
+  caller's token reaching a log line, a page, `/api/status`, the `hister` command line, or any host but the one it is for.
+- **Hister sign-in** (`NIWA_AUTH=hister`): a Hister account outside `NIWA_HISTER_USERS` getting in, a signed-out caller
+  getting the Tailscale fallback, `return=` sending a browser to another site, or the mode starting on a public bind
+  without `NIWA_BIND_BEHIND_PROXY`.
 - **Reading what isn't published:** an unpublished note, its title or its text, or an image only unpublished notes
   show, reaching the website, gemini or gopher; or a note under a `NIWA_PRIVATE_FOLDERS` folder being published.
 - **Logins:** the owner's `Tailscale-User-Login` reaching gemini, gopher or the open `/api/status`.

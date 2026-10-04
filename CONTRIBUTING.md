@@ -43,3 +43,5 @@ requests for Hister.
 
 Open a pull request with what changed and why, and which tests you ran. Keep one change per pull request. By
 contributing, you agree that your work is licensed under the GNU AGPL-3.0-or-later, as the rest of Niwa.
+
+A release bumps `VERSION` in `app/niwa.py` and adds a section to `app/CHANGELOG.md` (served at `/api/changelog`).
