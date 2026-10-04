@@ -460,10 +460,18 @@ def make_handler(listener):
                 return self.who().principal
             return identity.ambient(AUTH, self.headers)
 
+        def prefs_state(self):
+            """Where the Shared settings are kept for this request (shell.shared_section): the account's in hister mode
+            with the helper ("unavailable" in the fallback), Niwa's own store ("room") when it has a principal."""
+            if HISTER_AUTH is not None:
+                return HISTER_AUTH.prefs_state(self.hres())
+            return "room" if self.principal() is not None else "standalone"
+
         def ctx(self):
             """Theme and text size (machiya.js writes the cookies), /api/prefs when the request has a principal (the
             page then syncs them with the server), and the signed-in name for the header's person button."""
-            ctx = shell.prefs(self.headers.get("Cookie"))
+            account = self._hres.prefs if HISTER_AUTH is not None and self._hres is not None else None
+            ctx = shell.prefs(self.headers.get("Cookie"), account=account)     # a fresh browser: the account's theme
             ctx.prefs_url = "/api/prefs" if self.principal() is not None else ""
             ctx.who = self.signed_in()
             ctx.banner = HISTER_AUTH is not None and self._hres is not None and self._hres.banner   # sign-in is down
@@ -480,8 +488,13 @@ def make_handler(listener):
             return ("http://" + host, "https://" + host) if host and host_allowed(host, ALLOWED_HOSTS) else ()
 
         def prefs(self, method, body=b""):
-            """GET/PUT /api/prefs as this request's principal (after the gate)."""
+            """GET/PUT /api/prefs as this request's principal (after the gate): the account's, forwarded to the sign-in
+            helper in hister mode (vaultkit 0.21, docs/contracts/prefs.md), else Niwa's own store."""
             origins = self.origins()
+            if HISTER_AUTH is not None:
+                fwd = HISTER_AUTH.forward_prefs(self.hres(), method, self.headers, body, origins)
+                if fwd is not None:                   # None: no helper here, so Niwa's own store answers
+                    return self.reply(*fwd)
             if IDENTITY is not None:
                 secure = IDENTITY.secure
             else:                   # the open-mode Host origin may be plain http (localhost); else NIWA_PUBLIC_URL's
@@ -578,8 +591,11 @@ def make_handler(listener):
                 return self.send(200, feed.rss(base, "Niwa", gmodern.INTRO, feed.notes(garden, NO_STORE_DIRS)),
                                  "application/rss+xml", headers=[("Cache-Control", "max-age=300")])
             if path == "/settings":
+                state = self.prefs_state()
+                who = self.hres().principal.name if state == "account" and HISTER_AUTH is not None else ""
                 return self.send(200, shell.settings(ctx, VERSION, footer_status()["text"],
-                                                     vk_verify.version().split(" - ")[0], self.signed_in()),
+                                                     vk_verify.version().split(" - ")[0], self.signed_in(), state, who,
+                                                     HISTER_AUTH.signin if HISTER_AUTH is not None else ""),
                                  headers=[NO_STORE])
             if path == "/theme":            # the no-JavaScript fallback for /settings' Theme
                 theme = (query.get("set") or ["system"])[0]

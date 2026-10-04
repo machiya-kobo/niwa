@@ -26,6 +26,7 @@ KURA_URL = ""        # Kura (owner links to the full note)
 SIGNIN = False      # niwa.py: NIWA_AUTH=hister: every page opts in to machiya.js's Hister sign-in (a Sign Out row, 401 -> sign-in)
 STATUS = None        # niwa.py: a function returning the footer's {"text": …, "state": "ok|stale|down"}
 ROOM = "niwa"
+house.APP_PREFS = {"linkPreviews": {"type": "bool"}}     # Niwa's own setting that follows the person: account key niwa.link_previews
 NAV = [("/", "garden", "Garden"), ("/stream", "stream", "Stream"), ("/tags", "tags", "Tags"), ("/queue", "queue", "Queue")]
 
 
@@ -176,12 +177,18 @@ def account_section(name):
     return ("Account", [out], "Signing out ends the session on this browser. Paired devices stay signed in.")
 
 
-def settings(ctx, version, status_text, vaultkit, signed_in=""):
-    garden = ("Garden", [house.toggle("Link Previews", "linkPreviews", True), house.offline_row()],
+def settings(ctx, version, status_text, vaultkit, signed_in="", state="standalone", who="", signin=""):
+    """/settings, in the house order (docs/ui.md): Shared (Theme, Appearance, Text Size, Apps: they follow the person),
+    the garden's own, This Device (this browser's text size, Offline Copies), Account, About. state, who, signin: where
+    the Shared choices are kept (niwa.py's Handler.prefs_state)."""
+    garden = ("Garden", [house.toggle("Link Previews", "linkPreviews", True)],
               "Link Previews: hovering over a link to a note shows its stage and summary. Off, links just open. "
-              "Offline Copies: the notes you read last (up to 200) stay on this device for reading without the "
-              "network, and notes marked offline: true stay for good. Notes under Archive/ are never kept.")
-    sections = [house.appearance_section(ctx, synced=bool(getattr(ctx, "prefs_url", ""))), garden, house.apps_section(ROOM, rooms(), {}),
+              "Follows you to your other devices when signed in.")
+    device = house.device_section(ctx, [house.offline_row()],
+                                  "Offline Copies: the notes you read last (up to 200) stay on this device for reading "
+                                  "without the network, and notes marked offline: true stay for good. Notes under "
+                                  "Archive/ are never kept.")
+    sections = [house.shared_section(ctx, ROOM, rooms(), state, who, signin), garden, device,
                 account_section(signed_in) if signed_in else None,
                 house.about_section(ROOM, version, status_text, vaultkit)]
     return page(ctx, "Settings", header("", "Settings", ctx=ctx) + house.settings_page(sections, ROOM))

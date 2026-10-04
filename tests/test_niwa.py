@@ -287,8 +287,13 @@ class ReadTest(unittest.TestCase):
 
     def test_settings_and_theme(self):
         _, body = req("/settings")
-        for want in ('<h2 id="display">Display</h2>', 'data-set="palette"', '<h2 id="garden">Garden</h2>', 'data-set="linkPreviews"', '<h2 id="about">About</h2>', 'data-set="theme"'):
+        for want in ('data-set="palette"', 'data-set="linkPreviews"', 'data-set="theme"', 'data-set="textSize"',
+                     'data-device-size', 'data-clear-offline', 'Follows you to your other devices when signed in.',
+                     '<meta name="machiya-app-prefs"', 'niwa.link_previews'):
             self.assertIn(want, body)
+        heads = re.findall(r'<h2 id="[^"]*">([^<]*)</h2>', body)
+        self.assertEqual(heads, ["Shared", "Garden", "This Device", "About"])      # the house order (docs/ui.md)
+        self.assertNotIn(">Display<", body)                                         # the old Appearance section is gone
         self.assertIn('class="iconbtn gear" href="/settings"', req("/")[1])
         status, _ = req("/theme?set=auto")
         self.assertEqual(status, 302)
@@ -722,6 +727,49 @@ class HisterSignInTest(unittest.TestCase):
         self.assertEqual(as_("/api/suggest", dict(self.cookie(), Origin=BASE), json_body=body)[0], 404)   # past the gate
         self.assertEqual(as_("/api/suggest", {"X-Access-Token": self.TOKEN}, json_body=body)[0], 404)
 
+    def test_the_accounts_preferences_are_forwarded_and_draw_the_first_page(self):
+        self.helper.sessions[self.SID] = "owner"
+        self.helper.account = {"theme": "night", "palette": "nord", "text_size": "large"}
+        status, _, body = as_("/", dict(self.cookie(), **self.PAGE))              # a fresh browser: no cookies of its own
+        self.assertEqual(status, 200)
+        self.assertIn('class="theme-night palette-nord room-niwa"', body)
+        self.assertIn('data-text="large"', body)
+        self.assertIn('<meta name="machiya-prefs" content="/api/prefs">', body)
+        status, headers, body = as_("/api/prefs", self.cookie())                   # GET goes to the helper
+        self.assertEqual((status, json.loads(body)["prefs"]), (200, self.helper.account))
+        self.assertEqual(self.helper.calls[-1][:2], ("GET", "/v1/prefs"))
+        self.assertEqual(self.helper.calls[-1][2]["X-Machiya-Session"], self.SID)   # the caller's own credential
+        put = {"prefs": {"text_size": "xlarge"}}
+        status, _, _ = call("PUT", "/api/prefs", dict(self.cookie(), Origin="http://evil.test"), json.dumps(put).encode(),
+                            "application/json")
+        self.assertEqual(status, 403)                                              # a cookie's PUT must be same-origin
+        self.assertEqual(self.helper.account["text_size"], "large")
+        status, _, body = call("PUT", "/api/prefs", dict(self.cookie(), Origin=BASE), json.dumps(put).encode(),
+                               "application/json")
+        self.assertEqual((status, json.loads(body)["prefs"]["text_size"]), (200, "xlarge"))
+        self.assertEqual(self.helper.account["text_size"], "xlarge")
+        self.helper.tokens[self.TOKEN] = "owner"                                   # a client's token needs no Origin
+        status, _, body = call("PUT", "/api/prefs", {"X-Access-Token": self.TOKEN}, json.dumps(put).encode(),
+                               "application/json")
+        self.assertEqual(status, 200)
+        self.assertEqual(self.helper.calls[-1][2]["X-Access-Token"], self.TOKEN)
+        self.assertNotIn("X-Machiya-Session", self.helper.calls[-1][2])
+        self.helper.down = True                                                    # the helper gone: the tailnet login still
+        niwa.HISTER_AUTH.health = (None, True)                                     # (forget the last good answer)
+        status, _, body = call("GET", "/api/prefs", self.LOGIN)                    # gets in, but no account then: 503
+        self.assertEqual(status, 503)
+
+    def test_settings_says_where_the_shared_choices_are_kept(self):
+        self.helper.sessions[self.SID] = "owner"
+        _, _, body = as_("/settings", dict(self.cookie(), **self.PAGE))
+        self.assertIn('data-prefs-state="account"', body)
+        self.assertIn("Signed in as owner. Saved to your account.", body)
+        self.assertEqual(re.findall(r'<h2 id="[^"]*">([^<]*)</h2>', body), ["Shared", "Garden", "This Device", "About"])
+        self.helper.down = True
+        niwa.HISTER_AUTH.health = (None, True)
+        _, _, body = as_("/settings", dict(self.LOGIN, **self.PAGE))
+        self.assertIn('data-prefs-state="unavailable"', body)                      # the fallback: no account
+
     def test_it_is_inert_unless_asked_for(self):
         niwa.HISTER_AUTH, niwa.shell.SIGNIN = self.saved[0], self.saved[3]
         self.assertIsNone(niwa.HISTER_AUTH)
@@ -765,13 +813,24 @@ class FakeHelper:
     def __init__(self, test):
         self.calls, self.sessions, self.tokens = [], {}, {}
         self.down = self.off = False
+        self.account = {}                       # the account's preferences, as /v1/prefs and /v1/check keep them
+        self.rev = 0
 
-    def __call__(self, method, path, headers, timeout):
+    def __call__(self, method, path, headers, timeout, data=None):
         self.calls.append((method, path, dict(headers or {})))
         if self.down:
             raise OSError("helper down")
         if path == "/healthz":
             return 200, b"{}"
+        if path == "/v1/prefs":
+            headers = headers or {}
+            if not (self.sessions.get(headers.get("X-Machiya-Session")) or self.tokens.get(headers.get("X-Access-Token"))):
+                return 401, b"{}"
+            if method == "PUT":
+                for k, v in json.loads(data)["prefs"].items():
+                    self.account.pop(k, None) if v is None else self.account.__setitem__(k, v)
+                self.rev += 1
+            return 200, json.dumps({"v": 1, "rev": self.rev, "prefs": self.account, "updated": {}}).encode()
         if path == "/v1/signout":
             self.sessions.pop((headers or {}).get("X-Machiya-Session"), None)
             return 204, b""
@@ -780,7 +839,7 @@ class FakeHelper:
         headers = headers or {}
         user = self.sessions.get(headers.get("X-Machiya-Session")) or self.tokens.get(headers.get("X-Access-Token"))
         if user:
-            return 200, json.dumps({"username": user, "user_id": 1}).encode()
+            return 200, json.dumps({"username": user, "user_id": 1, "prefs": self.account}).encode()
         return 401, b"{}"
 
 
@@ -1659,28 +1718,36 @@ class SigninTest(unittest.TestCase):
 
     def test_prefs(self):
         cookie = self.cookie()
-        put = json.dumps({"prefs": {"theme": "night", "garden.view": "list"}}).encode()
+        put = json.dumps({"prefs": {"theme": "night", "niwa.link_previews": "off"}}).encode()
         st, _, _ = call("PUT", "/api/prefs", {"Cookie": cookie}, put, "application/json")
         self.assertEqual(st, 403)                                                    # a cookie needs same-origin
         st, _, _ = call("PUT", "/api/prefs", {"Cookie": cookie, "Origin": "http://evil.test"}, put, "application/json")
         self.assertEqual(st, 403)
         st, headers, body = call("PUT", "/api/prefs", {"Cookie": cookie, "Origin": self.ME}, put, "application/json")
-        self.assertEqual((st, json.loads(body)), (200, {"prefs": {"garden.view": "list", "theme": "night"}}))
+        data = json.loads(body)                           # the contract's answer: v, rev, prefs, updated (prefs.md)
+        self.assertEqual((st, data["prefs"]), (200, {"niwa.link_previews": "off", "theme": "night"}))
+        self.assertEqual((data["v"], type(data["rev"]), sorted(data["updated"])), (1, int, ["niwa.link_previews", "theme"]))
         self.assertEqual(headers["Cache-Control"], "no-store")
-        self.assertEqual(json.loads(call("GET", "/api/prefs", {"Cookie": cookie})[2]),
-                         {"prefs": {"garden.view": "list", "theme": "night"}})
+        self.assertEqual(headers["ETag"], '"%d"' % data["rev"])
+        self.assertEqual(json.loads(call("GET", "/api/prefs", {"Cookie": cookie})[2])["prefs"],
+                         {"niwa.link_previews": "off", "theme": "night"})
+        st, _, _ = call("GET", "/api/prefs", {"Cookie": cookie, "If-None-Match": headers["ETag"]})
+        self.assertEqual(st, 304)
         agent = {"Authorization": "Bearer " + self.tokens["mcp"]}
-        self.assertEqual(json.loads(call("GET", "/api/prefs", agent)[2]), {"prefs": {}})   # each principal its own
+        self.assertEqual(json.loads(call("GET", "/api/prefs", agent)[2])["prefs"], {})   # each principal its own
         st, _, body = call("PUT", "/api/prefs", agent, json.dumps({"prefs": {"theme": "day"}}).encode(),
                            "application/json")
-        self.assertEqual((st, json.loads(body)), (200, {"prefs": {"theme": "day"}}))       # a token: no Origin needed
+        self.assertEqual((st, json.loads(body)["prefs"]), (200, {"theme": "day"}))       # a token: no Origin needed
         self.assertEqual(json.loads(call("GET", "/api/prefs", {"Cookie": cookie})[2])["prefs"]["theme"], "night")
         st, _, _ = call("PUT", "/api/prefs", {"Tailscale-User-Login": "reader@test"},
                         json.dumps({"prefs": {"theme": "day"}}).encode(), "application/json")
         self.assertEqual(st, 403)                       # a Tailscale login rides along like a cookie: same-origin
         st, _, body = call("PUT", "/api/prefs", {"Cookie": cookie, "Origin": self.ME},
                            json.dumps({"prefs": {"theme": None}}).encode(), "application/json")
-        self.assertEqual(json.loads(body), {"prefs": {"garden.view": "list"}})              # null removes
+        self.assertEqual(json.loads(body)["prefs"], {"niwa.link_previews": "off"})          # null removes
+        st, _, body = call("PUT", "/api/prefs", {"Cookie": cookie, "Origin": self.ME},
+                           json.dumps({"prefs": {"garden.view": "list"}}).encode(), "application/json")
+        self.assertEqual(st, 400)                                                            # only the schema's keys
         self.assertEqual(call("GET", "/api/prefs", {})[0], 401)
         self.assertEqual(call("GET", "/api/prefs", {"Tailscale-User-Login": "nobody@test"})[0], 403)   # no niwa read
         self.assertEqual(call("GET", "/api/prefs", {"Authorization": "Bearer " + self.tokens["niwa"]})[0], 403)
@@ -1698,13 +1765,13 @@ class SigninTest(unittest.TestCase):
         put = json.dumps({"prefs": {"theme": "day"}}).encode()
         self.assertEqual(call("PUT", "/api/prefs", owner, put, "application/json")[0], 403)          # same-origin
         st, headers, body = call("PUT", "/api/prefs", dict(owner, Origin=self.ME), put, "application/json")
-        self.assertEqual((st, json.loads(body)), (200, {"prefs": {"theme": "day"}}))
-        self.assertEqual(json.loads(call("GET", "/api/prefs", owner)[2]), {"prefs": {"theme": "day"}})
+        self.assertEqual((st, json.loads(body)["prefs"]), (200, {"theme": "day"}))
+        self.assertEqual(json.loads(call("GET", "/api/prefs", owner)[2])["prefs"], {"theme": "day"})
         self.assertEqual(call("GET", "/api/prefs", {"Tailscale-User-Login": "guest@test"})[0], 403)   # the old gate
         self.assertEqual(prefs_rows(identity.tailscale_uid("owner@test")), {"theme": "day"})
         for page in ("/", "/n/MOC/Crafts", "/settings", "/nope"):
             self.assertIn('<meta name="machiya-prefs" content="/api/prefs">', call("GET", page, owner)[2], page)
-        self.assertIn("Saved to your account", call("GET", "/settings", owner)[2])
+        self.assertIn("Saved for you in Niwa", call("GET", "/settings", owner)[2])      # Niwa's own store: state "room"
         self.assertNotIn('class="iconbtn who"', call("GET", "/", owner)[2])         # nobody signed in by name
 
     def test_open_mode_over_plain_http(self):
@@ -1720,7 +1787,7 @@ class SigninTest(unittest.TestCase):
                                              ("Content-Length", str(len(put)))], put)
         try:
             st, _, body = put_as("localhost:%d" % port, "http://localhost:%d" % port)
-            self.assertEqual((st, json.loads(body)), (200, {"prefs": {"theme": "night"}}))
+            self.assertEqual((st, json.loads(body)["prefs"]), (200, {"theme": "night"}))
             self.assertEqual(put_as("localhost:%d" % port, "http://evil.test")[0], 403)
             self.assertEqual(put_as("evil.test:%d" % port, "http://evil.test:%d" % port)[0], 403)
             niwa.AUTH = "tailscale"                     # only open mode borrows the Host
