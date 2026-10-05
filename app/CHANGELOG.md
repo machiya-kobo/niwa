@@ -3,6 +3,10 @@
 Niwa follows [SemVer](https://semver.org). Before 1.0, a new feature, a changed default or setting, or a changed API
 field is a minor bump, and a fix or wording change is a patch. Settings are listed in the README.
 
+## 0.6.1
+
+- Pull to refresh in the installed app moves the page content (it springs back, and holds with a spinner while it reloads) instead of an overlay (vaultkit 0.22.1).
+
 ## 0.6.0
 
 vaultkit 0.22.0 (the sweep's shared fixes, Machiya's `docs/vaultkit.md`, "adopting websafe").
