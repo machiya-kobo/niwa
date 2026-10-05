@@ -654,8 +654,10 @@ class HisterSignInTest(unittest.TestCase):
         self.assertEqual(status, 302)
         self.assertTrue(headers["Location"].startswith(self.SIGNIN + "?return="), headers["Location"])
         self.assertIn(urllib.parse.quote(BASE + "/", safe=""), headers["Location"])     # the way back is NIWA_PUBLIC_URL's
-        self.assertTrue(any(c.startswith("machiya_sso_try=1") for c in headers.get_all("Set-Cookie")))
-        status, headers, body = as_("/", dict(self.PAGE, Cookie="machiya_sso_try=1"))   # the loop guard: a page, no 302
+        guard = niwa.HISTER_AUTH.try_cookie                  # host-only per room since vaultkit 0.22: machiya_sso_niwa_try
+        self.assertEqual(guard, "machiya_sso_niwa_try")      # (with https: __Host-machiya_sso_niwa_try)
+        self.assertTrue(any(c.startswith(guard + "=1") for c in headers.get_all("Set-Cookie")))
+        status, headers, body = as_("/", dict(self.PAGE, Cookie=guard + "=1"))          # the loop guard: a page, no 302
         self.assertEqual(status, 401)
         self.assertIn("Sign In", body)
         status, headers, body = as_("/api/suggestions", {})
@@ -770,6 +772,29 @@ class HisterSignInTest(unittest.TestCase):
         _, _, body = as_("/settings", dict(self.LOGIN, **self.PAGE))
         self.assertIn('data-prefs-state="unavailable"', body)                      # the fallback: no account
 
+    def test_a_room_session_comes_back_from_the_helper_as_a_code_and_is_this_rooms_alone(self):
+        helper = self.helper
+        helper.back = BASE + "/stream"
+        status, headers, _ = as_("/stream", self.PAGE)                             # the trip out: a state cookie, a nonce
+        self.assertEqual(status, 302)
+        self.assertIn("state=", headers["Location"])
+        state = next(c for c in headers.get_all("Set-Cookie") if c.startswith(niwa.HISTER_AUTH.state_cookie + "="))
+        nonce = state.split(";")[0].split("=", 1)[1]
+        callback = "/machiya/callback?code=" + helper.code
+        status, headers, _ = as_(callback, dict(self.PAGE, Cookie="%s=%s" % (niwa.HISTER_AUTH.state_cookie, nonce)))
+        self.assertEqual((status, headers["Location"]), (302, BASE + "/stream"))   # back to the page it started from
+        redeem = [c for c in helper.calls if c[1] == "/v1/redeem"][0][2]
+        self.assertEqual((redeem["X-Machiya-Room"], redeem["X-Machiya-State"]), (BASE, nonce))   # this room, this browser
+        room_cookie = next(c for c in headers.get_all("Set-Cookie") if c.startswith(niwa.HISTER_AUTH.room_cookie + "="))
+        self.assertIn(helper.rsid, room_cookie)
+        self.assertNotIn("Domain=", room_cookie)                                    # host-only: no other host gets it
+        sid_cookie = {"Cookie": "%s=%s" % (niwa.HISTER_AUTH.room_cookie, helper.rsid)}
+        self.assertEqual(as_("/api/suggestions", sid_cookie)[0], 200)               # and it signs this room in
+        self.assertEqual(helper.calls[-1][2]["X-Machiya-Room"], BASE)               # every check names the room
+        self.assertEqual(as_(callback, dict(self.PAGE))[0], 401)                    # no state cookie: nothing is traded
+        self.assertEqual(as_("/machiya/callback?code=mhc_" + "x" * 43, dict(self.PAGE, Cookie="%s=%s" % (
+            niwa.HISTER_AUTH.state_cookie, nonce)))[0], 401)                        # a code the helper refuses: a page, no loop
+
     def test_it_is_inert_unless_asked_for(self):
         niwa.HISTER_AUTH, niwa.shell.SIGNIN = self.saved[0], self.saved[3]
         self.assertIsNone(niwa.HISTER_AUTH)
@@ -814,6 +839,7 @@ class FakeHelper:
         self.calls, self.sessions, self.tokens = [], {}, {}
         self.down = self.off = False
         self.account = {}                       # the account's preferences, as /v1/prefs and /v1/check keep them
+        self.code, self.rsid, self.back = "mhc_" + "C" * 43, "mhr_" + "R" * 43, ""
         self.rev = 0
 
     def __call__(self, method, path, headers, timeout, data=None):
@@ -831,6 +857,13 @@ class FakeHelper:
                     self.account.pop(k, None) if v is None else self.account.__setitem__(k, v)
                 self.rev += 1
             return 200, json.dumps({"v": 1, "rev": self.rev, "prefs": self.account, "updated": {}}).encode()
+        if path == "/v1/redeem":                # a one-time code, traded for this room's own session
+            headers = headers or {}
+            if headers.get("X-Machiya-Code") != self.code or not headers.get("X-Machiya-State"):
+                return 401, b"{}"
+            self.sessions[self.rsid] = "owner"
+            return 200, json.dumps({"session": self.rsid, "username": "owner", "user_id": 1, "max_age": 3600,
+                                    "return": self.back}).encode()
         if path == "/v1/signout":
             self.sessions.pop((headers or {}).get("X-Machiya-Session"), None)
             return 204, b""
@@ -839,7 +872,7 @@ class FakeHelper:
         headers = headers or {}
         user = self.sessions.get(headers.get("X-Machiya-Session")) or self.tokens.get(headers.get("X-Access-Token"))
         if user:
-            return 200, json.dumps({"username": user, "user_id": 1, "prefs": self.account}).encode()
+            return 200, json.dumps({"username": user, "user_id": 1, "prefs": self.account, "room": BASE}).encode()
         return 401, b"{}"
 
 
@@ -893,8 +926,11 @@ class SweepFixesTest(unittest.TestCase):
             niwa.garden.asset_path = saved
         self.assertEqual(status, 200)
         self.assertEqual(headers["Content-Type"], "image/svg+xml")
-        self.assertEqual(headers["Content-Security-Policy"], "default-src 'none'; style-src 'unsafe-inline'; sandbox")
+        self.assertEqual(headers["Content-Security-Policy"], niwa.websafe.ASSET_CSP)
+        self.assertIn("sandbox", headers["Content-Security-Policy"])
         self.assertEqual(headers["X-Content-Type-Options"], "nosniff")
+        self.assertEqual(headers["X-Frame-Options"], "SAMEORIGIN")
+        self.assertEqual(headers.get_all("X-Content-Type-Options"), ["nosniff"])                  # sent once
         self.assertEqual(as_("/api/status", {})[1]["X-Content-Type-Options"], "nosniff")      # every response, not only HTML
 
     # -- NIWA-2
@@ -986,19 +1022,21 @@ class SweepFixesTest(unittest.TestCase):
             return server.server_address[1]
         pb = serve("127.0.0.2", "b")                                   # another loopback address: "inside"
         pa = serve("127.0.0.1", "a", "http://127.0.0.2:%d/secret" % pb)
-        saved = links._global
+        saved = links._OPENER
         try:
             # nothing is public: every spelling of an inside address is refused before a connection
             for url in ("http://127.0.0.1:%d/" % pa, "http://127.1:%d/" % pa, "http://0x7f.0.0.1:%d/" % pa,
                         "http://localhost:%d/" % pa, "http://user@127.0.0.1:%d/" % pa, "http://10.0.0.1/",
                         "http://[::1]:%d/" % pa):
-                with self.assertRaises(OSError, msg=url):             # NotPublic, or a userinfo URL refused outright
+                with self.assertRaises((links.NotPublic, OSError), msg=url):   # or a userinfo URL, refused outright
                     links.fetch_status(url)
             self.assertEqual(hits, {"a": [], "b": []})
             self.assertFalse(links.public_url("http://127.0.0.1:%d/" % pa))
             self.assertFalse(links.public_url("ftp://example.com/"))
+            self.assertFalse(links.public_url("http://[64:ff9b::7f00:1]/"))           # NAT64 form of 127.0.0.1
+            self.assertFalse(links.public_url("http://[::ffff:10.0.0.1]/"))           # IPv4-mapped form of a private one
             # with 127.0.0.1 allowed (a stand-in for a public host), a redirect to 127.0.0.2 is still refused on its hop
-            links._global = lambda address: address == "127.0.0.1"
+            links._OPENER = niwa.websafe.public_opener(allow=("127.0.0.1",))   # a stand-in for a public host
             self.assertEqual(links.fetch_status("http://127.0.0.1:%d/" % pa), (200, "http://127.0.0.1:%d/" % pa))
             self.assertEqual(links.fetch_status("http://127.0.0.1:%d/missing" % pa)[0], 404)
             with self.assertRaises(links.NotPublic):
@@ -1006,7 +1044,7 @@ class SweepFixesTest(unittest.TestCase):
             self.assertEqual(hits["b"], [])                             # the redirect target never saw a request
             self.assertEqual(hits["a"], ["/", "/missing", "/go"])
         finally:
-            links._global = saved
+            links._OPENER = saved
 
     def test_a_link_to_an_inside_address_is_never_probed_and_never_dead(self):
         import links

@@ -8,7 +8,7 @@ import itertools
 import os
 import threading
 
-from vaultkit import EditError, edit_front, note_front
+from vaultkit import EditError, edit_front, note_front, safe_path
 
 GROWTH = ("seedling", "budding", "evergreen")
 CONFIDENCE = ("certain", "likely", "possible", "speculative")
@@ -37,8 +37,13 @@ class Writer:
         return os.path.join(self.garden.root, rel)
 
     def checked(self, rel):
-        path = os.path.realpath(self.full(rel))
-        if not path.startswith(os.path.realpath(self.garden.root) + os.sep) or not os.path.exists(path):
+        """The path of an existing note to edit: relative, inside the vault, with no symlink anywhere in it
+        (vaultkit.safe_path), so a write never lands on a file a link points at."""
+        try:
+            path = safe_path(self.garden.root, rel)
+        except ValueError:
+            raise WriteError(404, "no such note")
+        if not os.path.exists(path):
             raise WriteError(404, "no such note")
         return path
 

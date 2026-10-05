@@ -11,7 +11,7 @@ works and the traps already found; read the part for what you're changing.
 
 ## Tests
 
-Install `markdown` (3.7 or later) and `pyyaml`, then from the repository root:
+Install `markdown` (3.11 or later) and `pyyaml`, then from the repository root:
 
 ```sh
 python3 -m unittest discover -s tests
@@ -19,7 +19,7 @@ python3 -m unittest discover -s tests
 
 The suite serves the garden against a real bare Git remote and a throwaway vault, so it covers the owner gate, the
 write path (form post → frontmatter edit → event → commit → push) and the pre-publish check. Add a test with any
-change to behaviour. Run the suite on the oldest `markdown` you support before changing rendering.
+change to behaviour. Run the suite on the oldest `markdown` you support (3.11) before changing rendering.
 
 **Never test against a real vault or a real Hister.** Use the throwaway vault in the tests, and a fake that records
 requests for Hister.

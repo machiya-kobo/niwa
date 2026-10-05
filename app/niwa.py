@@ -39,6 +39,7 @@ from state import EVENTS_DIR, State  # noqa: E402
 from vaultkit import GitSync  # noqa: E402
 from vaultkit import borrow as vk_borrow  # noqa: E402
 from vaultkit import histerauth  # noqa: E402
+from vaultkit import websafe  # noqa: E402
 from vaultkit import changelog  # noqa: E402
 from vaultkit import verify as vk_verify  # noqa: E402
 from vaultkit import EditError  # noqa: E402
@@ -47,7 +48,7 @@ from vaultkit import read_secret  # noqa: E402
 from vaultkit import signin  # noqa: E402
 from writer import Writer, WriteError  # noqa: E402
 
-VERSION = "0.5.1"
+VERSION = "0.6.0"
 PORT = int(os.environ.get("NIWA_PORT", "8080"))
 USERS = set(filter(None, (u.strip() for u in os.environ.get("NIWA_USERS", "").split(","))))
 
@@ -194,9 +195,7 @@ def prefs_store():
         return _prefs
 
 
-IMAGE_TYPES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif",
-               ".webp": "image/webp", ".svg": "image/svg+xml"}
-ASSET_CSP = "default-src 'none'; style-src 'unsafe-inline'; sandbox"    # for a vault image served as a response of its own
+IMAGE_TYPES = websafe.ASSET_TYPES      # the images a note can show (an SVG included, which asset_headers sandboxes)
 STATIC_TYPES = {"niwa.css": "text/css", "niwa.js": "text/javascript", "mermaid.min.js": "text/javascript",
                 "machiya.css": "text/css", "machiya.js": "text/javascript",       # machiya.*: the vendored shared UI
                 "machiya-sw.js": "text/javascript"}
@@ -252,8 +251,8 @@ borrow_reference()
 state = State(DB, REPO)
 garden = Garden(REPO, SUBDIR, state, private=PRIVATE)
 def konbini_token(path):
-    """NIWA_KONBINI_TOKEN_FILE: Niwa's service token for Konbini (a Machiya identity token), sent as Authorization on
-    every call. "" when unset; a set file that holds no token refuses to start rather than call Konbini without it."""
+    """NIWA_KONBINI_TOKEN_FILE: Niwa's token for Konbini (a room token, mht_…, when Konbini is in AUTH=hister mode, or a
+    Machiya identity token), sent as Authorization on every call. "" when unset; a set file that holds no token refuses to start rather than call Konbini without it."""
     path = (path or "").strip()
     if not path:
         return ""
@@ -519,7 +518,8 @@ def make_handler(listener):
                 for k, v in shell.house.security_headers():
                     self.send_header(k, v)
             else:
-                self.send_header("X-Content-Type-Options", "nosniff")
+                for k, v in websafe.base_headers():          # nosniff, SAMEORIGIN, Referrer-Policy: every response
+                    self.send_header(k, v)
             for k, v in headers:
                 self.send_header(k, v)
             for c in self.session_cookies(headers):
@@ -667,9 +667,10 @@ def make_handler(listener):
                     with open(full, "rb") as f:
                         # a vault image is untrusted: sandboxed, so a script in an SVG opened as a page has no origin, no
                         # cookies and no way to post to Niwa (it never runs inside an <img>)
+                        base = {k for k, _ in websafe.base_headers()}      # send() adds those to every response itself
+                        extra = [h for h in websafe.asset_headers(gpath) if h[0] != "Content-Type" and h[0] not in base]
                         self.send(200, f.read(), ctype,
-                                  headers=[("Cache-Control", "no-store" if private else "max-age=86400"),
-                                           ("Content-Security-Policy", ASSET_CSP)])
+                                  headers=[("Cache-Control", "no-store" if private else "max-age=86400")] + extra)
                 else:
                     self.send(404, "not found\n", "text/plain")
             else:

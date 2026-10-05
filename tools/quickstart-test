@@ -19,7 +19,7 @@ $QUICKSTART_TMP (default /var/tmp/niwa-quickstart), from a fresh `git clone` of 
 --worktree, a copy of the working tree, to test README changes before they are committed). Scenarios:
 
     container   [packages-<engine>-debian with --with-packages], vault, container-<engine>, check, stop-container-<engine>
-    native      [packages-<os> with --with-packages], venv (Linux), vault, native-run-*, check
+    native      [packages-<os> with --with-packages], venv (Linux) or venv-bsd, vault, native-run-*, check
 
 `background` blocks are servers: they are started, waited for, and killed at the end. A scenario that needs something
 this machine lacks (no podman or docker; an operating system the README has no block for) is skipped, and the
@@ -73,7 +73,7 @@ def scenarios(only, with_packages, want=None):
         if system == "linux":
             steps = (["packages-debian"] if with_packages else []) + ["venv", "vault", "native-run-debian", "check"]
         elif system in ("openbsd", "freebsd", "netbsd"):
-            steps = (["packages-" + system] if with_packages else []) + ["vault", "native-run-bsd", "check"]
+            steps = (["packages-" + system] if with_packages else []) + ["venv-bsd", "vault", "native-run-bsd", "check"]
         else:
             steps = None
         out.append(("native", steps) if steps else ("native", None, "no native blocks for %s" % platform.system()))

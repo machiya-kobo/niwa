@@ -24,7 +24,7 @@ checks below:
 sudo apt-get update && sudo apt-get install -y python3-venv git openssl curl netcat-openbsd
 ```
 
-**2. Clone Niwa** and put `markdown` 3.7 or later and `pyyaml` into a venv in it:
+**2. Clone Niwa** and put `markdown` 3.11 or later and `pyyaml` into a venv in it:
 
 ```sh
 git clone https://github.com/machiya-kobo/niwa.git && cd niwa
@@ -32,7 +32,7 @@ git clone https://github.com/machiya-kobo/niwa.git && cd niwa
 
 <!-- quickstart: venv -->
 ```bash
-python3 -m venv .venv && .venv/bin/pip install -q 'markdown>=3.7' pyyaml
+python3 -m venv .venv && .venv/bin/pip install -q 'markdown>=3.11' pyyaml
 ```
 
 **3. Make the sample vault a git repository.** Niwa's publish buttons write to the vault, so it clones a repository
@@ -137,36 +137,43 @@ docker run -d --init --name niwa-demo -u "$(id -u):$(id -g)" \
 
 ### Natively on the BSDs
 
-Packages only, no pip. Run the install line for your system as root (OpenBSD has `doas` in base; on a fresh FreeBSD or NetBSD use `su -` first, or install `sudo` from packages), then the run block:
+Packages for Python, PyYAML and git, then pip for `markdown` (vaultkit needs 3.11 or later; the BSD packages ship older ones), in a venv that keeps the packages. Run the install line for your system as root (OpenBSD has `doas` in base; on a fresh FreeBSD or NetBSD use `su -` first, or install `sudo` from packages), then the run block:
 
 <!-- quickstart: packages-openbsd -->
 ```bash
-doas pkg_add python%3 py3-markdown py3-yaml git curl
+doas pkg_add python%3 py3-yaml git curl
 ```
 
 <!-- quickstart: packages-freebsd -->
 ```bash
-sudo pkg install -y python312 py312-sqlite3 py312-markdown py312-pyyaml git-lite curl
+sudo pkg install -y python312 py312-sqlite3 py312-pyyaml git-lite curl
 sudo ln -sf /usr/local/bin/python3.12 /usr/local/bin/python3
 ```
 
 <!-- quickstart: packages-netbsd -->
 ```bash
 sudo env PKG_PATH="https://cdn.NetBSD.org/pub/pkgsrc/packages/NetBSD/$(uname -p)/$(uname -r | cut -d_ -f1)/All" \
-  /usr/sbin/pkg_add python313 py313-markdown py313-yaml git-base curl
+  /usr/sbin/pkg_add python313 py313-yaml git-base curl
 sudo ln -sf /usr/pkg/bin/python3.13 /usr/pkg/bin/python3
+```
+
+Then, in the clone, the venv (it keeps the packages' PyYAML and adds `markdown` 3.11 or later), the sample vault
+(steps 2 and 3 of the Quickstart) and the run block:
+
+<!-- quickstart: venv-bsd -->
+```bash
+python3 -m venv --system-site-packages .venv && .venv/bin/pip install -q 'markdown>=3.11'
 ```
 
 <!-- quickstart: native-run-bsd background -->
 ```bash
 NIWA_AUTH=open NIWA_BIND=127.0.0.1 NIWA_HOST=localhost NIWA_REPO_SUBDIR=personal \
   NIWA_REPO_URL="file://$PWD/demo-vault.git" NIWA_REPO_DIR="$PWD/demo-data/repo" \
-  NIWA_DB="$PWD/demo-data/niwa.sqlite3" ${PYTHON:-python3} app/niwa.py
+  NIWA_DB="$PWD/demo-data/niwa.sqlite3" .venv/bin/python app/niwa.py
 ```
 
 On FreeBSD and NetBSD the packages install `python3.12` or `python3.13`, so the install lines above also link it as
-`python3` (OpenBSD's package already does). Without the link, set `PYTHON=python3.12` (FreeBSD) or `PYTHON=python3.13`
-(NetBSD) before the run block. `docs/install/bsd.md` in
+`python3` (OpenBSD's package already does). `docs/install/bsd.md` in
 [machiya-kobo/machiya](https://github.com/machiya-kobo/machiya) is the full guide, with rc.d scripts and the env file.
 
 ### Check all three listeners
@@ -229,7 +236,7 @@ vault mirror) are the files to start from. What changes for Niwa:
 | `NIWA_KONBINI_URL`, `NIWA_KURA_URL` | the other rooms' addresses: Konbini adds board badges and its API feeds the owner's stream; Kura adds "View in Kura" links (both optional) |
 | `NIWA_AUTH`, `NIWA_USERS`, `NIWA_BIND`, `MACHIYA_IDENTITY_FILE` | who may use it: see "Who can use it" |
 | `NIWA_HISTER_URL`, `NIWA_HISTER_TOKEN_FILE`, `NIWA_AUTH=hister` … | the stack's Hister and its token; Hister's users as the sign-in through the stack's hister-login helper (see "Who can use it") |
-| `NIWA_KONBINI_TOKEN_FILE` | with the identity file: Niwa's own token for its calls to Konbini (see Settings) |
+| `NIWA_KONBINI_TOKEN_FILE` | Niwa's own token for its calls to Konbini: a room token for Konbini, or with the identity file an identity token (see Settings) |
 | `NIWA_ENV_FILE` (or `--env-file`) | a file of `KEY=VALUE` settings, for a native install |
 | `MACHIYA_SOURCE_URL` | the address of the source code, to show a "Source code" link as the AGPL asks of a networked service |
 
@@ -271,7 +278,7 @@ docker run -d --name niwa --init --user 1000:1000 \
 
 `NIWA_AUTH=open` means no identity check: anyone who can reach the web port can publish and change the garden, so use it for localhost or a trusted LAN only (the example publishes the web port on 127.0.0.1). Gemini and gopher serve only published notes (see SECURITY.md), so their ports can be exposed. For anything else see "Who can use it": with `tailscale` (the default) Niwa trusts the `Tailscale-User-Login` header, which `tailscale serve` sets, and any other reverse proxy works if it sets that header to the signed-in user and strips it from incoming requests.
 
-**Native:** Python 3 with `markdown` (3.7 or later) and `pyyaml`, plus `git`, `openssh` and `openssl`. From `app/`, `python3 -m vaultkit.verify` checks the vendored vaultkit is unedited, and `python3 niwa.py` starts the server. Settings come from the environment, or from a file given with `--env-file PATH` (or `NIWA_ENV_FILE`; the real environment wins).
+**Native:** Python 3 with `markdown` (3.11 or later: older ones can run out of memory on one note under Python 3.13, so vaultkit refuses them) and `pyyaml`, plus `git`, `openssh` and `openssl`. From `app/`, `python3 -m vaultkit.verify` checks the vendored vaultkit is unedited, and `python3 niwa.py` starts the server. Settings come from the environment, or from a file given with `--env-file PATH` (or `NIWA_ENV_FILE`; the real environment wins).
 
 The web UI is on `NIWA_PORT` (8080); gemini listens on 1965 and gopher on 7070. Gopher menus point at port 70 on `NIWA_HOST` (`NIWA_GOPHER_PUBLIC_PORT`), so map the public port 70 to 7070 as the example does (a rootless Podman needs `net.ipv4.ip_unprivileged_port_start=70` or lower for that). `GET /api/status` is open and reports `ready`.
 
@@ -294,7 +301,7 @@ On first start Niwa asks `openssl` for a self-signed certificate (EC P-256, vali
 | `NIWA_INTRO` | `Notes from the vault, shared as they grow.` | the landing page's intro while no `Garden.md` is published, on the web, gemini and gopher: plain text (HTML-escaped), one line. Publish `Garden.md` to write your own (gemini and gopher show it too) |
 | `NIWA_AUTH` | `tailscale` | `tailscale`: the owner's pages and writes need a `Tailscale-User-Login` in `NIWA_USERS`. `open`: no identity check (a startup warning), for localhost or a trusted LAN only; it serves only requests whose `Host` is an IP address, `localhost`, `NIWA_HOST`, `NIWA_PUBLIC_URL`'s host or a name in `NIWA_ALLOWED_HOSTS` (a guard against DNS rebinding), so an HTTP/1.0 client that sends no `Host` header gets 403. `header`: with `MACHIYA_IDENTITY_FILE` only, a trusted proxy's login header (`NIWA_AUTH_HEADER`). `hister`: Hister's sign-in (the row below). Either way, form posts must be same-origin and agents may only suggest. Any other value refuses to start |
 | `NIWA_USERS` | — | allowed `Tailscale-User-Login`s; `*` = anyone; unset = nobody (`/api/status` is open) |
-| `NIWA_AUTH=hister`, `NIWA_AUTH_URL`, `NIWA_AUTH_SIGNIN_URL`, `NIWA_HISTER_USERS`, `NIWA_AUTH_FALLBACK`, `MACHIYA_COOKIE_DOMAIN`, `MACHIYA_SSO_COOKIE` | — | Hister sign-in (vaultkit's `histerauth`), with `NIWA_PUBLIC_URL` (required) as the way back. `NIWA_AUTH_URL`: the sign-in helper's internal address (`http://hister-login:8081`); unset, Niwa runs on the Tailscale identity alone, with a warning. `NIWA_AUTH_SIGNIN_URL` (required): the helper's public sign-in page. `NIWA_HISTER_USERS` (required, never `*`): the Hister usernames let in. `NIWA_AUTH_FALLBACK`: `tailscale` (the default; `NIWA_USERS` are the logins admitted then, never `*`) or `none` (needs `NIWA_AUTH_URL`; 503 when sign-in is unavailable). `MACHIYA_COOKIE_DOMAIN`: the domain of the shared `machiya_sso` cookie, for clearing it. `MACHIYA_SSO_COOKIE`: the sign-in cookie's name (default `machiya_sso`; letters, digits, `_` and `-`), the same as the hister-login helper's, so a second stack on the same domain can use its own. Refused at start: a missing setting, a `*`, or an identity file at the same time |
+| `NIWA_AUTH=hister`, `NIWA_AUTH_URL`, `NIWA_AUTH_SIGNIN_URL`, `NIWA_HISTER_USERS`, `NIWA_AUTH_FALLBACK`, `NIWA_AUTH_ACCEPT_ORIGINS`, `MACHIYA_COOKIE_DOMAIN`, `MACHIYA_SSO_COOKIE` | — | Hister sign-in (vaultkit's `histerauth`), with `NIWA_PUBLIC_URL` (required) as the way back. `NIWA_AUTH_URL`: the sign-in helper's internal address (`http://hister-login:8081`); unset, Niwa runs on the Tailscale identity alone, with a warning. `NIWA_AUTH_SIGNIN_URL` (required): the helper's public sign-in page. `NIWA_HISTER_USERS` (required, never `*`): the Hister usernames let in. `NIWA_AUTH_FALLBACK`: `tailscale` (the default; `NIWA_USERS` are the logins admitted then, never `*`) or `none` (needs `NIWA_AUTH_URL`; 503 when sign-in is unavailable). Niwa keeps a sign-in cookie of its own, set for its host alone (`__Host-machiya_sso_niwa`; without `Domain`, so no other host on the tailnet can read or plant it): a browser without it makes one silent trip through the helper and comes back with a one-time code (`/machiya/callback`) that Niwa trades for a room session good in Niwa only. Callers that aren't browsers send a room token (`Authorization: Bearer mht_…`) that names Niwa. `NIWA_AUTH_ACCEPT_ORIGINS`: other origins whose room sessions Niwa also accepts (comma-separated; Shiori's hosted pages). `MACHIYA_SSO_COOKIE`: the cookie name's base (default `machiya_sso`; letters, digits, `_` and `-`), the same as the hister-login helper's, so a second stack can use its own. `MACHIYA_COOKIE_DOMAIN`: the domain of the older shared `machiya_sso` cookie, which Niwa still reads and clears until the helper stops setting it. Refused at start: a missing setting, a `*`, or an identity file at the same time |
 | `NIWA_BIND` | `0.0.0.0` | the IPv4 address all three listeners bind (web, gemini, gopher). Behind `tailscale serve` on a native install, bind `127.0.0.1`: on a public bind anyone who reaches the port could send the `Tailscale-User-Login` header |
 | `MACHIYA_IDENTITY_FILE` | — | Machiya's identity file (vaultkit's `identity`; [Machiya's `docs/identity.md`](https://github.com/machiya-kobo/machiya/blob/main/docs/identity.md)): people, agents and services with grants. Set, it replaces `NIWA_USERS`: pages and read APIs need the `niwa` `read` grant, `POST /api/suggest` needs `suggest`, and publishing, dismissing and the garden fields need `publish` (the owner has every grant). No or a bad proof (token, login) answers 401, a principal without the grant 403. `/api/status`'s full view is the owner's. Mount the file's **directory** read-only (the CLI replaces the file, and a file mount keeps the old one); with a `session_key_file` beside it. Unset: `NIWA_USERS`, as before |
 | `NIWA_SIGNIN` | — | `1`, `on`, `true` or `yes`: with an identity file, the built-in sign-in (vaultkit's `signin`): `/signin` takes a person's name and password (set with `python3 -m vaultkit.identity passwd NAME`) and sets the `machiya_session` cookie (`MACHIYA_COOKIE_DOMAIN` shares it across rooms), alongside any `NIWA_AUTH` mode. A browser without a session then gets a 401 page linking to `/signin`, and Settings shows a Sign Out button. Unset: `/signin` answers 404 (pairing and preferences don't need it) |
@@ -308,7 +315,7 @@ On first start Niwa asks `openssl` for a self-signed certificate (EC P-256, vali
 | `NIWA_LINKS_USER_AGENT` | `niwa-links/1` | the link checker's User-Agent (add a contact URL for the sites it checks) |
 | `NIWA_SKIP_HOSTS` | — | host names (comma-separated; each matches itself and its subdomains) the link checker never visits, on top of `localhost`, `*.ts.net` and every private, loopback or link-local IP address |
 | `NIWA_KONBINI_URL`, `NIWA_KURA_URL` | — | sister services (see above): the addresses browsers follow |
-| `NIWA_KONBINI_TOKEN_FILE` | — | a file holding Niwa's service token for Konbini (`python3 -m vaultkit.identity token mint niwa`), sent as `Authorization: Bearer` on every call to Konbini (with `X-Agent: niwa`), so Konbini knows Niwa by its own principal. Never logged. Set to a file with no token, Niwa refuses to start. Unset: no token, as before |
+| `NIWA_KONBINI_TOKEN_FILE` | — | a file holding Niwa's token for Konbini, sent as `Authorization: Bearer` on every call to Konbini (with `X-Agent: niwa`): a room token for Konbini (`mht_…`, made on the sign-in helper's sessions page or with `hister_login.py token mint --rooms konbini`) when Konbini is in `AUTH=hister` mode, or a Machiya identity token (`python3 -m vaultkit.identity token mint niwa`) with the identity file. Konbini knows Niwa by its own principal. Never logged. Set to a file with no token, Niwa refuses to start. Unset: no token, as before |
 | `NIWA_KONBINI_API_URL` | `NIWA_KONBINI_URL` | the address Niwa's own server calls Konbini on, when it differs from the one browsers use (in a container stack: `http://konbini:8081` inside, `http://localhost:8081` outside) |
 | `NIWA_GOPHER_PUBLIC_PORT` | `70` | the port the gopher menus advertise; the listener itself is on 7070, so map the public port to it |
 | `MACHIYA_ROOMS` | — | the Rooms switcher, `shiori=https://…,konbini=…,niwa=…,kura=…,hister=…,searxng=…,machiya=…` (the stack sets it; `machiya=` is the stack's landing page: a "Machiya · home" row and the footer's "Part of Machiya" link). Unset: the switcher shows Konbini and Kura from the two settings above, or nothing |

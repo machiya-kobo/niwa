@@ -16,17 +16,18 @@ Two kinds of copy, kept apart on purpose:
 Gemini and gopher read only archive_url; private_url is for the owner's web
 pages."""
 import datetime
-import http.client
 import ipaddress
 import json
 import os
 import re
-import socket
 import threading
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from html import escape, unescape
+
+from vaultkit import websafe
 
 
 URL_RE = re.compile(r"https?://[^\s<>\"'()\[\]`]+")
@@ -78,89 +79,41 @@ def is_external(url):
 
 
 # -- fetching a link: only ever a public address ---------------------------------------------------------------------------
-# The checker (and the Hister save) fetch addresses an author typed into a note. Each connection is made to an address
-# this module resolved and found public (never loopback, private, link-local or tailnet), by whatever name the URL
-# spelled it ("127.1", "0x7f.0.0.1", a name that resolves inside), and every redirect hop is checked the same way: a
-# linked site can't send the checker to an internal host.
-MAX_HOPS = 5
+# The checker (and the Hister save) fetch addresses an author typed into a note. vaultkit's websafe.public_opener
+# connects only to an address it resolved and found public at connect time (so a name that resolves inside, any spelling of
+# an inside address, and DNS rebinding are all refused), and vets every redirect hop the same way.
+_OPENER = websafe.public_opener()
 
 
-class NotPublic(OSError):
-    """A name or redirect that leads to an address that isn't on the public internet."""
-
-
-def _global(address):
-    try:
-        return ipaddress.ip_address(address.split("%")[0]).is_global
-    except ValueError:
-        return False
-
-
-def public_address(host, port):
-    """(family, sockaddr) to connect to when every address `host` resolves to is public, else NotPublic. A name that
-    doesn't resolve raises socket.gaierror (a dead domain: not the same thing)."""
-    infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
-    if not infos or not all(_global(i[4][0]) for i in infos):
-        raise NotPublic("%s is not a public address" % host)
-    return infos[0][0], infos[0][4]
-
-
-def _dial(conn):
-    family, addr = public_address(conn.host, conn.port)       # resolved and checked here, connected to exactly this
-    sock = socket.socket(family, socket.SOCK_STREAM)
-    sock.settimeout(conn.timeout)
-    try:
-        sock.connect(addr)
-    except OSError:
-        sock.close()
-        raise
-    return sock
-
-
-class _HTTP(http.client.HTTPConnection):
-    def connect(self):
-        self.sock = _dial(self)
-
-
-class _HTTPS(http.client.HTTPSConnection):
-    def connect(self):
-        sock = _dial(self)
-        try:
-            self.sock = self._context.wrap_socket(sock, server_hostname=self.host)
-        except OSError:
-            sock.close()
-            raise
+class NotPublic(Exception):
+    """A name or redirect that leads to an address that isn't on the public internet (never fetched)."""
 
 
 def fetch_status(url, method="HEAD", timeout=15):
-    """(status, final_url) of a link, following up to MAX_HOPS redirects itself. NotPublic (an OSError) when the name
-    or any hop leads to a non-public address; other OSErrors for an unreachable host."""
-    for _ in range(MAX_HOPS + 1):
-        u = urllib.parse.urlsplit(url)
-        if u.scheme not in ("http", "https") or not u.hostname or u.username or u.password:
-            raise OSError("not a plain web address")
-        conn = (_HTTPS if u.scheme == "https" else _HTTP)(u.hostname, u.port, timeout=timeout)
-        try:
-            conn.request(method, (u.path or "/") + ("?" + u.query if u.query else ""),
-                         headers={"User-Agent": UA, "Accept": "*/*"})
-            r = conn.getresponse()
-            status, where = r.status, r.getheader("Location")
-        finally:
-            conn.close()
-        if status in (301, 302, 303, 307, 308) and where:
-            url = urllib.parse.urljoin(url, where)
-            continue
-        return status, url
-    raise OSError("too many redirects")
+    """(status, final_url) of a link. NotPublic when the name or any redirect hop leads to a non-public address; other
+    exceptions (urllib's, OSError) for an unreachable host."""
+    u = urllib.parse.urlsplit(url)
+    if u.scheme not in ("http", "https") or not u.hostname or u.username or u.password:
+        raise OSError("not a plain web address")
+    req = urllib.request.Request(url, method=method, headers={"User-Agent": UA, "Accept": "*/*"})
+    try:
+        with _OPENER.open(req, timeout=timeout) as r:
+            return r.status, r.geturl()
+    except urllib.error.HTTPError as e:     # a 4xx or 5xx (or a redirect refused for carrying a credential)
+        return e.code, url
+    except websafe.Blocked as e:
+        if "private address" in str(e) or "not http" in str(e):
+            raise NotPublic(str(e))
+        raise OSError(str(e))               # a name that doesn't resolve: a dead domain, counted as a failure
 
 
 def public_url(url):
     """True when url's host resolves only to public addresses (what may be handed to the hister command line)."""
     u = urllib.parse.urlsplit(url)
     try:
-        public_address(u.hostname or "", u.port or (443 if u.scheme == "https" else 80))
+        websafe.vet(u.hostname or "", u.port or (443 if u.scheme == "https" else 80))
         return u.scheme in ("http", "https") and not (u.username or u.password)
-    except (OSError, ValueError, UnicodeError):
+    except (websafe.Blocked, ValueError, UnicodeError):
         return False
 
 

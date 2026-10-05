@@ -23,6 +23,7 @@ from urllib.parse import quote, unquote
 
 import garden as garden_module
 from capped import Capped
+from vaultkit import websafe
 from garden import CALLOUT_RE, EMBED_RE, FRONT_RE, IMAGE_EXT, LINK_RE, MDIMG_RE, STAGES
 
 # Gopher text is ASCII/ISO-8859-1; replace what it can't carry with ASCII.
@@ -52,8 +53,7 @@ def translit(text):
 
 MDLINK_RE = re.compile(r"(?<!!)\[([^\]]+)\]\((https?://[^)\s]+)\)")
 EMPH_RE = re.compile(r"(\*\*|__)(.+?)\1|(?<![\w*])\*(?!\s)(.+?)(?<!\s)\*(?![\w*])")
-IMAGE_MIME = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif",
-              ".webp": "image/webp", ".svg": "image/svg+xml"}
+IMAGE_MIME = websafe.ASSET_TYPES      # the images a gemini or gopher client is given (the same list the web serves)
 
 
 # -- conversion ---------------------------------------------------------------

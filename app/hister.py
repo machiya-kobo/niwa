@@ -25,17 +25,11 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-from vaultkit import read_secret
+from vaultkit import read_secret, websafe
 
-class _NoRedirect(urllib.request.HTTPRedirectHandler):
-    """Never follow a redirect: the owner's token rides on every call, and a redirect would carry it to wherever it
-    points. A 3xx comes back to the caller as the answer it is."""
-
-    def redirect_request(self, *args, **kwargs):
-        return None
-
-
-_OPENER = urllib.request.build_opener(_NoRedirect)
+# Never follow a redirect: the owner's token rides on every call, and a redirect would carry it to wherever it points
+# (a 3xx reaches the caller as an HTTPError, which call() returns as the status).
+_OPENER = websafe.token_opener()
 CACHE_SECONDS = 600
 # The label Machiya's rooms put on the pages they save into Hister. The saved-pages count leaves these out, and
 # index() uses it unless a caller passes another.

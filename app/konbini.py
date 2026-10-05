@@ -10,10 +10,7 @@ import time
 import urllib.error
 import urllib.request
 
-
-class NoRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, *args, **kwargs):
-        return None
+from vaultkit import websafe
 
 
 class Konbini:
@@ -47,7 +44,7 @@ class Konbini:
                 headers["Authorization"] = "Bearer " + self.token
             req = urllib.request.Request(self.url + path, headers=headers)
             # with the token, a redirect is an error: urllib would carry Authorization to wherever it points
-            opener = urllib.request.build_opener(NoRedirect) if self.token else urllib.request.build_opener()
+            opener = websafe.token_opener() if self.token else urllib.request.build_opener()
             with opener.open(req, timeout=self.timeout) as r:
                 data = json.loads(r.read())
             self.error = ""

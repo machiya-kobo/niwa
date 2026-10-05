@@ -3,6 +3,16 @@
 Niwa follows [SemVer](https://semver.org). Before 1.0, a new feature, a changed default or setting, or a changed API
 field is a minor bump, and a fix or wording change is a patch. Settings are listed in the README.
 
+## 0.6.0
+
+vaultkit 0.22.0 (the sweep's shared fixes, Machiya's `docs/vaultkit.md`, "adopting websafe").
+
+- Sign-in cookies are host-only and per room: Niwa sets `__Host-machiya_sso_niwa` (a room session, good here only, from a one-time code at `/machiya/callback`) instead of reading a cookie shared across the tailnet, and its loop guard is `__Host-machiya_sso_niwa_try`. The older shared `machiya_sso` and Hister's own token are still read until the sign-in helper stops setting them. Callers that aren't browsers can send a room token (`Authorization: Bearer mht_…`) that names Niwa. `NIWA_AUTH_ACCEPT_ORIGINS` lists other origins whose room sessions Niwa also accepts.
+- `NIWA_KONBINI_TOKEN_FILE` holds a room token for Konbini (made on the helper's sessions page) instead of Hister's owner token; nothing changes in how Niwa sends it.
+- Vault images are served with vaultkit's `websafe.asset_headers` (sandboxed; `X-Frame-Options`, `Referrer-Policy` and `nosniff` on every non-HTML response). The link checker uses `websafe.public_opener` (IPv6 forms of inside addresses, NAT64 and 6to4 included); the Hister and Konbini clients use `websafe.token_opener` (no redirect, ever); the garden writer uses `safe_path` (no symlink anywhere in the path).
+- vaultkit refuses symlinks in the vault and limits frontmatter; menus close on Back and a pulled-down page refreshes in the installed app.
+- `markdown` 3.11 or later is required (older ones run out of memory on one note under Python 3.13): the Dockerfile, the README and the BSD steps (a venv that keeps the packages' PyYAML and pips `markdown`) say so.
+
 ## 0.5.1
 
 Fixes from the 2026-10 security sweep.
