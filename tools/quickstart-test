@@ -29,6 +29,7 @@ import argparse
 import os
 import platform
 import re
+import shlex
 import shutil
 import signal
 import socket
@@ -49,6 +50,18 @@ def parse(readme):
     blocks = {m.group(1): {"flags": m.group(2).split(), "code": m.group(3)} for m in BLOCK_RE.finditer(text)}
     expects = {m.group(1): [l for l in m.group(2).splitlines() if l.strip()] for m in EXPECT_RE.finditer(text)}
     return blocks, expects
+
+
+SG = False      # --with-packages added this user to the docker group, but this process started before that: the engine
+                # (the container blocks, the stop block and the image removal) runs through `sg docker` from then on
+
+
+def sh(code, **kw):
+    """Run a shell snippet (sh -e), in the docker group when the package block has just added it."""
+    argv = ["sh", "-ec", code]
+    if SG:
+        argv = ["sg", "docker", "-c", "sh -ec " + shlex.quote(code)]
+    return subprocess.run(argv, **kw)
 
 
 def engine(want=None):
@@ -127,6 +140,7 @@ def expect_ok(lines, output):
 
 
 def main():
+    global SG
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--only", choices=["all", "container", "native"], default="all")
     ap.add_argument("--engine", choices=["podman", "docker"], help="the container engine to use (default: podman if installed, else docker)")
@@ -195,7 +209,9 @@ def main():
                     background.append(subprocess.Popen(["sh", "-ec", b["code"]], cwd=repo, env=env, stdout=log,
                                                        stderr=subprocess.STDOUT, start_new_session=True))
                     continue
-                r = subprocess.run(["sh", "-ec", b["code"]], cwd=repo, env=env, capture_output=True, text=True, timeout=1500)
+                r = sh(b["code"], cwd=repo, env=env, capture_output=True, text=True, timeout=1500)
+                if name.startswith("packages-docker") and r.returncode == 0 and shutil.which("sg"):
+                    SG = True                 # the group is new: this process doesn't have it, `sg docker` does
                 out = r.stdout + r.stderr
                 if r.returncode != 0:
                     print(out[-1500:])
@@ -219,11 +235,11 @@ def main():
                 except OSError:
                     pass
             if sc[0] == "container" and sc[1][-1] in blocks:          # the README's own stop block for this engine
-                subprocess.run(["sh", "-c", blocks[sc[1][-1]]["code"]], capture_output=True)
+                sh(blocks[sc[1][-1]]["code"], capture_output=True)
             if not a.keep:
                 shutil.rmtree(work, ignore_errors=True)
             if sc[0] == "container" and not image_before and engine(a.engine):
-                subprocess.run(["sh", "-c", "%s rmi -f niwa-demo >/dev/null 2>&1 || true" % engine(a.engine)])   # the image this run built
+                sh("%s rmi -f niwa-demo >/dev/null 2>&1 || true" % engine(a.engine), capture_output=True)   # the image this run built
             for _ in range(80):                                       # the ports are free again before the next scenario
                 if ports_free():
                     break
