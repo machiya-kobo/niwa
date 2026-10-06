@@ -4,23 +4,17 @@
 
 Niwa (庭, garden) grows your digital garden: pick the notes in your Obsidian vault you want to share, and Niwa publishes them to the Web, Gemini and Gopher.
 
-<p><a href="docs/screenshots/niwa-garden-light.png"><img src="docs/screenshots/niwa-garden-light.png" alt="The garden's landing page: topic maps for Crafts and Travel, recently tended notes with their growth stages, and seedlings" width="100%"></a></p>
-<p>
-  <a href="docs/screenshots/niwa-note-dark.png"><img src="docs/screenshots/niwa-note-dark.png" alt="A note, Chochin folding, in the dark theme, with its tip callout, backlinks and nearby notes" width="28%"></a>
-  <a href="docs/screenshots/niwa-queue-light.png"><img src="docs/screenshots/niwa-queue-light.png" alt="The queue of unpublished notes, each with its scan result and a Publish button" width="28%"></a>
-  <a href="docs/screenshots/niwa-stream-dark.png"><img src="docs/screenshots/niwa-stream-dark.png" alt="The stream in the dark theme: this week's tended notes, day by day" width="28%"></a>
-  <a href="docs/screenshots/niwa-garden-phone-light.png"><img src="docs/screenshots/niwa-garden-phone-light.png" alt="The garden on a phone" width="8%"></a>
+<p align="center">
+<a href="https://machiya-kobo.github.io/machiya/">Machiya</a> · <a href="#grow-your-garden">Features</a> · <a href="#quickstart">Quickstart</a> · <a href="#who-can-use-it">Access</a> · <a href="#in-a-container">Containers</a> · <a href="#natively-on-the-bsds">BSDs</a> · <a href="#install">Install</a> · <a href="#settings">Settings</a> · <a href="#api">API</a> · <a href="#licence">Licence</a>
 </p>
 
-**Contents**
-
-- [Grow your garden](#grow-your-garden) · [Keep your secrets](#keep-your-secrets) · [Keep your links](#keep-your-links) · [Meet your audience where they are](#meet-your-audience-where-they-are)
-- [Quickstart](#quickstart)
-- [Who can use it](#who-can-use-it) · [How it uses the vault](#how-it-uses-the-vault)
-- [More ways to run it](#more-ways-to-run-it): [in a container](#in-a-container), [natively on the BSDs](#natively-on-the-bsds), [check all three listeners](#check-all-three-listeners), [as part of the Machiya stack](#as-part-of-the-machiya-stack)
-- [Install](#install): [the Gemini certificate](#the-gemini-certificate)
-- [Settings](#settings) · [API](#api)
-- [Layout](#layout) · [Licence](#licence)
+<p><a href="docs/screenshots/niwa-garden-dark.png"><img src="docs/screenshots/niwa-garden-dark.png" alt="The garden's landing page in the dark theme: topic maps for Crafts and Travel, recently tended notes with their growth stages, and seedlings" width="100%"></a></p>
+<p>
+  <a href="docs/screenshots/niwa-note-light.png"><img src="docs/screenshots/niwa-note-light.png" alt="A note, Chochin folding, with its tip callout, backlinks and nearby notes" width="32%"></a>
+  <a href="docs/screenshots/niwa-queue-dark.png"><img src="docs/screenshots/niwa-queue-dark.png" alt="The queue of unpublished notes in the dark theme, each with its scan result and a Publish button" width="32%"></a>
+  <a href="docs/screenshots/niwa-stream-light.png"><img src="docs/screenshots/niwa-stream-light.png" alt="The stream: this week's tended notes, day by day" width="32%"></a>
+</p>
+<p align="center"><a href="docs/screenshots/niwa-note-phone-light.png"><img src="docs/screenshots/niwa-note-phone-light.png" alt="A note on a phone" width="24%"></a></p>
 
 ## Grow your garden
 
