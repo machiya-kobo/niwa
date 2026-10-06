@@ -50,7 +50,7 @@ from vaultkit import read_secret  # noqa: E402
 from vaultkit import signin  # noqa: E402
 from writer import Writer, WriteError  # noqa: E402
 
-VERSION = "0.8.0"
+VERSION = "0.8.1"
 PORT = int(os.environ.get("NIWA_PORT", "8080"))
 USERS = set(filter(None, (u.strip() for u in os.environ.get("NIWA_USERS", "").split(","))))
 
@@ -130,6 +130,33 @@ def host_allowed(host_header, allowed):
         return host in allowed
 
 
+def trusted_proxies(value):
+    """NIWA_TRUSTED_PROXIES: the peer addresses (CIDRs or single addresses, comma-separated) whose identity headers
+    count. () when unset; anything that isn't an address or network refuses to start."""
+    out = []
+    for part in (value or "").split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            out.append(ipaddress.ip_network(part, strict=False))
+        except ValueError:
+            raise SystemExit("niwa: NIWA_TRUSTED_PROXIES: %r is not an address or network (like 10.210.4.2/32)" % part)
+    return tuple(out)
+
+
+def peer_trusted(address, proxies):
+    """Whether a peer (the connection's address) is one of the trusted proxies; True when none are set."""
+    if not proxies:
+        return True
+    try:
+        ip = ipaddress.ip_address((address or "").split("%")[0])
+    except ValueError:
+        return False
+    ip = getattr(ip, "ipv4_mapped", None) or ip
+    return any(ip.version == net.version and ip in net for net in proxies)
+
+
 CREDENTIALS_RE = re.compile(r"(\w+://)[^/?#\s]*@")     # to the last @ of the authority: a password may hold one
 
 
@@ -144,6 +171,13 @@ AUTH = auth_mode(os.environ.get("NIWA_AUTH"), os.environ.get("MACHIYA_IDENTITY_F
 # The address every listener binds (web, gemini, gopher). A native install behind `tailscale serve` binds 127.0.0.1:
 # on a public bind the Tailscale-User-Login header could be sent by anyone who reaches the port.
 BIND = os.environ.get("NIWA_BIND", "0.0.0.0").strip() or "0.0.0.0"
+# NIWA_TRUSTED_PROXIES: when set, an identity header (Tailscale's, NIWA_AUTH_HEADER's, Remote-User) counts only on a
+# connection from one of these addresses; from any other peer it is dropped before anything reads it, so the request is
+# anonymous and meets the gate. Unset: every peer's headers count, as before (bind and NIWA_BIND_BEHIND_PROXY decide).
+TRUSTED_PROXIES = trusted_proxies(os.environ.get("NIWA_TRUSTED_PROXIES"))
+IDENTITY_HEADERS = tuple(dict.fromkeys(h for h in (
+    "Tailscale-User-Login", "Tailscale-User-Name", "Tailscale-User-Profile-Pic", "Tailscale-App-Capabilities",
+    "Remote-User", os.environ.get("NIWA_AUTH_HEADER", "").strip()) if h))
 # Niwa's web address (an origin). Served over plain http (http://...), the session cookie isn't Secure and the sign-in
 # accepts only this origin; unset means https, as before.
 PUBLIC_URL = public_url(os.environ.get("NIWA_PUBLIC_URL"))
@@ -347,6 +381,14 @@ def make_handler(listener):
         timeout = 30                   # a client that stops sending lets its thread go
         _who = None                    # the identity file's answer, worked out once per request (who())
         _hres = None                   # the Hister sign-in's answer, worked out once per request (hres())
+
+        def parse_request(self):
+            """After the headers are read: an untrusted peer's identity headers go (NIWA_TRUSTED_PROXIES)."""
+            ok = super().parse_request()
+            if ok and not peer_trusted(self.client_address[0] if self.client_address else "", TRUSTED_PROXIES):
+                for name in IDENTITY_HEADERS:
+                    del self.headers[name]
+            return ok
 
         def log_message(self, fmt, *args):
             if self.path in ("/api/status", "/api/changelog"):
@@ -1052,6 +1094,8 @@ def main():
     print("niwa: link archive %s; hister save %s" % (ARCHIVE, "on" if HISTER_SAVE else "off"), flush=True)
     print("niwa: listening on %s: web %d, gemini 1965, gopher 7070%s" % (
         BIND, PORT, ("; settings from " + ENV_FILE) if ENV_FILE else ""), flush=True)
+    if TRUSTED_PROXIES:
+        print("niwa: identity headers only from %s" % ", ".join(str(n) for n in TRUSTED_PROXIES), flush=True)
     if IDENTITY is None and HISTER_AUTH is None and AUTH == "tailscale" and BIND not in ("127.0.0.1", "::1", "localhost") \
             and os.environ.get("NIWA_BIND_BEHIND_PROXY", "").strip().lower() not in ("1", "on", "true", "yes"):
         print("niwa: WARNING: NIWA_AUTH=tailscale trusts the Tailscale-User-Login header, but %s is listening on %s: anything "

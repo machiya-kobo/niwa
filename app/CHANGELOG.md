@@ -3,6 +3,10 @@
 Niwa follows [SemVer](https://semver.org). Before 1.0, a new feature, a changed default or setting, or a changed API
 field is a minor bump, and a fix or wording change is a patch. Settings are listed in the README.
 
+## 0.8.1
+
+- `NIWA_TRUSTED_PROXIES` (addresses or CIDRs, comma-separated): when set, an identity header (`Tailscale-User-Login` and Tailscale's others, `Remote-User`, `NIWA_AUTH_HEADER`) counts only on a connection from one of those addresses. From any other peer it is dropped before the gate reads it, so the request is anonymous. Unset, nothing changes.
+
 ## 0.8.0
 
 - **Public garden** (off by default): `NIWA_PUBLIC_PORT` and `NIWA_GARDEN_URL` turn on a second, read-only website for anyone, with the published notes, their tags and images, the stream of garden events, search (60 a minute per address) and the feed. It has no sign-in, queue, settings or writes, reads and sets no cookies, trusts no identity header, and shows nothing from Konbini, Kura or Hister. Your own address and its sign-in are unchanged, and its note pages link each published note's public page. Search engines may index it; `NIWA_PUBLIC_NOINDEX=1` asks them not to. `NIWA_PUBLIC_BIND` binds it somewhere else.

@@ -702,6 +702,10 @@ class HisterSignInTest(unittest.TestCase):
         self.assertEqual(as_("/", self.PAGE)[0], 503)                   # no tailnet login: nobody
         self.assertEqual(as_("/", dict(self.PAGE, **{"Tailscale-User-Login": "other@test"}))[0], 403)
         self.assertEqual(as_("/api/suggestions", self.LOGIN)[0], 200)
+        with mock.patch.object(niwa, "TRUSTED_PROXIES", niwa.trusted_proxies("10.210.4.2/32")):
+            self.assertEqual(as_("/", dict(self.LOGIN, **self.PAGE))[0], 503)    # not from the proxy: no fallback login
+        with mock.patch.object(niwa, "TRUSTED_PROXIES", niwa.trusted_proxies("127.0.0.0/8")):
+            self.assertEqual(as_("/", dict(self.LOGIN, **self.PAGE))[0], 200)    # from the proxy: as before
         self.helper.down = False
         self.helper.off = True                                          # Hister's user handling is off: the check says so
         status, _, body = as_("/", dict(self.cookie(), **dict(self.LOGIN, **self.PAGE)))
@@ -1823,6 +1827,10 @@ class IdentityTest(unittest.TestCase):
             self.assertEqual(as_("/", {"Remote-User": "owner"})[0], 200)
             self.assertEqual(as_("/", {"Remote-User": "mallory"})[0], 403)
             self.assertEqual(as_("/", self.OWNER)[0], 401)                     # Tailscale's header means nothing here
+            with mock.patch.object(niwa, "TRUSTED_PROXIES", niwa.trusted_proxies("10.210.4.2")):
+                self.assertEqual(as_("/", {"Remote-User": "owner"})[0], 401)   # not from the proxy: anonymous
+            with mock.patch.object(niwa, "TRUSTED_PROXIES", niwa.trusted_proxies("10.210.4.2,127.0.0.1")):
+                self.assertEqual(as_("/", {"Remote-User": "owner"})[0], 200)
         finally:
             niwa.IDENTITY = saved
 
@@ -2308,6 +2316,37 @@ class WriteTest(unittest.TestCase):
         self.assertIn("LAN or tailnet address", body)
         self.assertFalse(niwa.garden.get("Notes/Risky").published)
         os.remove(path)
+
+
+class TrustedProxiesTest(unittest.TestCase):
+    """NIWA_TRUSTED_PROXIES: identity headers count only from the listed peers; unset, from anyone as before."""
+
+    def test_parse_and_match(self):
+        self.assertEqual(niwa.trusted_proxies(None), ())
+        self.assertEqual(niwa.trusted_proxies(" , "), ())
+        nets = niwa.trusted_proxies("10.210.4.2/32, 10.220.0.0/24,fd00::1")
+        self.assertEqual([str(n) for n in nets], ["10.210.4.2/32", "10.220.0.0/24", "fd00::1/128"])
+        for bad in ("10.210.4.2/33", "proxy", "10.210.4.2 10.210.4.3"):
+            with self.assertRaises(SystemExit):
+                niwa.trusted_proxies(bad)
+        self.assertTrue(niwa.peer_trusted("10.210.4.2", nets))
+        self.assertTrue(niwa.peer_trusted("10.220.0.77", nets))
+        self.assertTrue(niwa.peer_trusted("::ffff:10.210.4.2", nets))            # an IPv4-mapped peer
+        self.assertTrue(niwa.peer_trusted("fd00::1", nets))
+        self.assertFalse(niwa.peer_trusted("10.210.4.3", nets))
+        self.assertFalse(niwa.peer_trusted("", nets))
+        self.assertTrue(niwa.peer_trusted("203.0.113.9", ()))                    # unset: everyone, as before
+        self.assertEqual(niwa.TRUSTED_PROXIES, ())                              # the suite runs without it
+        self.assertIn("Remote-User", niwa.IDENTITY_HEADERS)
+
+    def test_the_owner_gate_ignores_an_untrusted_peers_login(self):
+        self.assertEqual(req("/")[0], 200)                                      # unset: the header counts
+        with mock.patch.object(niwa, "TRUSTED_PROXIES", niwa.trusted_proxies("10.210.4.2/32")):
+            self.assertEqual(req("/")[0], 403)                                  # 127.0.0.1 isn't the proxy
+            self.assertEqual(req("/publish", {"rel": "Notes/Paper lanterns.md", "on": "1", "confirm": "1"})[0], 403)
+            self.assertEqual(json.loads(req("/api/status")[1])["auth"], niwa.AUTH)   # open routes still answer
+        with mock.patch.object(niwa, "TRUSTED_PROXIES", niwa.trusted_proxies("127.0.0.1/32")):
+            self.assertEqual(req("/")[0], 200)
 
 
 class PublicGardenTest(unittest.TestCase):
