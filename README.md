@@ -12,6 +12,16 @@ Niwa (庭, garden) grows your digital garden: pick the notes in your Obsidian va
   <a href="docs/screenshots/niwa-garden-phone-light.png"><img src="docs/screenshots/niwa-garden-phone-light.png" alt="The garden on a phone" width="8%"></a>
 </p>
 
+**Contents**
+
+- [Grow your garden](#grow-your-garden) · [Keep your secrets](#keep-your-secrets) · [Keep your links](#keep-your-links) · [Meet your audience where they are](#meet-your-audience-where-they-are)
+- [Quickstart](#quickstart)
+- [Who can use it](#who-can-use-it) · [How it uses the vault](#how-it-uses-the-vault)
+- [More ways to run it](#more-ways-to-run-it): [in a container](#in-a-container), [natively on the BSDs](#natively-on-the-bsds), [check all three listeners](#check-all-three-listeners), [as part of the Machiya stack](#as-part-of-the-machiya-stack)
+- [Install](#install): [the Gemini certificate](#the-gemini-certificate)
+- [Settings](#settings) · [API](#api)
+- [Layout](#layout) · [Licence](#licence)
+
 ## Grow your garden
 
 - Publish with one button. Niwa adds `publish: true` to the note's frontmatter and touches nothing else.
