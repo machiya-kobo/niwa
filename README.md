@@ -1,6 +1,6 @@
 # Niwa
 
-[Machiya](https://github.com/machiya-kobo/machiya) is a set of small self-hosted apps for finding what you've read: your pages ([Hister](https://github.com/asciimoo/hister)), the web ([SearXNG](https://github.com/searxng/searxng)), your notes (an [Obsidian](https://obsidian.md) vault in git) and your code.
+[Machiya](https://github.com/machiya-kobo/machiya) is a set of small self-hosted apps for finding what you've read: your pages ([Hister](https://github.com/asciimoo/hister)), the web ([SearXNG](https://github.com/searxng/searxng)), your notes ([Obsidian](https://obsidian.md)) and your code ([Forgejo](https://forgejo.org) or [GitHub](https://github.com)).
 
 Niwa (庭, "garden") is the digital garden for Machiya and publishes the notes you choose from your Obsidian vault to the Web. It's also a Gemini capsule and a Gopher hole.
 
