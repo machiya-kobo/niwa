@@ -178,15 +178,13 @@ def account_section(name):
 
 
 def settings(ctx, version, status_text, vaultkit, signed_in="", state="standalone", who="", signin=""):
-    """/settings, in the house order (docs/ui.md): Shared (Theme, Appearance, Text Size, Apps: they follow the person),
-    the garden's own, This Device (this browser's text size, Offline Copies), Account, About. state, who, signin: where
-    the Shared choices are kept (niwa.py's Handler.prefs_state)."""
-    garden = ("Garden", [house.toggle("Link Previews", "linkPreviews", True)],
-              "Hover a note link to see its stage and summary.")
-    device = house.device_section(ctx, [house.offline_row()],
-                                  "Keeps your last 200 notes, and any marked offline: true, for reading offline. "
-                                  "Notes in Archive/ are never kept.")
-    sections = [house.shared_section(ctx, ROOM, rooms(), state, who, signin), garden, device,
+    """/settings, in the house order (vaultkit's settings_page, docs/ui.md): Appearance (they follow the person), the
+    garden's own (Link Previews; Offline Copies, this device's only row, so no This Device section), Rooms, Account,
+    About. state, who, signin: where the Appearance choices are kept (niwa.py's Handler.prefs_state)."""
+    garden = ("Garden", [house.toggle("Link Previews", "linkPreviews", True), house.offline_row()],
+              "Hover a note link to see its stage and summary. Offline Copies keeps your last 200 notes, and any "
+              "marked offline: true, on this device only (never Archive/).")
+    sections = [house.shared_section(ctx, ROOM, rooms(), state, who, signin), garden,
                 account_section(signed_in) if signed_in else None,
                 house.about_section(ROOM, version, status_text, vaultkit)]
     return page(ctx, "Settings", header("", "Settings", ctx=ctx) + house.settings_page(sections, ROOM))

@@ -292,7 +292,10 @@ class ReadTest(unittest.TestCase):
                      '<meta name="machiya-app-prefs"', 'niwa.link_previews'):
             self.assertIn(want, body)
         heads = re.findall(r'<h2 id="[^"]*">([^<]*)</h2>', body)
-        self.assertEqual(heads, ["Shared", "Garden", "This Device", "About"])      # the house order (docs/ui.md)
+        self.assertEqual(heads, ["Appearance", "Garden", "About"])                 # the house order (docs/ui.md)
+        garden = body.split('<h2 id="garden">', 1)[1].split("<h2", 1)[0]
+        self.assertIn("data-clear-offline", garden)                                 # Offline Copies: Garden, no This Device
+        self.assertIn("on this device only", garden)
         self.assertNotIn(">Display<", body)                                         # the old Appearance section is gone
         self.assertIn('class="iconbtn gear" href="/settings"', req("/")[1])
         status, _ = req("/theme?set=auto")
@@ -765,8 +768,8 @@ class HisterSignInTest(unittest.TestCase):
         self.helper.sessions[self.SID] = "owner"
         _, _, body = as_("/settings", dict(self.cookie(), **self.PAGE))
         self.assertIn('data-prefs-state="account"', body)
-        self.assertIn("Signed in as owner. Saved to your account.", body)
-        self.assertEqual(re.findall(r'<h2 id="[^"]*">([^<]*)</h2>', body), ["Shared", "Garden", "This Device", "About"])
+        self.assertIn("Saved to your account.", body)
+        self.assertEqual(re.findall(r'<h2 id="[^"]*">([^<]*)</h2>', body), ["Appearance", "Garden", "About"])
         self.helper.down = True
         niwa.HISTER_AUTH.health = (None, True)
         _, _, body = as_("/settings", dict(self.LOGIN, **self.PAGE))
