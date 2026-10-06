@@ -5,7 +5,7 @@
 Niwa (庭, garden) grows your digital garden: pick the notes in your Obsidian vault you want to share, and Niwa publishes them to the Web, Gemini and Gopher.
 
 <p align="center">
-<a href="https://machiya-kobo.github.io/machiya/">Machiya</a> · <a href="#grow-your-garden">Features</a> · <a href="#quickstart">Quickstart</a> · <a href="#who-can-use-it">Access</a> · <a href="#in-a-container">Containers</a> · <a href="#natively-on-the-bsds">BSDs</a> · <a href="#install">Install</a> · <a href="#settings">Settings</a> · <a href="#api">API</a> · <a href="#licence">Licence</a>
+<a href="https://machiya-kobo.github.io/machiya/">Machiya</a> · <a href="#grow-your-garden">Features</a> · <a href="#quickstart">Quickstart</a> · <a href="#who-can-use-it">Access</a> · <a href="#in-a-container">Containers</a> · <a href="#natively-on-the-bsds">BSDs</a> · <a href="#install">Install</a> · <a href="#settings">Settings</a> · <a href="#api">API</a> · <a href="#license">License</a>
 </p>
 
 <p><a href="docs/screenshots/niwa-garden-dark.png"><img src="docs/screenshots/niwa-garden-dark.png" alt="The garden's landing page in the dark theme: topic maps for Crafts and Travel, recently tended notes with their growth stages, and seedlings" width="100%"></a></p>
@@ -403,11 +403,11 @@ suggest. With an identity file that takes the `niwa` `publish` grant. Agents sen
 - `app/static/` — `niwa.css`/`niwa.js` (the garden's own room, loaded after machiya.css/js), Mermaid (MIT), icons; the service worker is the vendored `app/vaultkit/ui/machiya-sw.js`
 - `tests/` — see the test file's docstring
 
-## Licence
+## License
 
 Copyright (C) 2026 Micheal Waltz and Machiya contributors.
 
 Niwa is free software: GNU Affero General Public License, version 3 or (at your option) any later version.
-See `LICENSE`. Third-party software it ships (Mermaid, the Hister CLI in the image) is listed with its licences in
+See `LICENSE`. Third-party software it ships (Mermaid, the Hister CLI in the image) is listed with its licenses in
 `THIRD_PARTY_NOTICES`.
-`app/urlnorm.py` is the project's own code and ships under the same licence.
+`app/urlnorm.py` is the project's own code and ships under the same license.
