@@ -2,7 +2,7 @@
 
 [Machiya](https://github.com/machiya-kobo/machiya) is a set of small self-hosted apps for finding what you've read: your pages (Hister), the web (SearXNG), your notes (an Obsidian vault in git) and your code.
 
-Niwa grows your digital garden: pick the notes you want to share, and Niwa publishes them on the web, Gemini and Gopher. A note is in the garden when its frontmatter has `publish: true`, and only you can publish, from Niwa's own buttons.
+Niwa (庭, garden) grows your digital garden: pick the notes you want to share, and Niwa publishes them on the web, Gemini and Gopher. A note is in the garden when its frontmatter has `publish: true`, and only you can publish, from Niwa's own buttons.
 
 - **Pages:** the landing page (intro from `Garden.md`, pinned, maps, recent, "in bloom"), notes, tags, the stream (what changed), the queue (suggested and well-linked unpublished notes), random, images, an RSS feed of the published notes (`/feed.xml`), and `/settings` (Appearance, Garden, Rooms, Account when signed in, About; theme and text size follow you to your other devices through `/api/prefs`, the rest stays on the device).
 - **Growth stages** (seedling, budding, evergreen), confidence, pins, backlinks, "nearby" notes, and topic maps.
