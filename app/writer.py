@@ -68,7 +68,7 @@ class Writer:
         with self.lock:
             self.checked(rel)
             if value and self.garden.is_private(rel):       # no "publish anyway": a private folder is never published
-                raise WriteError(422, "notes in a private folder (NIWA_PRIVATE_FOLDERS) are never published")
+                raise WriteError(422, "notes in a private folder are never published")
             self.write_file(rel, edit_front(self.read(rel), {"publish": bool(value)}))
             self.state.add_event("publish" if value else "unpublish", actor, agent, path=rel)
             self.changed(("publish " if value else "unpublish ") + os.path.splitext(os.path.basename(rel))[0])

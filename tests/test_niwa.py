@@ -288,7 +288,7 @@ class ReadTest(unittest.TestCase):
     def test_settings_and_theme(self):
         _, body = req("/settings")
         for want in ('data-set="palette"', 'data-set="linkPreviews"', 'data-set="theme"', 'data-set="textSize"',
-                     'data-device-size', 'data-clear-offline', 'Follows you to your other devices when signed in.',
+                     'data-device-size', 'data-clear-offline', 'Hover a note link to see its stage and summary.',
                      '<meta name="machiya-app-prefs"', 'niwa.link_previews'):
             self.assertIn(want, body)
         heads = re.findall(r'<h2 id="[^"]*">([^<]*)</h2>', body)

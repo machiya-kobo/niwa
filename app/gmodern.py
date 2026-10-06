@@ -78,8 +78,7 @@ def home(ctx, base, g, cards, ntype=""):
     else:
         parts.append('<p class="intro none">%s <span class="hint">(Publish <code>Garden.md</code> to write your own intro.)</span></p>' % e(INTRO))
     if not notes:
-        parts.append(empty("Nothing Published Yet", 'Pick notes from the <a href="%s/queue">Queue</a>: publishing only adds '
-                           '<code>publish: true</code> to a note, and maps, tags and the stream fill in from there.' % base))
+        parts.append(empty("Nothing Published Yet", 'Pick notes to publish from the <a href="%s/queue">Queue</a>.' % base))
         parts.append("</main>")
         return gpage(ctx, base, "", "\n".join(parts), "garden")
     st = g.stats()
@@ -284,7 +283,7 @@ def stream(ctx, base, g, d):
                    ('<ul class="top">%s</ul>' % top) if top else "", nxt))
 
     parts = [top(ctx, base, "stream"), '<main class="garden stream">',
-             '<p class="none">The last %d days grouped by project, %d entries. The garden is the map; this is the stream.</p>'
+             '<p class="none">The last %d days by project, %d entries.</p>'
              % (d["days"], d["entries"])]
     now = d["now"]
     if now["wip"] or now["blocked"]:
@@ -366,9 +365,7 @@ def queue(ctx, base, g, cards):
             groups.setdefault(n.rel.split("/")[0] if "/" in n.rel else "Vault root", []).append(n)
     order = {"Suggested": 0, "Topic maps": 1}
     parts = [top(ctx, base, "queue"), '<main class="garden queue">',
-             '<p class="none">Unpublished notes. Suggestions from agents and well-linked notes come first, then topic maps '
-             '(the landing page\'s tiles), then folders. Publish is one click when the pre-publish check is clean; '
-             'otherwise Review shows what it found.%s</p>' % (
+             '<p class="none">Unpublished notes, suggestions first.%s Review shows what the pre-publish check found.</p>' % (
                  " Private notes (%s) are left out." % ", ".join(e(p) for p in g.private) if g.private else "")]
     for folder in sorted(groups, key=lambda k: (order.get(k, 2), k.lower())):
         notes = sorted(groups[folder], key=lambda n: (n.rel not in suggested, n.title.lower()))

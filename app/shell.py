@@ -174,7 +174,7 @@ def account_section(name):
     form (POST /signout)."""
     out = ('<div class="item"><span>Signed in as %s</span><form method="post" action="/signout">'
            '<button type="submit">Sign Out</button></form></div>' % e(name))
-    return ("Account", [out], "Signing out ends the session on this browser. Paired devices stay signed in.")
+    return ("Account", [out], "Signs out this browser only.")
 
 
 def settings(ctx, version, status_text, vaultkit, signed_in="", state="standalone", who="", signin=""):
@@ -182,12 +182,10 @@ def settings(ctx, version, status_text, vaultkit, signed_in="", state="standalon
     the garden's own, This Device (this browser's text size, Offline Copies), Account, About. state, who, signin: where
     the Shared choices are kept (niwa.py's Handler.prefs_state)."""
     garden = ("Garden", [house.toggle("Link Previews", "linkPreviews", True)],
-              "Link Previews: hovering over a link to a note shows its stage and summary. Off, links just open. "
-              "Follows you to your other devices when signed in.")
+              "Hover a note link to see its stage and summary.")
     device = house.device_section(ctx, [house.offline_row()],
-                                  "Offline Copies: the notes you read last (up to 200) stay on this device for reading "
-                                  "without the network, and notes marked offline: true stay for good. Notes under "
-                                  "Archive/ are never kept.")
+                                  "Keeps your last 200 notes, and any marked offline: true, for reading offline. "
+                                  "Notes in Archive/ are never kept.")
     sections = [house.shared_section(ctx, ROOM, rooms(), state, who, signin), garden, device,
                 account_section(signed_in) if signed_in else None,
                 house.about_section(ROOM, version, status_text, vaultkit)]
