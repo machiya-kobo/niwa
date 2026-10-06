@@ -3,6 +3,10 @@
 Niwa follows [SemVer](https://semver.org). Before 1.0, a new feature, a changed default or setting, or a changed API
 field is a minor bump, and a fix or wording change is a patch. Settings are listed in the README.
 
+## 0.8.2
+
+- vaultkit 0.24.0: the footer's status line, the phone tab bar's labels and the Settings group text pass 4.5:1 contrast in every palette.
+
 ## 0.8.1
 
 - `NIWA_TRUSTED_PROXIES` (addresses or CIDRs, comma-separated): when set, an identity header (`Tailscale-User-Login` and Tailscale's others, `Remote-User`, `NIWA_AUTH_HEADER`) counts only on a connection from one of those addresses. From any other peer it is dropped before the gate reads it, so the request is anonymous. Unset, nothing changes.
