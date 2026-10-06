@@ -3,9 +3,12 @@
 Niwa follows [SemVer](https://semver.org). Before 1.0, a new feature, a changed default or setting, or a changed API
 field is a minor bump, and a fix or wording change is a patch. Settings are listed in the README.
 
-## Unreleased
+## 0.7.0
 
-- Shorter copy: the Settings footers (Garden, This Device, Account), the Queue and Stream intros, the empty garden, and the private-folder error (no setting name).
+vaultkit 0.23.0 (the house Settings order, Machiya's `docs/ui.md` "Settings").
+
+- Settings run Appearance (Theme, Mode, Text Size, Use This Device's Size under it), Garden, Rooms, Account, About. Offline Copies moved into Garden, so there is no This Device section; no setting's key changed.
+- Shorter copy: the Settings footers, the Queue and Stream intros, the empty garden, and the private-folder error (no setting name).
 
 ## 0.6.1
 
