@@ -36,7 +36,7 @@ requests for Hister.
 - **Keep personal details out of the repo:** server addresses, network names, usernames, folder names from your own
   vault. They belong in settings (see the README), not in code defaults, tests or comments.
 - **No new network endpoints** without discussion. Niwa talks to the vault repo, the optional sister services and
-  Hister the settings name, and to archive.org only when `NIWA_ARCHIVE=wayback`. No analytics.
+  Hister the settings name, and to archive.org unless `NIWA_ARCHIVE=none`. No analytics.
 - Match the surrounding code: its naming, comment density and idiom. Commits start with `niwa: `.
 
 ## Sending a change

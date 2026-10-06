@@ -1,4 +1,4 @@
-"""Niwa's state: the link-rot table (SQLite, NIWA_DB) and the garden's events.
+"""Niwa's state: the link-rot table and the scan acknowledgements (SQLite, NIWA_DB), and the garden's events.
 
 Garden events (publish, unpublish, garden = growth/confidence/pin changes, suggest, unsuggest) are Niwa's own. New ones are appended to `.garden/events/YYYY-MM.jsonl` in the vault repo (committed with
 the garden's batch, union-merged, so they survive a lost /data). Older events from a shared board are read from
@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS links (
     archive_url TEXT, archived_at TEXT, backend TEXT, died_at TEXT, notes TEXT,
     private_url TEXT, private_at TEXT, private_backend TEXT, private_checked TEXT);
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
+CREATE TABLE IF NOT EXISTS acks (rel TEXT, digest TEXT, at TEXT, actor TEXT, PRIMARY KEY (rel, digest));
 """
 
 
@@ -60,6 +61,23 @@ class State:
                 cols = ["url"] + list(fields)
                 self.db.execute("INSERT INTO links (%s) VALUES (%s)" % (", ".join(cols), ", ".join("?" * len(cols))),
                                 (url, *fields.values()))
+
+    # -- acknowledgements: the scan findings the owner published anyway (garden.py's hold) ----------------------
+
+    def ack(self, rel, digest, actor):
+        now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        with self.lock, self.db:
+            self.db.execute("INSERT OR REPLACE INTO acks (rel, digest, at, actor) VALUES (?, ?, ?, ?)",
+                            (rel, digest, now, actor))
+
+    def acks(self):
+        """{rel: {digest, …}}"""
+        with self.lock:
+            rows = self.db.execute("SELECT rel, digest FROM acks").fetchall()
+        out = {}
+        for rel, d in rows:
+            out.setdefault(rel, set()).add(d)
+        return out
 
     # -- garden events --------------------------------------------------------------------------------------------
 

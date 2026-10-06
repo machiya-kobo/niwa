@@ -25,7 +25,9 @@ function banner(cls, html) {
 }
 
 // -- PWA: service worker, offline copy, install hint ----------------------
-if ("serviceWorker" in navigator) {
+// the public garden (NIWA_PUBLIC_PORT) is a plain website: no service worker, no install hint
+const isPublic = !!document.querySelector('meta[name="niwa-public"]');
+if ("serviceWorker" in navigator && !isPublic) {
   navigator.serviceWorker.register("/sw.js").catch(() => { /* http on the LAN, or blocked */ });
 }
 if (document.body.dataset.offline !== undefined) {
@@ -50,7 +52,7 @@ if (standalone && history.length > 1 && !roots.includes(location.pathname)) {
   back.addEventListener("click", () => history.back());
   $(".topbar")?.prepend(back);
 }
-if (ios && !standalone && !stored("app.hint", false)) {
+if (ios && !standalone && !isPublic && !stored("app.hint", false)) {
   const el = banner("hint", "<span>Install this as an app: tap <b>Share</b>, then <b>Add to Home Screen</b>.</span>"
     + '<button type="button" aria-label="Dismiss">&times;</button>');
   $("button", el).addEventListener("click", () => { store("app.hint", true); el.remove(); });

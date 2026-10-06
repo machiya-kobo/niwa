@@ -28,6 +28,15 @@ STATUS = None        # niwa.py: a function returning the footer's {"text": …, 
 ROOM = "niwa"
 house.APP_PREFS = {"linkPreviews": {"type": "bool"}}     # Niwa's own setting that follows the person: account key niwa.link_previews
 NAV = [("/", "garden", "Garden"), ("/stream", "stream", "Stream"), ("/tags", "tags", "Tags"), ("/queue", "queue", "Queue")]
+# The public garden (NIWA_PUBLIC_PORT, niwa.py's PublicHandler): its pages carry ctx.public and leave out everything
+# that is the owner's: the queue, the gear and Settings, the Rooms menu, the status line, the service worker.
+PUBLIC_NAV = NAV[:3]
+GARDEN_URL = ""      # niwa.py: NIWA_GARDEN_URL while the public garden is on (the owner's notes link their public page)
+NOINDEX = False      # niwa.py: NIWA_PUBLIC_NOINDEX: the public pages ask search engines not to index them
+
+
+def public(ctx):
+    return bool(getattr(ctx, "public", False))
 
 
 def static_path(name):
@@ -127,15 +136,26 @@ def header(current, subtitle="", search=True, ctx=None, q=""):
     type; q fills it on /search; none on the precached /offline) and (signed in with the built-in sign-in) the person
     button to Settings' Account. ctx.who: niwa.py's Handler.ctx()."""
     bar = house.search_bar(q, "/search", "Search the Garden", "Search the Garden") if search else ""
+    if public(ctx):
+        return house.header(ROOM, PUBLIC_NAV, current, {}, subtitle, settings=False, search=bar)
     return house.header(ROOM, NAV, current, rooms(), subtitle, who=getattr(ctx, "who", ""), search=bar)
 
 
-def footer(with_status=True):
-    status = STATUS() if STATUS and with_status else None
+def footer(with_status=True, is_public=False):
+    """The public garden's footer has no status line (the synced commit) and no link into the house's rooms."""
+    status = STATUS() if STATUS and with_status and not is_public else None
     links = [("gemini://%s/" % GARDEN_HOST, "Gemini"), ("gopher://%s/" % GARDEN_HOST, "Gopher")] if GARDEN_HOST else []
-    return house.footer(ROOM, status, [(FEED, "RSS")] + links)
+    return house.footer(ROOM, status, [(FEED, "RSS")] + links, house={} if is_public else None)
 
 
+def public_tabbar(current):
+    """The phone's tab bar for the public garden: its three tabs, no Rooms menu and no Settings row."""
+    return '<nav class="tabbar" aria-label="Sections">%s</nav>' % "".join(
+        '<a href="%s"%s>%s<span>%s</span></a>' % (href, ' class="here" aria-current="page"' if key == current else "",
+                                                  ICON.get(key, ""), e(label)) for href, key, label in PUBLIC_NAV)
+
+
+PUBLIC_META = '<meta name="niwa-public" content="1">\n'     # niwa.js: no service worker, no install hint
 FEED = "/feed.xml"
 FEED_LINK = '<link rel="alternate" type="application/rss+xml" title="Niwa" href="%s">\n' % FEED   # autodiscovery
 
@@ -146,6 +166,11 @@ def page(ctx, what, body, current="", head="", status=True):
     the request has a principal) lets machiya.js sync theme and text size; ctx.who is the signed-in name.
     status=False: no status line in the footer (the precached /offline). ctx.banner (Hister sign-in is down and the
     Tailscale fallback let this request in): the banner at the top of <main>."""
+    if public(ctx):
+        robots = '<meta name="robots" content="noindex">\n' if NOINDEX else ""
+        return house.page(ctx, ROOM, house.title(ROOM, what), body + footer(status, True) + public_tabbar(current), (),
+                          current, links={}, head=PUBLIC_META + robots + FEED_LINK + head,
+                          stylesheets=[static_url("niwa.css")], scripts=[static_url("niwa.js")], manifest=False)
     if status and getattr(ctx, "banner", False):
         body = re.sub(r"(<main[^>]*>)", lambda m: m.group(1) + histerauth.banner_html(), body, count=1)
     meta = histerauth.signin_meta("/signout") if SIGNIN else ""

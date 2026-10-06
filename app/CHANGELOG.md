@@ -3,6 +3,13 @@
 Niwa follows [SemVer](https://semver.org). Before 1.0, a new feature, a changed default or setting, or a changed API
 field is a minor bump, and a fix or wording change is a patch. Settings are listed in the README.
 
+## 0.8.0
+
+- **Public garden** (off by default): `NIWA_PUBLIC_PORT` and `NIWA_GARDEN_URL` turn on a second, read-only website for anyone, with the published notes, their tags and images, the stream of garden events, search (60 a minute per address) and the feed. It has no sign-in, queue, settings or writes, reads and sets no cookies, trusts no identity header, and shows nothing from Konbini, Kura or Hister. Your own address and its sign-in are unchanged, and its note pages link each published note's public page. Search engines may index it; `NIWA_PUBLIC_NOINDEX=1` asks them not to. `NIWA_PUBLIC_BIND` binds it somewhere else.
+- **Held back until acknowledged (changes Gemini, Gopher and the feed too):** a `publish: true` note whose pre-publish scan finds an error (an address, a key, a token, or a word from the new `NIWA_SCAN_DENY`) is now kept out of every channel, the web, the public garden, Gemini, Gopher and the feed, until you press "Publish anyway" on its page. That records exactly those findings in Niwa's own database (never the vault); a new finding, or a `publish: true` written outside Niwa, holds the note again. **After upgrading**, notes published with "Publish anyway" before 0.8.0 are held until you acknowledge them once more: the Queue lists them under Held Back.
+- The scan also warns about tailnet names (`*.ts.net`) and email addresses.
+- **archive.org by default:** `NIWA_ARCHIVE` now defaults to `wayback`, so Niwa sends the published notes' external links to the Wayback Machine (archive.org). A live link keeps pointing at the original with a small "archive.org" link to its snapshot beside it, on your pages and the public garden; a dead link points at its snapshot as before. Gemini and Gopher add the snapshot as a second link line, mark a dead link "(dead link)", and give bare URLs a link line too. Set `NIWA_ARCHIVE=none` to keep links away from archive.org.
+
 ## 0.7.0
 
 vaultkit 0.23.0 (the house Settings order, Machiya's `docs/ui.md` "Settings").

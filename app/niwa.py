@@ -7,7 +7,8 @@ Optional: Konbini (column badges, "in bloom", the board half of the stream), Kur
 Hister (private link copies, the stream's reading line).
 
 Listeners: web (NIWA_PORT; owner gate on Tailscale-User-Login, or Machiya's identity file and its grants), gemini 1965,
-gopher 7070. /api/status is open (monitoring).
+gopher 7070, and with NIWA_PUBLIC_PORT the public garden (PublicHandler: published notes for anyone, read-only).
+/api/status is open (monitoring).
 """
 import ipaddress
 import json
@@ -32,6 +33,7 @@ import shell  # noqa: E402
 import smallweb  # noqa: E402
 import stream  # noqa: E402
 from capped import Capped  # noqa: E402
+import garden as garden_mod  # noqa: E402
 from garden import Garden  # noqa: E402
 from hister import Hister  # noqa: E402
 from konbini import Konbini  # noqa: E402
@@ -48,7 +50,7 @@ from vaultkit import read_secret  # noqa: E402
 from vaultkit import signin  # noqa: E402
 from writer import Writer, WriteError  # noqa: E402
 
-VERSION = "0.7.0"
+VERSION = "0.8.0"
 PORT = int(os.environ.get("NIWA_PORT", "8080"))
 USERS = set(filter(None, (u.strip() for u in os.environ.get("NIWA_USERS", "").split(","))))
 
@@ -66,13 +68,13 @@ def auth_mode(value, identity_file=""):
 
 
 def archive_mode(value):
-    """NIWA_ARCHIVE: "wayback" asks the Wayback Machine for snapshots (it sends each link's URL to archive.org); "none"
-    (the default) never contacts it. Links are still checked for life, and snapshots already recorded still show.
-    Any other value counts as none, with a warning."""
+    """NIWA_ARCHIVE: "wayback" (the default since 0.8.0) asks the Wayback Machine for snapshots (it sends each published
+    note's link URLs to archive.org); "none" never contacts it. Links are still checked for life, and snapshots
+    already recorded still show. Any other value counts as none, with a warning."""
     value = (value or "").strip().lower()
     if value not in ("", "none", "wayback"):
         print("niwa: WARNING: NIWA_ARCHIVE=%r is neither wayback nor none; treating it as none" % value, flush=True)
-    return "wayback" if value == "wayback" else "none"
+    return "wayback" if value in ("", "wayback") else "none"
 
 
 def flag(value):
@@ -89,7 +91,7 @@ def host_name(value):
         return ""
 
 
-def public_url(value):
+def public_url(value, name="NIWA_PUBLIC_URL"):
     """NIWA_PUBLIC_URL: Niwa's web address, an origin only (http(s), a host, maybe a port) with no path, like
     https://niwa.example. It says whether the web is served over https (the session cookie's Secure, and which pages
     the sign-in takes as same-origin) and is the origin the sign-in accepts. "" when unset; anything else refuses to
@@ -104,8 +106,7 @@ def public_url(value):
     except ValueError:
         ok = False
     if not ok or "@" in u.netloc:
-        raise SystemExit("niwa: NIWA_PUBLIC_URL must be an origin with no path, like https://niwa.example, not %r"
-                         % value)
+        raise SystemExit("niwa: %s must be an origin with no path, like https://niwa.example, not %r" % (name, value))
     return value
 
 
@@ -172,6 +173,7 @@ HOST = os.environ.get("NIWA_HOST", "").strip()           # the name in the gemin
 ALLOWED_HOSTS = allowed_hosts(HOST, os.environ.get("NIWA_ALLOWED_HOSTS"), PUBLIC_URL)
 SMALLWEB_HOST = HOST or "localhost"
 PRIVATE = tuple(p.strip().strip("/") + "/" for p in os.environ.get("NIWA_PRIVATE_FOLDERS", "").split(",") if p.strip().strip("/"))
+SCAN_DENY = [w.strip() for w in os.environ.get("NIWA_SCAN_DENY", "").split(",") if w.strip()]
 AUTHOR = (os.environ.get("NIWA_GIT_NAME", "garden"), os.environ.get("NIWA_GIT_EMAIL", "garden@niwa"))
 DATA_DIR = os.path.dirname(DB) or "."
 # Per-user preferences (GET/PUT /api/prefs, with an identity file): their own SQLite file next to NIWA_DB, made (0600)
@@ -219,6 +221,16 @@ def port_setting(value, default):
 
 
 GOPHER_PUBLIC_PORT = port_setting(os.environ.get("NIWA_GOPHER_PUBLIC_PORT"), 70)    # what the gopher menus advertise
+# The public garden: a second, read-only web listener for anyone (PublicHandler). Off unless NIWA_PUBLIC_PORT is set;
+# then NIWA_GARDEN_URL (its origin, every absolute URL it gives out) is required.
+PUBLIC_PORT = port_setting(os.environ.get("NIWA_PUBLIC_PORT"), 0)
+PUBLIC_BIND = os.environ.get("NIWA_PUBLIC_BIND", "").strip() or BIND
+GARDEN_URL = public_url(os.environ.get("NIWA_GARDEN_URL"), "NIWA_GARDEN_URL")
+if PUBLIC_PORT and not GARDEN_URL:
+    raise SystemExit("niwa: NIWA_PUBLIC_PORT needs NIWA_GARDEN_URL, the public garden's origin (like https://garden.example)")
+NOINDEX = flag(os.environ.get("NIWA_PUBLIC_NOINDEX"))
+shell.GARDEN_URL = GARDEN_URL if PUBLIC_PORT else ""
+shell.NOINDEX = NOINDEX
 shell.BOARD_URL = os.environ.get("NIWA_KONBINI_URL", "").rstrip("/")
 shell.KURA_URL = os.environ.get("NIWA_KURA_URL", "").rstrip("/")
 
@@ -250,6 +262,8 @@ clone_once()
 borrow_reference()
 state = State(DB, REPO)
 garden = Garden(REPO, SUBDIR, state, private=PRIVATE)
+garden.deny = garden_mod.deny_re(SCAN_DENY)
+garden._apply_private()
 def konbini_token(path):
     """NIWA_KONBINI_TOKEN_FILE: Niwa's token for Konbini (a room token, mht_…, when Konbini is in AUTH=hister mode, or a
     Machiya identity token), sent as Authorization on every call. "" when unset; a set file that holds no token refuses to start rather than call Konbini without it."""
@@ -293,6 +307,37 @@ writer = Writer(sync, garden, state)
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 # GET /api/changelog serves Niwa's own CHANGELOG.md, which lives in app/ so the image carries it.
 CHANGELOG_FILE = os.path.join(APP_DIR, "CHANGELOG.md")
+
+
+def static_file(name, query):
+    """/static/<name>: Niwa's own files, the vendored shared UI and the icons -> (status, body, type, headers)."""
+    if name.startswith("icons/"):
+        icon = name[6:]
+        old = shell.OLD_ICON_PREFIX
+        if icon.startswith((old + "-", old + ".")) and shell.ROOM + icon[len(old):] in shell.ICONS:
+            return 301, "", "text/plain", [("Location", "/static/icons/" + shell.ROOM + icon[len(old):]),   # before 0.4.0
+                                           ("Cache-Control", "public, max-age=604800")]
+        if icon in shell.ICONS:
+            with open(os.path.join(shell.ICON_DIR, icon), "rb") as f:
+                return (200, f.read(), "image/svg+xml" if icon.endswith(".svg") else "image/png",
+                        [("Cache-Control", "public, max-age=604800")])
+    elif name in STATIC_TYPES:
+        cache = "public, max-age=31536000, immutable" if query.get("v") else "max-age=300"
+        with open(shell.static_path(name), "rb") as f:
+            return 200, f.read(), STATIC_TYPES[name], [("Cache-Control", cache)]
+    return 404, "not found\n", "text/plain", []
+
+
+def asset_response(gpath, full):
+    """A vault image (/a/…) -> (body, type, headers): sandboxed, since a vault image is untrusted (a script in an SVG
+    opened as a page has no origin, no cookies and no way to post to Niwa; it never runs inside an <img>)."""
+    ctype = IMAGE_TYPES.get(os.path.splitext(gpath)[1].lower())
+    private = gpath[3:].startswith(NO_STORE_DIRS)      # Archive/ attachments never stay on a device
+    with open(full, "rb") as f:
+        body = f.read()
+    base = {k for k, _ in websafe.base_headers()}      # send() adds those to every response itself
+    extra = [h for h in websafe.asset_headers(gpath) if h[0] != "Content-Type" and h[0] not in base]
+    return body, ctype, [("Cache-Control", "no-store" if private else "max-age=86400")] + extra
 
 
 def make_handler(listener):
@@ -613,22 +658,7 @@ def make_handler(listener):
             self.garden_get(path, "", query, ctx)
 
         def static(self, name, query):
-            if name.startswith("icons/"):
-                icon = name[6:]
-                old = shell.OLD_ICON_PREFIX
-                if icon.startswith((old + "-", old + ".")) and shell.ROOM + icon[len(old):] in shell.ICONS:
-                    return self.send(301, "", "text/plain", headers=[      # the icon's old name (before 0.4.0)
-                        ("Location", "/static/icons/" + shell.ROOM + icon[len(old):]),
-                        ("Cache-Control", "public, max-age=604800")])
-                if icon in shell.ICONS:
-                    with open(os.path.join(shell.ICON_DIR, icon), "rb") as f:
-                        return self.send(200, f.read(), "image/svg+xml" if icon.endswith(".svg") else "image/png",
-                                         headers=[("Cache-Control", "public, max-age=604800")])
-            elif name in STATIC_TYPES:
-                cache = "public, max-age=31536000, immutable" if query.get("v") else "max-age=300"
-                with open(shell.static_path(name), "rb") as f:
-                    return self.send(200, f.read(), STATIC_TYPES[name], headers=[("Cache-Control", cache)])
-            self.send(404, "not found\n", "text/plain")
+            return self.send(*static_file(name, query))
 
         def garden_get(self, gpath, base, query, ctx):
             cards = garden.konbini.cards_by_path()
@@ -661,16 +691,9 @@ def make_handler(listener):
                 self.send(200, gmodern.queue(ctx, base, garden, cards), headers=[NO_STORE])   # unpublished notes
             elif gpath.startswith("/a/"):
                 full = garden.asset_path(gpath[3:])
-                ctype = IMAGE_TYPES.get(os.path.splitext(gpath)[1].lower())
-                if full and ctype:
-                    private = gpath[3:].startswith(NO_STORE_DIRS)      # Archive/ attachments never stay on a device
-                    with open(full, "rb") as f:
-                        # a vault image is untrusted: sandboxed, so a script in an SVG opened as a page has no origin, no
-                        # cookies and no way to post to Niwa (it never runs inside an <img>)
-                        base = {k for k, _ in websafe.base_headers()}      # send() adds those to every response itself
-                        extra = [h for h in websafe.asset_headers(gpath) if h[0] != "Content-Type" and h[0] not in base]
-                        self.send(200, f.read(), ctype,
-                                  headers=[("Cache-Control", "no-store" if private else "max-age=86400")] + extra)
+                if full and IMAGE_TYPES.get(os.path.splitext(gpath)[1].lower()):
+                    body, ctype, headers = asset_response(gpath, full)
+                    self.send(200, body, ctype, headers=headers)
                 else:
                     self.send(404, "not found\n", "text/plain")
             else:
@@ -810,13 +833,15 @@ def make_handler(listener):
                     if not n:
                         raise WriteError(404, "no such note")
                     on = data.get("on") == "1"
-                    if on and data.get("confirm") != "1":
+                    hold = garden.hold_digest(n) if on else ""
+                    # "Publish anyway" acknowledges the errors it showed (ack); any others found since show again
+                    if on and (data.get("confirm") != "1" or hold and data.get("ack") != hold):
                         checks = [c for c in garden.check(n) if c[0] in ("error", "warn")]
                         if checks:
                             ctx = self.ctx()
                             return self.send(200, gmodern.note(ctx, base, garden, n, garden.konbini.cards_by_path(),
                                                                garden.check(n)))
-                    writer.set_publish(n.rel, on, actor, label, power)
+                    writer.set_publish(n.rel, on, actor, label, power, ack=hold)
                     self.send(302, "", "text/plain", headers=[("Location", "%s/n/%s" % (base, quote(n.slug)))])
                 elif path == "/meta":
                     rel = data.get("rel", "")
@@ -836,6 +861,132 @@ def make_handler(listener):
                     self.send(e.status, shell.message(ctx, "Not Saved", e.message))
 
     return Handler
+
+
+# -- the public garden ------------------------------------------------------------------------------------------------
+
+class RateLimit:
+    """At most `limit` requests per `window` seconds per key (the caller's address). Behind a proxy every visitor
+    shares the proxy's address, so the limit is then the whole site's."""
+
+    def __init__(self, limit, window, keys=10000):
+        self.limit, self.window, self.keys = limit, window, keys
+        self.hits, self.lock = {}, threading.Lock()
+
+    def allow(self, key):
+        now = time.monotonic()
+        with self.lock:
+            if len(self.hits) > self.keys:          # a flood of addresses: forget the idle ones
+                self.hits = {k: v for k, v in self.hits.items() if v and v[-1] > now - self.window}
+            recent = [t for t in self.hits.get(key, ()) if t > now - self.window]
+            if len(recent) >= self.limit:
+                self.hits[key] = recent
+                return False
+            self.hits[key] = recent + [now]
+            return True
+
+
+SEARCH_LIMIT = RateLimit(60, 60)       # /search on the public garden: 60 a minute per address (live search types fast)
+PUBLIC_CACHE = ("Cache-Control", "public, max-age=300")    # the feed, robots.txt
+PAGE_CACHE = ("Cache-Control", "public, max-age=60")       # pages: an unpublished note leaves shared caches soon
+
+
+def make_public_handler():
+    """The public garden (NIWA_PUBLIC_PORT): the published notes, their tags, the public stream, their images and the
+    feed, for anyone. An allow-list of GET routes and nothing else: no sign-in, settings, queue, API or write, no
+    cookie read or set, no identity header trusted (Tailscale-User-Login, a proxy's, Authorization), and nothing from
+    Konbini, Kura or Hister: what gemini and gopher show, as web pages. Every absolute URL comes from NIWA_GARDEN_URL,
+    never from Host."""
+    class PublicHandler(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.0"
+        server_version = "niwa"
+        sys_version = ""
+        timeout = 30
+
+        def log_message(self, fmt, *args):
+            sys.stderr.write("public - %s\n" % (fmt % args))      # never the visitor's address
+
+        def send(self, status, body, ctype="text/html", headers=()):
+            if isinstance(body, str):
+                body, ctype = body.encode("utf-8"), ctype + "; charset=utf-8"
+            self.send_response(status)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(body)))
+            for k, v in (shell.house.security_headers() if ctype.startswith("text/html") else websafe.base_headers()):
+                self.send_header(k, v)
+            if NOINDEX:
+                self.send_header("X-Robots-Tag", "noindex")
+            for k, v in headers:
+                self.send_header(k, v)
+            self.end_headers()
+            if self.command != "HEAD":
+                self.wfile.write(body)
+
+        def refuse_method(self):
+            self.send(405, "method not allowed\n", "text/plain", headers=[("Allow", "GET, HEAD")])
+
+        do_POST = do_PUT = do_DELETE = do_PATCH = do_OPTIONS = refuse_method
+
+        def do_HEAD(self):
+            self.do_GET()
+
+        def ctx(self):
+            ctx = shell.prefs("")           # nobody's: the system theme, the standard text size
+            ctx.public, ctx.prefs_url, ctx.who, ctx.banner = True, "", "", False
+            return ctx
+
+        def page(self, html, status=200):
+            self.send(status, html, headers=[PAGE_CACHE])
+
+        def not_found(self, ctx, path):
+            self.send(404, shell.not_found(ctx, path), headers=[("Cache-Control", "public, max-age=60")])
+
+        def do_GET(self):
+            url = urlsplit(self.path)
+            path, query = unquote(url.path), parse_qs(url.query)
+            if path == "/robots.txt":
+                return self.send(200, "User-agent: *\n%s\n" % ("Disallow: /" if NOINDEX else "Allow: /"), "text/plain",
+                                 headers=[PUBLIC_CACHE])
+            if path.startswith("/static/"):
+                return self.send(*static_file(path[8:], query))
+            if path == shell.FEED:
+                return self.send(200, feed.rss(GARDEN_URL, "Niwa", gmodern.INTRO, feed.notes(garden, NO_STORE_DIRS)),
+                                 "application/rss+xml", headers=[PUBLIC_CACHE])
+            ctx = self.ctx()
+            if path == "/":
+                return self.page(gmodern.home(ctx, "", garden, {}, (query.get("type") or [""])[0]))
+            if path == "/random":
+                n = garden.random_note()
+                return self.send(302, "", "text/plain", headers=[
+                    ("Location", "/n/%s" % quote(n.slug) if n else "/"), ("Cache-Control", "no-store")])
+            if path.startswith("/n/"):
+                n = garden.get(path[3:])
+                if not n or not n.published:        # unpublished, private or held back: not here, whatever it is
+                    return self.not_found(ctx, path)
+                if (query.get("preview") or [""])[0] == "1":
+                    return self.send(200, json.dumps(garden.preview(n), indent=1), "application/json",
+                                     headers=[PAGE_CACHE])
+                return self.page(gmodern.note(ctx, "", garden, n, {}))
+            if path.startswith("/t/"):
+                return self.page(gmodern.tag_page(ctx, "", garden, path[3:], {}))
+            if path == "/tags":
+                return self.page(gmodern.tags_page(ctx, "", garden))
+            if path == "/stream":       # garden events about published notes: no board, no Hister (as on gemini)
+                return self.page(gmodern.stream(ctx, "", garden, stream.build(garden, links=links, public=True)))
+            if path == "/search":
+                if not SEARCH_LIMIT.allow(self.client_address[0] if self.client_address else ""):
+                    return self.send(429, shell.message(ctx, "Too Many Searches", "Try again in a minute."),
+                                     headers=[("Retry-After", "60"), ("Cache-Control", "no-store")])
+                return self.page(gmodern.search_page(ctx, "", garden, (query.get("q") or [""])[0]))
+            if path.startswith("/a/"):
+                full = garden.public_asset_path(path[3:])      # only an image a published note shows
+                if full and IMAGE_TYPES.get(os.path.splitext(path)[1].lower()):
+                    body, ctype, headers = asset_response(path, full)
+                    return self.send(200, body, ctype, headers=headers)
+                return self.send(404, "not found\n", "text/plain")
+            return self.not_found(ctx, path)
+
+    return PublicHandler
 
 
 def footer_status():
@@ -876,8 +1027,8 @@ class CappedHTTPServer(Capped, ThreadingHTTPServer):
     lifetime = 120
 
 
-def serve(port, listener):
-    server = CappedHTTPServer((BIND, port), make_handler(listener))
+def serve(port, listener, bind=None, handler=None):
+    server = CappedHTTPServer((bind or BIND, port), handler or make_handler(listener))
     server.daemon_threads = True
     server.serve_forever()
 
@@ -914,6 +1065,14 @@ def main():
               "footer has no Gemini or Gopher links. Set NIWA_HOST to the name people use to reach this machine.", flush=True)
     threading.Thread(target=sync.worker, daemon=True).start()
     threading.Thread(target=links.worker, daemon=True).start()
+    if PUBLIC_PORT:
+        print("niwa: public garden on %s:%d as %s (published notes only; %s)" % (
+            PUBLIC_BIND, PUBLIC_PORT, GARDEN_URL, "noindex" if NOINDEX else "indexable"), flush=True)
+        threading.Thread(target=serve, args=(PUBLIC_PORT, "public", PUBLIC_BIND, make_public_handler()),
+                         daemon=True).start()
+    if garden.held:
+        print("niwa: %d published note(s) held back by the scan until acknowledged on their page: %s" % (
+            len(garden.held), ", ".join(sorted(garden.held)[:10])), flush=True)
     smallweb.start(garden, None, DATA_DIR, SMALLWEB_HOST, BIND, GOPHER_PUBLIC_PORT)
     serve(PORT, "tailnet")
 

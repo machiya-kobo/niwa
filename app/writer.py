@@ -63,12 +63,18 @@ class Writer:
         self.sync.touch(summary)
         self.garden.revision = "%s+w%d" % (self.garden.revision.split("+w")[0], next(self.counter))
 
-    def set_publish(self, rel, value, actor, agent, power=None):
+    def set_publish(self, rel, value, actor, agent, power=None, ack=""):
+        """ack: the digest of the scan errors the owner saw and published anyway (garden.hold_digest), kept in Niwa's
+        state so those findings no longer hold the note back (a held note already says `publish: true`: its frontmatter
+        stays as it is, and the event says it is in the garden now)."""
         owner_only(agent, power, "only the owner publishes to the garden, from the web UI")
         with self.lock:
             self.checked(rel)
             if value and self.garden.is_private(rel):       # no "publish anyway": a private folder is never published
                 raise WriteError(422, "notes in a private folder are never published")
+            if value and ack:
+                self.state.ack(rel, ack, actor)
+                self.garden.refresh_holds()
             self.write_file(rel, edit_front(self.read(rel), {"publish": bool(value)}))
             self.state.add_event("publish" if value else "unpublish", actor, agent, path=rel)
             self.changed(("publish " if value else "unpublish ") + os.path.splitext(os.path.basename(rel))[0])

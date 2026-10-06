@@ -95,6 +95,7 @@ ul.checks { list-style: none; padding: 0; margin: 0 0 10px; width: 100%; font-si
 /* ---- link rot ------------------------------------------------------------------------------------------------ */
 .nbody a.dead { color: var(--orange); text-decoration: line-through; text-decoration-color: var(--red); }
 .nbody a.dead::after { content: " \21BB"; text-decoration: none; font-size: var(--fs-xs); }
+.nbody a.arch { font-size: var(--fs-xs); color: var(--muted); white-space: nowrap; }
 .linklist li { font-size: var(--fs-s); word-break: break-all; }
 
 /* ---- tags ---------------------------------------------------------------------------------------------------- */

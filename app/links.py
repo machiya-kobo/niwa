@@ -1,9 +1,10 @@
 """Link rot: an archived copy next to every external link.
 
 The garden collects the external links of published notes, checks each one
-on a slow schedule, and (with NIWA_ARCHIVE=wayback) saves a copy at the
-Wayback Machine. Results are kept in NIWA_DB. Garden notes swap a dead link
-for its archived copy and list their links with status, the stream reports
+on a slow schedule, and (with NIWA_ARCHIVE=wayback, the default) saves a copy at the
+Wayback Machine. Results are kept in NIWA_DB. Garden notes keep a live link
+pointing at the original with an "archive.org" link to its snapshot beside it,
+swap a dead link for its archived copy and list their links with status, the stream reports
 links that died, and the pre-publish check warns about links already known
 dead. Nothing is written into the notes.
 
@@ -403,23 +404,39 @@ class Links:
         return [r for r in self.for_note(rel) if r.get("status") == "dead"]
 
     def annotate(self, html, private=False):
-        """Point dead links at their archived copy and mark them. private=True
-        (the owner's modern pages) prefers the private copy; everything else
-        only ever gets the public Wayback copy."""
+        """Point dead links at their archived copy and mark them; a live link keeps pointing at the original, with a
+        small "archive.org" link to its Wayback snapshot after it when there is one. private=True (the owner's
+        modern pages) prefers the private copy for a dead link; everything else only ever gets the public Wayback
+        copy."""
         by_url = self.index()[0]
+
         def swap(m):
             url = unescape(m.group(1))      # the href is HTML (&amp;); the table holds the URL as written
             rec = by_url.get(url)
-            if not rec or rec.get("status") != "dead":
+            if not rec:
                 return m.group(0)
+            snap = web_url(rec.get("archive_url"))
+            if rec.get("status") != "dead":
+                if not snap:
+                    return m.group(0)
+                return '%s <a class="arch" title="Archived copy from %s" href="%s">archive.org</a>' % (
+                    m.group(0), escape(rec.get("archived_at") or "?"), escape(snap))
             if private and web_url(rec.get("private_url")):
-                return '<a class="dead" title="dead link, private copy from %s" href="%s"' % (
+                tag = '<a class="dead" title="dead link, private copy from %s" href="%s"' % (
                     escape(rec.get("private_at") or "?"), escape(rec["private_url"]))
-            if web_url(rec.get("archive_url")):
-                return '<a class="dead" title="dead link, archived copy from %s" href="%s"' % (
-                    escape(rec.get("archived_at") or "?"), escape(rec["archive_url"]))
-            return '<a class="dead" title="dead link, no archived copy" href="%s"' % escape(url)
-        return re.sub(r'<a href="(https?://[^"]+)"', swap, html)
+            elif snap:
+                tag = '<a class="dead" title="dead link, archived copy from %s" href="%s"' % (
+                    escape(rec.get("archived_at") or "?"), escape(snap))
+            else:
+                tag = '<a class="dead" title="dead link, no archived copy" href="%s"' % escape(url)
+            return tag + m.group(2)
+        return re.sub(r'<a href="(https?://[^"]+)"(.*?</a>)', swap, html, flags=re.S)
+
+    def snapshot(self, url):
+        """(the public Wayback snapshot of a link or "", whether it is dead): gemini and gopher add the snapshot as a
+        second link line, and say when the link is dead."""
+        rec = self.index()[0].get(url)
+        return (web_url(rec.get("archive_url")), rec.get("status") == "dead") if rec else ("", False)
 
     def died_between(self, start, end):
         out = []

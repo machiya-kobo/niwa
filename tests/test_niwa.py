@@ -1264,8 +1264,8 @@ class ArchiveAndHisterSaveTest(unittest.TestCase):
     """Niwa never contacts archive.org, and never indexes into Hister, unless the settings say so."""
 
     def test_archive_mode(self):
-        for value, want in ((None, "none"), ("", "none"), ("none", "none"), ("wayback", "wayback"), (" Wayback ", "wayback"),
-                            ("archive.org", "none")):
+        for value, want in ((None, "wayback"), ("", "wayback"), ("none", "none"), (" None ", "none"), ("wayback", "wayback"),
+                            (" Wayback ", "wayback"), ("archive.org", "none")):      # wayback by default since 0.8.0
             self.assertEqual(niwa.archive_mode(value), want, value)
         self.assertEqual(niwa.ARCHIVE, "none")                       # the suite runs with NIWA_ARCHIVE=none
         self.assertEqual(niwa.links.backends, [])
@@ -2308,6 +2308,245 @@ class WriteTest(unittest.TestCase):
         self.assertIn("LAN or tailnet address", body)
         self.assertFalse(niwa.garden.get("Notes/Risky").published)
         os.remove(path)
+
+
+class PublicGardenTest(unittest.TestCase):
+    """The public garden (NIWA_PUBLIC_PORT): published notes for anyone, and nothing that is the owner's."""
+    SENTINELS = ("kura.sentinel", "konbini.sentinel", "hister.sentinel", "shiori.sentinel", "machiya.sentinel",
+                 "blog.sentinel")
+
+    @classmethod
+    def setUpClass(cls):
+        cls.server = niwa.ThreadingHTTPServer(("127.0.0.1", 0), niwa.make_public_handler())
+        threading.Thread(target=cls.server.serve_forever, daemon=True).start()
+        cls.port = cls.server.server_address[1]
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.server.shutdown()
+
+    def setUp(self):
+        root = niwa.garden.root
+        self.made = [
+            write_note("Notes/Public lantern.md", "---\ntitle: Public lantern\npublish: true\ntags: [topic/retro]\n---\n"
+                       "Made with [[Lantern]] and [[Secret plan|a plan]]. ![[lantern.png]] See https://dead.example/x\n\n"
+                       "Also [the live page](https://live.example/y).\n"),
+            write_note("Notes/Secret plan.md", "---\ntitle: Secret plan\n---\nNot for anyone. ![[secret.png]]\n"),
+            write_note("Notes/Held.md", "---\ntitle: Held note\npublish: true\n---\nThe box is at 192.168.1.20.\n"),
+        ]
+        os.makedirs(os.path.join(root, "Private"), exist_ok=True)
+        self.made.append(write_note("Private/Diary.md", "---\ntitle: Diary\npublish: true\n---\nDear diary.\n"))
+        self.made.append(os.path.join(root, "Notes", "secret.png"))
+        with open(self.made[-1], "wb") as f:
+            f.write(b"\x89PNG\r\n\x1a\n")
+        niwa.state.link_set("https://dead.example/x", status="dead", notes="Notes/Public lantern.md",
+                            archive_url="https://web.archive.org/web/2026/https://dead.example/x",
+                            private_url="https://hister.sentinel.example/copy", private_at="2026-09-01")
+        niwa.state.link_set("https://live.example/y", status="live", notes="Notes/Public lantern.md",
+                            archive_url="https://web.archive.org/web/2026/https://live.example/y", archived_at="2026-09-02")
+        self.private = niwa.garden.private
+        niwa.garden.private = ("Private/",)
+        niwa.garden.revision += "x"
+        card = {"board": "wip", "slug": "public-lantern", "post_url": "https://blog.sentinel.example/p", "next": "x"}
+        self.patches = [
+            mock.patch.object(niwa, "GARDEN_URL", "https://garden.example"),
+            mock.patch.object(niwa.shell, "GARDEN_URL", "https://garden.example"),      # the owner's "public page" link
+            mock.patch.object(niwa.shell, "KURA_URL", "https://kura.sentinel.example"),
+            mock.patch.object(niwa.shell, "BOARD_URL", "https://konbini.sentinel.example"),
+            mock.patch.object(niwa.garden.konbini, "cards_by_path", lambda *a, **k: {"Notes/Public lantern.md": card}),
+            mock.patch.dict(os.environ, MACHIYA_ROOMS="shiori=https://shiori.sentinel.example,"
+                                                      "machiya=https://machiya.sentinel.example"),
+        ]
+        for p in self.patches:
+            p.start()
+
+    def tearDown(self):
+        for p in self.patches:
+            p.stop()
+        niwa.garden.private = self.private
+        for path in self.made:
+            os.remove(path)
+        niwa.state.db.execute("DELETE FROM links WHERE url IN (?, ?)", ("https://dead.example/x", "https://live.example/y"))
+        niwa.state.db.commit()
+        niwa.state.links_version += 1
+        niwa.garden.revision += "x"
+
+    def get(self, path, method="GET", headers=()):
+        import socket
+        head = "".join("%s: %s\r\n" % kv for kv in (("Host", "evil.example"),) + tuple(headers))
+        with socket.create_connection(("127.0.0.1", self.port), timeout=10) as c:
+            c.sendall(("%s %s HTTP/1.0\r\n%s\r\n" % (method, path, head)).encode())
+            data = b""
+            while True:
+                chunk = c.recv(65536)
+                if not chunk:
+                    break
+                data += chunk
+        top, _, rest = data.partition(b"\r\n\r\n")
+        lines = top.decode("latin-1").split("\r\n")
+        hdrs = {}
+        for line in lines[1:]:
+            if ": " in line:
+                k, v = line.split(": ", 1)
+                hdrs.setdefault(k.lower(), []).append(v)
+        return int(lines[0].split()[1]), hdrs, rest.decode("utf-8", "replace")
+
+    def test_the_owner_page_would_show_the_sentinels(self):
+        _, body = req("/n/Notes/Public%20lantern")      # the owner's own port: the proof the sweep below means something
+        for want in ("kura.sentinel", "konbini.sentinel", "hister.sentinel", "blog.sentinel", "Tend",
+                     'href="https://garden.example/n/Notes/Public%20lantern">public page</a>'):
+            self.assertIn(want, body)
+
+    def test_public_pages_carry_nothing_of_the_owners(self):
+        owner = (("Tailscale-User-Login", "owner@test"), ("Cookie", "theme=night; machiya_session=x"),
+                 ("Authorization", "Bearer mch_x"), ("Remote-User", "owner"))
+        for path in ("/", "/?type=project", "/n/Notes/Public%20lantern", "/n/Notes/Public%20lantern?preview=1",
+                     "/n/MOC/Crafts", "/t/topic/retro", "/tags", "/stream", "/search?q=lantern", "/search?q=secret",
+                     "/feed.xml", "/robots.txt", "/nowhere"):
+            for headers in ((), owner):           # an identity header or cookie changes nothing here
+                status, hdrs, body = self.get(path, headers=headers)
+                self.assertIn(status, (200, 404), path)
+                self.assertNotIn("set-cookie", hdrs, path)
+                for bad in self.SENTINELS + ("Secret plan", "Held note", "192.168", "Diary", 'method="post"', "/queue",
+                                             "/settings", "Tend", "synced", "/sw.js", "manifest", "evil.example",
+                                             "Publish anyway", "Publish to garden", "Unpublish", "Preview"):
+                    self.assertNotIn(bad, body, (path, bad))
+        _, hdrs, body = self.get("/n/Notes/Public%20lantern")
+        self.assertIn("Public lantern", body)
+        self.assertIn('href="https://web.archive.org/web/2026/https://dead.example/x"', body)   # Wayback, never Hister
+        self.assertIn('name="niwa-public"', body)
+        self.assertIn('<span class="seed" title="not in the garden">Lantern</span>', body)     # unpublished: plain text
+        self.assertIn("public", hdrs["cache-control"][0])
+        _, _, rss = self.get("/feed.xml")
+        self.assertIn("<link>https://garden.example/n/", rss)                    # NIWA_GARDEN_URL, never Host
+
+    def test_a_live_link_keeps_its_original_with_an_archive_link_beside_it(self):
+        want = ('<a href="https://live.example/y">the live page</a> <a class="arch" title="Archived copy from 2026-09-02" '
+                'href="https://web.archive.org/web/2026/https://live.example/y">archive.org</a>')
+        self.assertIn(want, self.get("/n/Notes/Public%20lantern")[2])            # the public garden
+        self.assertIn(want, req("/n/Notes/Public%20lantern")[1])                 # and the owner's page
+        gem = SweepFixesTest.gemini("/n/Notes/Public%20lantern")
+        self.assertIn("=> https://live.example/y the live page\n"
+                      "=> https://web.archive.org/web/2026/https://live.example/y the live page (archive.org)\n", gem)
+        self.assertIn("=> https://dead.example/x https://dead.example/x (dead link)\n"
+                      "=> https://web.archive.org/web/2026/https://dead.example/x https://dead.example/x (archive.org)", gem)
+        self.assertNotIn("hister.sentinel", gem)
+        gopher = SweepFixesTest.gopher("/n/Notes/Public lantern")
+        self.assertIn("https://web.archive.org/web/2026/https://live.example/y", gopher)
+
+    def test_only_published_notes_and_their_images(self):
+        for path in ("/n/Notes/Secret%20plan", "/n/Notes/Held", "/n/Private/Diary", "/n/Projects/Lantern",
+                     "/n/Notes/Secret%20plan?preview=1", "/a/Notes/secret.png", "/a/Archive/old.png"):
+            self.assertEqual(self.get(path)[0], 404, path)
+        status, hdrs, _ = self.get("/a/Notes/lantern.png")
+        self.assertEqual(status, 200)
+        self.assertIn("sandbox", hdrs["content-security-policy"][0])
+        for path in ("/queue", "/settings", "/signin", "/signout", "/theme?set=night", "/api/status", "/api/prefs",
+                     "/api/suggestions", "/api/offline", "/api/changelog", "/sw.js", "/manifest.webmanifest", "/offline"):
+            self.assertEqual(self.get(path)[0], 404, path)
+        for method in ("POST", "PUT", "DELETE", "PATCH", "OPTIONS"):
+            for path in ("/publish", "/meta", "/dismiss", "/api/suggest", "/api/prefs", "/signin", "/"):
+                status, hdrs, _ = self.get(path, method)
+                self.assertEqual(status, 405, (method, path))
+                self.assertEqual(hdrs["allow"], ["GET, HEAD"])
+        status, hdrs, _ = self.get("/random")
+        self.assertEqual(status, 302)
+        self.assertTrue(hdrs["location"][0].startswith("/n/"))
+
+    def test_search_is_rate_limited_per_address(self):
+        with mock.patch.object(niwa, "SEARCH_LIMIT", niwa.RateLimit(2, 60)):
+            self.assertEqual([self.get("/search?q=lantern")[0] for _ in range(3)], [200, 200, 429])
+            self.assertEqual(self.get("/")[0], 200)                                 # only searches count
+        limit = niwa.RateLimit(1, 60)
+        self.assertTrue(limit.allow("a") and limit.allow("b"))
+        self.assertFalse(limit.allow("a"))
+
+    def test_indexing_is_on_unless_turned_off(self):
+        status, hdrs, body = self.get("/robots.txt")
+        self.assertEqual((status, body), (200, "User-agent: *\nAllow: /\n"))
+        self.assertNotIn("x-robots-tag", hdrs)
+        self.assertNotIn('name="robots"', self.get("/")[2])
+        with mock.patch.object(niwa, "NOINDEX", True), mock.patch.object(niwa.shell, "NOINDEX", True):
+            status, hdrs, body = self.get("/robots.txt")
+            self.assertEqual(body, "User-agent: *\nDisallow: /\n")
+            status, hdrs, body = self.get("/")
+            self.assertEqual(hdrs["x-robots-tag"], ["noindex"])
+            self.assertIn('<meta name="robots" content="noindex">', body)
+
+    def test_garden_url_is_an_origin(self):
+        self.assertEqual(niwa.public_url("https://garden.example/", "NIWA_GARDEN_URL"), "https://garden.example")
+        with self.assertRaises(SystemExit) as cm:
+            niwa.public_url("https://garden.example/notes", "NIWA_GARDEN_URL")
+        self.assertIn("NIWA_GARDEN_URL", str(cm.exception))
+        self.assertEqual(niwa.PUBLIC_PORT, 0)                                       # off unless set
+
+
+class HoldTest(unittest.TestCase):
+    """A `publish: true` note whose scan finds errors is held back everywhere until the owner acknowledges them."""
+
+    def setUp(self):
+        self.path = write_note("Notes/Box.md", "---\ntitle: Box notes\npublish: true\n---\nThe box is at 192.168.1.20.\n")
+
+    def tearDown(self):
+        os.remove(self.path)
+        niwa.garden.deny = None
+        niwa.garden.revision += "x"
+        niwa.sync.commit()          # its publish event in a batch of its own, not a later test's
+
+    def publish(self, **extra):
+        return req("/publish", dict({"rel": "Notes/Box.md", "on": "1"}, **extra))
+
+    def test_held_until_acknowledged_then_held_again_by_a_new_finding(self):
+        n = niwa.garden.get("Notes/Box")
+        self.assertFalse(n.published)
+        self.assertIn("Notes/Box.md", niwa.garden.held)
+        self.assertNotIn("Box notes", niwa.feed.rss("https://g.example", "Niwa", "", niwa.feed.notes(niwa.garden)))
+        self.assertNotIn("Box", SweepFixesTest.gemini("/"))
+        self.assertIn("51", SweepFixesTest.gemini("/n/Notes/Box")[:3])           # not found on gemini
+        _, queue = req("/queue")
+        self.assertIn("Held Back", queue)
+        _, page = req("/n/Notes/Box")
+        self.assertIn("Held back", page)
+        self.assertIn("Publish anyway", page)
+        ack = re.search(r'name="ack" value="([0-9a-f]{64})"', page).group(1)
+        self.assertEqual(ack, niwa.garden.hold_digest(n))
+        status, body = self.publish(confirm="1", ack="0" * 64)                   # not what was shown: shown again
+        self.assertEqual(status, 200)
+        self.assertFalse(niwa.garden.get("Notes/Box").published)
+        status, _ = self.publish(confirm="1", ack=ack)
+        self.assertEqual(status, 302)
+        self.assertTrue(niwa.garden.get("Notes/Box").published)
+        self.assertIn(ack, niwa.state.acks()["Notes/Box.md"])
+        self.assertIn("Box notes", niwa.feed.rss("https://g.example", "Niwa", "", niwa.feed.notes(niwa.garden)))
+        with open(self.path, "a") as f:
+            f.write("Token: ghp_abcdefghijklmnop\n")                              # a new finding: held again
+        niwa.garden.revision += "x"
+        self.assertFalse(niwa.garden.get("Notes/Box").published)
+
+    def test_a_publish_without_errors_needs_no_acknowledgement(self):
+        with open(self.path, "w") as f:
+            f.write("---\ntitle: Box notes\npublish: true\n---\nA plain box.\n")
+        niwa.garden.revision += "x"
+        self.assertTrue(niwa.garden.get("Notes/Box").published)
+        self.assertEqual(niwa.garden.hold_digest(niwa.garden.get("Notes/Box")), "")
+
+    def test_deny_words_tailnet_names_and_emails(self):
+        import garden as g
+        with open(self.path, "w") as f:
+            f.write("---\ntitle: Box notes\npublish: true\n---\nOn lantern-host.example-tail.ts.net, mail a@b.example. "
+                    "The Workshop door.\n")
+        niwa.garden.revision += "x"
+        n = niwa.garden.get("Notes/Box")
+        self.assertTrue(n.published)                                             # warnings never hold a note back
+        labels = " ".join(m for _, m in niwa.garden.check(n))
+        self.assertIn("tailnet name", labels)
+        self.assertIn("email address", labels)
+        niwa.garden.deny = g.deny_re(["workshop", " "])
+        niwa.garden._apply_private()
+        self.assertFalse(niwa.garden.get("Notes/Box").published)
+        self.assertTrue(any(s == "error" and m.startswith(g.DENY_LABEL) for s, m in niwa.garden.check(n)))
+        self.assertIsNone(g.deny_re(["", " "]))
+        self.assertFalse(g.deny_re(["work"]).search("workshop"))                 # whole words only
 
 
 def tearDownModule():

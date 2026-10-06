@@ -6,9 +6,9 @@ Niwa (庭) grows your digital garden: pick the notes you want to share, and Niwa
 
 - **Pages:** the landing page (intro from `Garden.md`, pinned, maps, recent, "in bloom"), notes, tags, the stream (what changed), the queue (suggested and well-linked unpublished notes), random, images, an RSS feed of the published notes (`/feed.xml`), and `/settings` (Appearance, Garden, Rooms, Account when signed in, About; theme and text size follow you to your other devices through `/api/prefs`, the rest stays on the device).
 - **Growth stages** (seedling, budding, evergreen), confidence, pins, backlinks, "nearby" notes, and topic maps.
-- **Pre-publish scan:** before you publish a note, Niwa checks it for addresses, keys and tokens, links to notes in private folders (`NIWA_PRIVATE_FOLDERS`), links to unpublished notes, dead links and a missing summary.
-- **Link rot:** Niwa checks every external link in a published note, and can swap a dead link for its Wayback Machine copy (`NIWA_ARCHIVE=wayback`). Your own pages also show a Hister copy.
-- **Small web:** Gemini (port 1965) and Gopher (port 70) mirrors of the garden. They serve published notes only, and their `/stream` lists garden events about published notes and nothing from a board, so nothing about an unpublished note reaches them.
+- **Pre-publish scan:** before you publish a note, Niwa checks it for addresses, keys and tokens, words you list in `NIWA_SCAN_DENY`, tailnet names, email addresses, links to notes in private folders (`NIWA_PRIVATE_FOLDERS`), links to unpublished notes, dead links and a missing summary. A note with an error stays out of the garden until you choose "Publish anyway" on its page, even when `publish: true` was written somewhere else.
+- **Link rot:** Niwa checks every external link in a published note and saves a Wayback Machine copy of it, so a link keeps pointing at the original with a small "archive.org" link beside it, and a dead link points at its copy. This sends the published notes' links to archive.org; `NIWA_ARCHIVE=none` turns it off. Your own pages also show a Hister copy.
+- **Public garden:** turn on a second, read-only website for anyone (`NIWA_PUBLIC_PORT`), and Gemini (port 1965) and Gopher (port 70) mirrors. They serve published notes only, and their `/stream` lists garden events about published notes and nothing from a board, so nothing about an unpublished note reaches them.
 
 ## Quickstart
 
@@ -63,6 +63,10 @@ is on port 1965 and Gopher on 7070. Ctrl-C stops it; `rm -rf demo-vault demo-vau
 
 Here the **owner** is the person whose vault it is, and a **room** is one Machiya app (Niwa is the garden).
 
+- **Anyone, on the public web:** set `NIWA_PUBLIC_PORT` and `NIWA_GARDEN_URL` (its public address, for example
+  `https://garden.example`) and put a TLS proxy (Caddy, Tailscale Funnel) in front of that port. It serves the published
+  notes, their tags and images, the stream of garden events and the feed, and nothing else: no sign-in, queue,
+  settings or writes, no cookies, and nothing from Konbini, Kura or Hister. Your own address keeps working as below.
 - **You, on localhost:** `NIWA_AUTH=open` with `NIWA_BIND=127.0.0.1`, as in the Quickstart: no login, and anyone who
   reaches the web port can publish, so keep it on your own machine.
 - **People on your tailnet:** bind `127.0.0.1`, put `tailscale serve` in front, and list their Tailscale logins in
@@ -314,6 +318,11 @@ On first start Niwa asks `openssl` for a self-signed certificate (EC P-256, vali
 | `NIWA_ALLOWED_HOSTS` | — | with `NIWA_AUTH=open`: more names (comma-separated) the web UI answers to besides IP addresses, `localhost`, `NIWA_HOST` and `NIWA_PUBLIC_URL`'s host, e.g. a LAN name. Names match without case, port or a trailing dot (`Box.lan:8080` is `box.lan`). A request with no `Host` header (an HTTP/1.0 client may send none) gets 403 |
 | `NIWA_HOST` | — | the name in the Gemini certificate and Gopher menus, and the footer's Gemini and Gopher links. Unset: `localhost`, no footer links, and a startup warning |
 | `NIWA_PRIVATE_FOLDERS` | — | top-level folders of the notes (comma-separated, e.g. `Private,Inbox`) whose notes are never queued and never published: a note there with `publish: true` is not served on the web, Gemini, Gopher or the feed, "Publish" refuses it (no "publish anyway"), and the pre-publish check warns about links to them. Unset: no folder is special |
+| `NIWA_SCAN_DENY` | — | words or names (comma-separated: hostnames, people, places) that must never be published. The pre-publish scan counts each one as an error, so a note with one stays out of the garden until you publish it anyway. Matched whole, ignoring case |
+| `NIWA_PUBLIC_PORT` | — | the public garden's port (for example `8081`): a read-only website for anyone, with only the published notes. Unset: off |
+| `NIWA_GARDEN_URL` | — | the public garden's address, an origin with no path (`https://garden.example`): its feed and links use it, never the request's `Host`. Required with `NIWA_PUBLIC_PORT`; your own pages link each published note's public page |
+| `NIWA_PUBLIC_BIND` | `NIWA_BIND` | the address the public garden binds, when it differs from your own listeners' |
+| `NIWA_PUBLIC_NOINDEX` | — | `1`, `on` or `true`: ask search engines not to index the public garden (`robots.txt` disallows all, `noindex` on every page). Unset: indexable |
 | `NIWA_LINKS_USER_AGENT` | `niwa-links/1` | the link checker's User-Agent (add a contact URL for the sites it checks) |
 | `NIWA_SKIP_HOSTS` | — | host names (comma-separated; each matches itself and its subdomains) the link checker never visits, on top of `localhost`, `*.ts.net` and every private, loopback or link-local IP address |
 | `NIWA_KONBINI_URL`, `NIWA_KURA_URL` | — | sister services (see above): the addresses browsers follow |
@@ -325,7 +334,7 @@ On first start Niwa asks `openssl` for a self-signed certificate (EC P-256, vali
 | `NIWA_HISTER_URL`, `NIWA_HISTER_PUBLIC` | — | Hister (optional): the owner's private link copies and the stream's reading line; `NIWA_HISTER_PUBLIC` is the address the owner's browser uses for links to it |
 | `NIWA_HISTER_TOKEN_FILE` | — | the file holding the owner's Hister token (first line). Set, it goes to Hister as `X-Access-Token` on every call and to the `hister` command-line tool as `HISTER__APP__ACCESS_TOKEN` in its own environment (never on its command line); it is read again when the file changes, never logged and never shown in `/api/status`. A set file with no token stops startup. Unset: no token is sent, as before (Hister ignores it until it requires one) |
 | `NIWA_COLD_MAP` | — | optional: the URL of a JSON map of static page snapshots, `{"urls": {norm(url): {"snapshot", "date"}}}` (keys from `app/urlnorm.py`), used as the owner's private copy of a link |
-| `NIWA_ARCHIVE` | `none` | `wayback` asks the Wayback Machine for a snapshot of each link in the published notes (it sends those URLs to archive.org) and swaps a dead link for its snapshot. `none` never contacts archive.org; links are still checked for life and snapshots already recorded still show. Any other value counts as `none`, with a startup warning |
+| `NIWA_ARCHIVE` | `wayback` | `wayback` asks the Wayback Machine for a snapshot of each link in the published notes (it sends those URLs to archive.org): a live link gets an "archive.org" link beside it, and a dead link points at its snapshot, on the web, Gemini and Gopher. `none` never contacts archive.org; links are still checked for life and snapshots already recorded still show. Any other value counts as `none`, with a startup warning |
 | `NIWA_HISTER_SAVE` | — | `1`, `on` or `true`: link rot may index a live link into Hister when Hister doesn't have it. Unset: Hister is only looked up (the owner's copy is shown), never written to |
 | `NIWA_DB` | `/data/niwa.sqlite3` | link records; the Gemini certificate and `prefs.sqlite3` (per-user preferences, 0600) sit next to it |
 | `NIWA_GIT_NAME`, `NIWA_GIT_EMAIL` | `garden`, `garden@niwa` | commit author |
@@ -338,6 +347,11 @@ On first start Niwa asks `openssl` for a self-signed certificate (EC P-256, vali
 - `GET /api/suggestions[?days=60]`: the open suggestions, newest first (`days` 1 to 365), as `{"suggestions": [{"path", "reason", "agent", "date"}], "days"}`; same access as the pages.
 - `GET /api/changelog`: `app/CHANGELOG.md` as `text/markdown` (ETag, 304; 404 without the file), open like `/api/status`, for the stack's landing page.
 - `GET /api/status`: version, vaultkit, head, notes, published, sync, konbini, hister, links, ready, error, auth. Open to anyone for monitoring; only the owner sees the Konbini and Hister addresses and their errors, and credentials in a remote URL are never shown.
+
+The public garden (`NIWA_PUBLIC_PORT`) answers only `GET` and `HEAD` on `/`, `/n/…` (published notes; anything else
+is 404), `/t/…`, `/tags`, `/stream`, `/search` (60 a minute per address; behind a proxy every visitor shares the
+proxy's), `/random`, `/a/…` (images a published note shows), `/feed.xml`, `/robots.txt` and `/static/…`. Every
+other path is 404 and every other method 405. It reads no identity header or cookie and sets none.
 
 With an identity file (`MACHIYA_IDENTITY_FILE`), vaultkit's `signin` adds the first three (without one they answer 404):
 

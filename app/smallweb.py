@@ -23,6 +23,7 @@ from urllib.parse import quote, unquote
 
 import garden as garden_module
 from capped import Capped
+from links import URL_RE
 from vaultkit import websafe
 from garden import CALLOUT_RE, EMBED_RE, FRONT_RE, IMAGE_EXT, LINK_RE, MDIMG_RE, STAGES
 
@@ -90,11 +91,19 @@ def to_gemtext(garden, note):
         text = MDIMG_RE.sub(lambda m: "[image: %s]" % (m.group(1) or os.path.basename(m.group(2))), text)
         text = LINK_RE.sub(lambda m: link_text(m.group(1), m.group(2), m.group(3)), text)
 
+        def external(url, label):
+            snap, dead = garden.links.snapshot(url) if getattr(garden, "links", None) else ("", False)
+            pending.append((url, "%s (dead link)" % label if dead else label))
+            if snap:                    # the Wayback snapshot as a second link line (never a private copy)
+                pending.append((snap, "%s (archive.org)" % label))
+
         def mdlink(m):
-            pending.append((m.group(2), m.group(1)))
+            external(m.group(2), m.group(1))
             return m.group(1)
 
         text = MDLINK_RE.sub(mdlink, text)
+        for url in URL_RE.findall(text):            # bare URLs: a link line each, then their snapshot
+            external(url.rstrip(".,;:!?"), url.rstrip(".,;:!?"))
         text = EMPH_RE.sub(lambda m: m.group(2) or m.group(3) or "", text)
         return text
 

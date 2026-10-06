@@ -76,9 +76,11 @@ def home(ctx, base, g, cards, ntype=""):
     if intro:
         parts.append('<div class="intro nbody is-garden">%s</div>' % intro)
     else:
-        parts.append('<p class="intro none">%s <span class="hint">(Publish <code>Garden.md</code> to write your own intro.)</span></p>' % e(INTRO))
+        hint = "" if modern.public(ctx) else ' <span class="hint">(Publish <code>Garden.md</code> to write your own intro.)</span>'
+        parts.append('<p class="intro none">%s%s</p>' % (e(INTRO), hint))
     if not notes:
-        parts.append(empty("Nothing Published Yet", 'Pick notes to publish from the <a href="%s/queue">Queue</a>.' % base))
+        parts.append(empty("Nothing Published Yet", "Nothing is in the garden yet." if modern.public(ctx) else
+                           'Pick notes to publish from the <a href="%s/queue">Queue</a>.' % base))
         parts.append("</main>")
         return gpage(ctx, base, "", "\n".join(parts), "garden")
     st = g.stats()
@@ -124,7 +126,7 @@ def home(ctx, base, g, cards, ntype=""):
         parts.append(section("Seedlings", "stage-seedling", '<ul class="garden-list plain">%s</ul>' % "".join(
             '<li>%s%s</li>' % (glink(base, n), (' <span class="tended">%s</span>' % e(n.description)) if n.description else "")
             for n in seedlings)))
-    needs = g.needs_tending()
+    needs = [] if modern.public(ctx) else g.needs_tending()       # the owner's to-do list
     if needs:
         parts.append(section("Needs tending", "", '<ul class="garden-list plain">%s</ul>' % "".join(
             '<li>%s %s <span class="tended">%s</span></li>' % (glink(base, n), stage_badge(n.stage), e(why))
@@ -164,10 +166,18 @@ def note(ctx, base, g, n, cards, checks=None):
             e(COLUMN_TITLES.get(card["board"], ""))))
     if card and card.get("post_url"):
         meta.append('<a class="postlink" href="%s">blog post</a>' % e(card["post_url"]))
-    if modern.KURA_URL:
+    public = modern.public(ctx)
+    if modern.KURA_URL and not public:
         meta.append('<a class="thing is-note" href="%s/n/%s">View in Kura</a>' % (e(modern.KURA_URL), quote(n.slug)))
-    banner = "" if n.published else '<p class="preview"><b>Preview</b>: not published. Only you can see this page.</p>'
-    sug = g.suggestions().get(n.rel) if not n.published else None
+    if modern.GARDEN_URL and n.published and not public:
+        meta.append('<a class="postlink" href="%s/n/%s">public page</a>' % (e(modern.GARDEN_URL), quote(n.slug)))
+    held = g.held.get(n.rel)
+    if held and checks is None:         # publish: true, held back by the scan: its findings and "Publish anyway"
+        checks = [c for c in g.check(n) if c[0] in ("error", "warn")]
+    banner = "" if n.published else (
+        '<p class="preview"><b>Held back</b>: the scan found errors, so it is not in the garden. Only you can see this page.</p>'
+        if held else '<p class="preview"><b>Preview</b>: not published. Only you can see this page.</p>')
+    sug = g.suggestions().get(n.rel) if not n.published and not public else None
     if sug:
         banner += '<p class="preview sugg-banner">Suggested%s%s</p>' % (
             (" by <b>%s</b>" % e(sug["who"])) if sug["who"] else "", (": " + e(sug["reason"])) if sug["reason"] else "")
@@ -182,7 +192,7 @@ def note(ctx, base, g, n, cards, checks=None):
             '<li>%s %s</li>' % (glink(base, x), stage_badge(x.stage)) for x in near)))
     body = g.render(n, base, False).lstrip()
     if g.links:
-        body = g.links.annotate(body, private=True)  # the owner's pages: private copies are fine
+        body = g.links.annotate(body, private=not public)  # the owner's pages: private copies are fine; never public
     if body.startswith("<h1") and "</h1>" in body:
         cut = body.index("</h1>") + 5
         heading, body = body[:cut], body[cut:]
@@ -199,19 +209,21 @@ def note(ctx, base, g, n, cards, checks=None):
                      if web_url(r.get("archive_url")) else "")
                     + ((' <a class="nlink" href="%s" title="%s %s">private copy</a>' % (
                         e(r["private_url"]), "Archived snapshot" if r.get("private_backend") == "cold" else "Hister copy",
-                        e(r.get("private_at") or ""))) if web_url(r.get("private_url")) else ""))
+                        e(r.get("private_at") or ""))) if web_url(r.get("private_url")) and not public else ""))
                 for r in recs if web_url(r["url"]))
             rel_links.append(section("Links", "", '<ul class="garden-list plain linklist">%s</ul>' % rows))
+    tend = "" if public else ('<section class="gsec owner"><h3 class="sechead">Tend</h3>%s%s</section>'
+                              % (meta_form(base, n, g), publish_form(ctx, base, n, checks, g.hold_digest(n))))
     main = ('<main class="garden"><article class="note">%s<header class="nhead">%s'
-            '<p class="nmeta">%s<br>%s</p></header><div class="nbody is-garden">%s</div></article>%s'
-            '<section class="gsec owner"><h3 class="sechead">Tend</h3>%s%s</section></main>'
-            % (banner, heading, " &middot; ".join(meta), tags, body, "".join(rel_links),
-               meta_form(base, n, g), publish_form(ctx, base, n, checks)))
+            '<p class="nmeta">%s<br>%s</p></header><div class="nbody is-garden">%s</div></article>%s%s</main>'
+            % ("" if public else banner, heading, " &middot; ".join(meta), tags, body, "".join(rel_links), tend))
     pin = modern.house.OFFLINE_PIN if n.fm.get("offline") is True else ""       # offline: true -> kept for good
     return gpage(ctx, base, n.title, top(ctx, base, "", n.title) + main, "", pin)
 
 
-def publish_form(ctx, base, n, checks=None):
+def publish_form(ctx, base, n, checks=None, ack=""):
+    """ack: the digest of the scan's errors shown here (garden.hold_digest): "Publish anyway" acknowledges exactly
+    those, so a finding added since holds the note back again."""
     warn = ""
     if checks:
         warn = '<ul class="checks">%s</ul>' % "".join('<li class="chk-%s">%s: %s</li>' % (s, s, e(msg)) for s, msg in checks)
@@ -220,9 +232,11 @@ def publish_form(ctx, base, n, checks=None):
                 '<input type="hidden" name="on" value="0"><span>In the garden.</span> '
                 '<button type="submit" class="quiet">Unpublish</button></form>' % (base, e(n.rel)))
     return ('<form class="pubform" method="post" action="%s/publish"><input type="hidden" name="rel" value="%s">'
-            '<input type="hidden" name="on" value="1"><input type="hidden" name="confirm" value="%s">%s'
+            '<input type="hidden" name="on" value="1"><input type="hidden" name="confirm" value="%s">%s%s'
             '<button type="submit">%s</button></form>'
-            % (base, e(n.rel), "1" if checks else "", warn, "Publish anyway" if checks else "Publish to garden"))
+            % (base, e(n.rel), "1" if checks else "",
+               ('<input type="hidden" name="ack" value="%s">' % e(ack)) if checks and ack else "", warn,
+               "Publish anyway" if checks else "Publish to garden"))
 
 
 def tag_page(ctx, base, g, tag, cards):
@@ -266,6 +280,8 @@ def stream(ctx, base, g, d):
 
     def entry(x):
         if x["kind"] == "systems":
+            if modern.public(ctx):          # the roundup is on the board: the owner's
+                return ""
             n = x["count"]
             return ('<li class="dentry systems"><span class="kind ev-systems">system</span> <b>%s</b>: '
                     '<a href="%s">%d change%s</a></li>' % (e(x["host"]), roundup_url(x["date"]), n, "" if n == 1 else "s"))
@@ -286,7 +302,7 @@ def stream(ctx, base, g, d):
              '<p class="none">The last %d days by project, %d entries.</p>'
              % (d["days"], d["entries"])]
     now = d["now"]
-    if now["wip"] or now["blocked"]:
+    if now and (now["wip"] or now["blocked"]):
         rows = []
         for c in now["wip"]:
             rows.append('<li><a class="ntl thing is-card" href="%s">%s</a> <span class="col-badge col-wip">WIP</span>%s%s%s%s</li>' % (
@@ -337,7 +353,9 @@ def queue(ctx, base, g, cards):
             chk = '<span class="chk chk-ok">clean</span>'
         badge = ""
         sug = suggested.get(n.rel)
-        if sug:
+        if n.rel in g.held:
+            badge = '<span class="sugg">held back: publish anyway to show it</span>'
+        elif sug:
             badge = '<span class="sugg">suggested%s%s</span>' % ((" by " + e(sug["who"])) if sug["who"] else "",
                                                                   (": " + e(sug["reason"])) if sug["reason"] else "")
         elif n.rel in linked:
@@ -357,13 +375,15 @@ def queue(ctx, base, g, cards):
     for n in g.notes.values():
         if n.published or g.is_private(n.rel):
             continue
-        if n.rel in suggested or n.rel in linked:
+        if n.rel in g.held:
+            groups.setdefault("Held Back", []).append(n)
+        elif n.rel in suggested or n.rel in linked:
             groups.setdefault("Suggested", []).append(n)
         elif n.ntype == "map":
             groups.setdefault("Topic maps", []).append(n)
         else:
             groups.setdefault(n.rel.split("/")[0] if "/" in n.rel else "Vault root", []).append(n)
-    order = {"Suggested": 0, "Topic maps": 1}
+    order = {"Held Back": -1, "Suggested": 0, "Topic maps": 1}
     parts = [top(ctx, base, "queue"), '<main class="garden queue">',
              '<p class="none">Unpublished notes, suggestions first.%s Review shows what the pre-publish check found.</p>' % (
                  " Private notes (%s) are left out." % ", ".join(e(p) for p in g.private) if g.private else "")]
@@ -453,6 +473,7 @@ def search_page(ctx, base, g, q):
                     for n, snip, marks in hits)))
         else:
             parts.append(empty("No Matches", "Nothing in the garden matches “%s”." % e(q)))
-        parts.append(modern.house.handoff(q, modern.rooms()))
+        if not modern.public(ctx):      # Shiori is the owner's
+            parts.append(modern.house.handoff(q, modern.rooms()))
     parts.append("</main>")
     return gpage(ctx, base, (q + " - " if q else "") + "Search", "\n".join(parts), "")

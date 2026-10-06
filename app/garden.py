@@ -14,6 +14,7 @@ derived from Niwa's own clone of the vault and cached per git revision:
     tokens, links to private (NIWA_PRIVATE_FOLDERS) or unpublished notes, missing summary)
 """
 import datetime
+import hashlib
 import os
 import re
 
@@ -40,7 +41,19 @@ CHECKS = [
     ("error", "token or private key", re.compile(
         r"tskey-\w|ghp_\w{10}|github_pat_|sk-[A-Za-z0-9]{20}|xox[bp]-|-----BEGIN [A-Z ]*PRIVATE KEY|AKIA[0-9A-Z]{16}")),
     ("warn", "password or secret mentioned", re.compile(r"(?i)\b(password|passwd|secret|api[_ ]?key)\s*[:=]")),
+    ("warn", "tailnet name", re.compile(r"\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.ts\.net\b", re.I)),
+    ("warn", "email address", re.compile(r"\b[\w.+-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}\b", re.I)),
 ]
+DENY_LABEL = "denied word (NIWA_SCAN_DENY)"
+
+
+def deny_re(words):
+    """NIWA_SCAN_DENY: words or names (hostnames, people, places) that must never be published, matched whole and
+    ignoring case; None when there are none."""
+    words = sorted({w.strip() for w in words if w and w.strip()}, key=len, reverse=True)
+    if not words:
+        return None
+    return re.compile(r"(?<![\w.-])(?:%s)(?![\w-])" % "|".join(re.escape(w) for w in words), re.I)
 
 
 class Garden(Vault):
@@ -51,6 +64,9 @@ class Garden(Vault):
     def __init__(self, repo, subdir, state, git=None, private=()):
         super().__init__(repo, subdir, git=git)
         self.store = state
+        self.deny = None     # deny_re(NIWA_SCAN_DENY), set by niwa.py
+        self.held = {}       # rel -> the error findings that hold a `publish: true` note back (see _apply_private)
+        self._errors = {}    # rel -> (hash of text and deny list, [(label, hit)]): the scan's errors, once per text
         self.private = private    # folder prefixes ("Private/") whose notes are never queued or published (see the setter)
         self.links = None    # set by niwa.py (links.Links)
         self.hister = None
@@ -61,7 +77,7 @@ class Garden(Vault):
         """asset_path() for gemini and gopher: only an image a published note shows (an ![[embed]] or a Markdown image,
         resolved the way rendering resolves them), never one that only private or unpublished notes use."""
         self.index()
-        key = self.key()
+        key = (self.key(), tuple(sorted(self.held)))      # an acknowledgement changes what is published, not the key
         if self._public_assets_key != key:
             shown = set()
             for n in self.notes.values():
@@ -87,9 +103,45 @@ class Garden(Vault):
 
     def _apply_private(self):
         """`publish: true` in a private folder (NIWA_PRIVATE_FOLDERS) counts for nothing: such a note is never published
-        on the web, gemini, gopher or the feed, whatever its frontmatter says (so one edit can't leak it)."""
+        on the web, gemini, gopher or the feed, whatever its frontmatter says (so one edit can't leak it).
+        A `publish: true` note whose scan finds errors (addresses, keys, tokens, NIWA_SCAN_DENY words) is held back
+        too, everywhere, until the owner acknowledges exactly those findings on its page ("Publish anyway"; the
+        digest is kept in Niwa's own SQLite, never in the vault). A new finding, or a `publish: true` written outside
+        Niwa, holds it again."""
+        acks = self.store.acks() if self.store is not None and hasattr(self.store, "acks") else {}
+        held = {}
         for n in getattr(self, "notes", {}).values():
             n.published = n.fm.get("publish") is True and not self.is_private(n.rel)
+            if n.published:
+                found = self.errors(n)
+                if found and digest(found) not in acks.get(n.rel, ()):
+                    n.published = False
+                    held[n.rel] = found
+        self.held = held
+
+    def refresh_holds(self):
+        """After an acknowledgement: work the holds out again now (the notes haven't changed)."""
+        self.index()
+        self._apply_private()
+
+    def errors(self, note):
+        """The scan's error findings in a note's body, in full: [(label, hit)], sorted. Cached per text."""
+        body_key = hashlib.sha256(("%s\0%s" % (self.deny.pattern if self.deny else "", note.text)).encode("utf-8")).digest()
+        cached = self._errors.get(note.rel)
+        if cached and cached[0] == body_key:
+            return cached[1]
+        body = FRONT_RE.sub("", note.text, count=1)
+        found = {(label, m.group(0)) for severity, label, rx in CHECKS if severity == "error" for m in rx.finditer(body)}
+        if self.deny:
+            found |= {(DENY_LABEL, m.group(0)) for m in self.deny.finditer(body)}
+        found = sorted(found)
+        self._errors[note.rel] = (body_key, found)
+        return found
+
+    def hold_digest(self, note):
+        """The digest "Publish anyway" acknowledges: of the note's error findings now; "" when it has none."""
+        found = self.errors(note)
+        return digest(found) if found else ""
 
     def index(self):
         stale = self.key() != self._key
@@ -142,7 +194,8 @@ class Garden(Vault):
         self.index()
         found = []
         body = FRONT_RE.sub("", note.text, count=1)
-        for severity, label, rx in CHECKS:
+        checks = list(CHECKS) + ([("error", DENY_LABEL, self.deny)] if self.deny else [])
+        for severity, label, rx in checks:
             hits = sorted({m.group(0) for m in rx.finditer(body)})
             if hits:
                 shown = ", ".join(h if severity == "warn" else h[:6] + "…" for h in hits[:4])
@@ -261,6 +314,11 @@ class Garden(Vault):
                 "stage_name": dict((k, n) for k, n, _ in STAGES).get(note.stage, note.stage),
                 "confidence": note.confidence, "planted": note.planted, "tended": self.tended.get(note.rel, ""),
                 "type": note.ntype}
+
+
+def digest(found):
+    """A stable digest of a note's error findings ([(label, hit)]), for its acknowledgement."""
+    return hashlib.sha256("\n".join("%s\t%s" % f for f in sorted(found)).encode("utf-8")).hexdigest()
 
 
 def today_iso():
