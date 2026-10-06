@@ -8,13 +8,15 @@ Niwa (庭, garden) grows your digital garden: pick the notes in your Obsidian va
 <a href="https://machiya-kobo.github.io/machiya/">Machiya</a> · <a href="#grow-your-garden">Features</a> · <a href="#quickstart">Quickstart</a> · <a href="#who-can-use-it">Access</a> · <a href="#in-a-container">Containers</a> · <a href="#natively-on-the-bsds">BSDs</a> · <a href="#install">Install</a> · <a href="#settings">Settings</a> · <a href="#api">API</a> · <a href="#license">License</a>
 </p>
 
-<p><a href="docs/screenshots/niwa-garden-dark.png"><img src="docs/screenshots/niwa-garden-dark.png" alt="The garden's landing page in the dark theme: topic maps for Crafts and Travel, recently tended notes with their growth stages, and seedlings" width="100%"></a></p>
-<p>
-  <a href="docs/screenshots/niwa-note-light.png"><img src="docs/screenshots/niwa-note-light.png" alt="A note, Chochin folding, with its tip callout, backlinks and nearby notes" width="32%"></a>
-  <a href="docs/screenshots/niwa-queue-dark.png"><img src="docs/screenshots/niwa-queue-dark.png" alt="The queue of unpublished notes in the dark theme, each with its scan result and a Publish button" width="32%"></a>
-  <a href="docs/screenshots/niwa-stream-light.png"><img src="docs/screenshots/niwa-stream-light.png" alt="The stream: this week's tended notes, day by day" width="32%"></a>
-</p>
-<p align="center"><a href="docs/screenshots/niwa-note-phone-light.png"><img src="docs/screenshots/niwa-note-phone-light.png" alt="A note on a phone" width="24%"></a></p>
+<p align="center"><a href="docs/screenshots/niwa-garden-dark.png"><img src="docs/screenshots/niwa-garden-dark.png" alt="The garden's landing page in the dark theme: topic maps for Crafts and Travel, recently tended notes with their growth stages, and seedlings" width="100%"></a><br>Wander the garden</p>
+<table>
+  <tr>
+    <td align="center" width="33%"><a href="docs/screenshots/niwa-note-light.png"><img src="docs/screenshots/niwa-note-light.png" alt="A note, Chochin folding, with its tip callout, backlinks and nearby notes" width="100%"></a><br>Tend a note</td>
+    <td align="center" width="33%"><a href="docs/screenshots/niwa-queue-dark.png"><img src="docs/screenshots/niwa-queue-dark.png" alt="The queue of unpublished notes in the dark theme, each with its scan result and a Publish button" width="100%"></a><br>Pick what to publish</td>
+    <td align="center" width="33%"><a href="docs/screenshots/niwa-stream-light.png"><img src="docs/screenshots/niwa-stream-light.png" alt="The stream: this week's tended notes, day by day" width="100%"></a><br>See what changed</td>
+  </tr>
+</table>
+<p align="center"><a href="docs/screenshots/niwa-note-phone-light.png"><img src="docs/screenshots/niwa-note-phone-light.png" alt="A note on a phone" width="24%"></a><br>Read it on your phone</p>
 
 ## Grow your garden
 
