@@ -3,6 +3,11 @@
 Niwa follows [SemVer](https://semver.org). Before 1.0, a new feature, a changed default or setting, or a changed API
 field is a minor bump, and a fix or wording change is a patch. Settings are listed in the README.
 
+## 0.8.3
+
+- vaultkit 0.25.0: accents on raised panels (Settings groups, the Rooms menu, toasts, code blocks) use their panel shades, so links and accent text there reach 4.5:1 in every palette; About says "License".
+- Niwa's own raised panels (topic-map cards, link previews, the Tend row) take the same panel shades.
+
 ## 0.8.2
 
 - vaultkit 0.24.0: the footer's status line, the phone tab bar's labels and the Settings group text pass 4.5:1 contrast in every palette.
