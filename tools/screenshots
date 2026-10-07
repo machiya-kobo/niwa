@@ -39,7 +39,7 @@ SHOTS = [                      # (what, path, viewport, themes)
     ("note", "/n/Notes/Chochin%20folding", DESKTOP, ("light", "dark")),
     ("queue", "/queue", DESKTOP, ("light", "dark")),
     ("stream", "/stream", DESKTOP, ("light", "dark")),
-    ("garden-phone", "/", PHONE, ("light",)),
+    ("garden-phone", "/", PHONE, ("light", "dark")),
     ("note-phone", "/n/Notes/Chochin%20folding", PHONE, ("light",)),
 ]
 
