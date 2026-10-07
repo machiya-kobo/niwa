@@ -10,6 +10,7 @@ Niwa 庭 is a digital garden: it publishes the notes of a Markdown vault (a Git 
 - **Niwa → Konbini** carries Niwa's service token (`NIWA_KONBINI_TOKEN_FILE`, `Authorization: Bearer`, never logged, no redirects followed) and `X-Agent: niwa`.
 - **Standalone:** everything Niwa needs is its own clone, state and code. Konbini, Kura and Hister are optional URLs, and a page must still render when they're unset or down.
 - **Never break gemini and gopher** (`app/smallweb.py`): they're part of the garden.
+- **The public garden** (`NIWA_PUBLIC_PORT`, `PublicHandler` in `app/niwa.py`) is public like gemini and gopher: published notes only, read-only, no cookies, never Hister, Kura or Konbini, and it never reads an identity header. Its tests sweep every route with sentinel URLs: keep them passing.
 - **Hister results, copies and `private_url`** appear only on the owner's web pages: never on gemini or gopher, which read only `archive_url` (Wayback). Every Hister call sends `Origin: hister://`; never `hister index --force` a URL Hister already has. Bump `HISTER_VERSION` in `app/Dockerfile` with the Hister server.
 - **Never edit `app/vaultkit/`**: fix it in `machiya-kobo/machiya` (`vaultkit/`), tag, then `tools/vendor-vaultkit <tag>`.
 - **No owner-specific defaults:** hostnames, user agents, folder names and the like come from settings (README), not from code, tests or comments.

@@ -3,6 +3,11 @@
 Niwa follows [SemVer](https://semver.org). Before 1.0, a new feature, a changed default or setting, or a changed API
 field is a minor bump, and a fix or wording change is a patch. Settings are listed in the README.
 
+## 0.9.1
+
+- The queue's "Review" is a link to the note (which shows every finding and holds the Publish button) instead of a form post. A clean note still has its Publish button.
+- docs/settings.md groups the 44 settings into Basics (the ten most installs set) and Advanced, by topic. No setting changed.
+
 ## 0.9.0
 
 An owner review of how Niwa works, to keep it simple.

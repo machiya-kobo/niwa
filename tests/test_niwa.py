@@ -2374,6 +2374,20 @@ class SimplerPagesTest(unittest.TestCase):
         _, clean = req("/n/Notes/Chochin%20folding")
         self.assertNotIn('class="found', clean)
 
+    def test_the_queue_reviews_with_a_link_and_publishes_clean_notes_with_a_button(self):
+        path = write_note("Notes/Risky three.md", "---\ntitle: Risky three\n---\nThe NAS is at 10.0.0.13.\n")
+        try:
+            _, queue = req("/queue")
+            risky = queue[queue.index("Risky three"):]
+            risky = risky[:risky.index("</li>")]
+            self.assertIn('<a class="button" href="/n/Notes/Risky%20three">Review</a>', risky)
+            self.assertNotIn("<form", risky)                          # no hidden post just to reopen the note
+            clean = queue[queue.index("Paper lanterns"):]
+            self.assertIn('<button type="submit">Publish</button>', clean[:clean.index("</li>")])
+        finally:
+            os.remove(path)
+            niwa.garden.revision += "x"
+
     def test_highlight_only_touches_text(self):
         import gmodern
         out = gmodern.highlight('<p class="10.0.0.1">at 10.0.0.1 &amp; a@b.example</p>',

@@ -359,9 +359,12 @@ def queue(ctx, base, g, cards):
                                                                   (": " + e(sug["reason"])) if sug["reason"] else "")
         elif n.rel in linked:
             badge = '<span class="sugg">linked from %d notes</span>' % linked[n.rel]
-        forms = ('<form class="qpub" method="post" action="%s/publish"><input type="hidden" name="rel" value="%s">'
-                 '<input type="hidden" name="on" value="1"><button type="submit" class="%s">%s</button></form>'
-                 % (base, e(n.rel), "quiet" if errs else "", "Review" if errs else "Publish"))
+        if errs:        # findings: the note's own page shows them in full and holds the button that accepts them
+            forms = '<a class="button" href="%s/n/%s">Review</a>' % (base, quote(n.slug))
+        else:
+            forms = ('<form class="qpub" method="post" action="%s/publish"><input type="hidden" name="rel" value="%s">'
+                     '<input type="hidden" name="on" value="1"><button type="submit">Publish</button></form>'
+                     % (base, e(n.rel)))
         if sug:
             forms += ('<form class="qpub" method="post" action="%s/dismiss"><input type="hidden" name="rel" value="%s">'
                       '<button type="submit" class="quiet">Dismiss</button></form>' % (base, e(n.rel)))
