@@ -6,7 +6,7 @@ works and the traps already found; read the part for what you're changing.
 
 ## Building
 
-- **Run it from source:** see README → Install. `python3 app/niwa.py` with the settings in the README's table.
+- **Run it from source:** see [docs/install.md](docs/install.md#your-own-vault). `python3 app/niwa.py` with the settings in [docs/settings.md](docs/settings.md).
 - **The image:** `docker build -t niwa app` (or `podman build`). `app/vaultkit/` is vendored and checked at build time.
 
 ## Tests
@@ -34,7 +34,7 @@ requests for Hister.
 - **Never edit `app/vaultkit/`.** It is vendored from `machiya-kobo/machiya` (`tools/vendor-vaultkit <tag>`); the build
   fails if it's edited. Fix it upstream and re-vendor.
 - **Keep personal details out of the repo:** server addresses, network names, usernames, folder names from your own
-  vault. They belong in settings (see the README), not in code defaults, tests or comments.
+  vault. They belong in settings ([docs/settings.md](docs/settings.md)), not in code defaults, tests or comments.
 - **No new network endpoints** without discussion. Niwa talks to the vault repo, the optional sister services and
   Hister the settings name, and to archive.org unless `NIWA_ARCHIVE=none`. No analytics.
 - Match the surrounding code: its naming, comment density and idiom. Commits start with `niwa: `.

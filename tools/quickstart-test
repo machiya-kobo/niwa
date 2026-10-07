@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Micheal Waltz and Machiya contributors
-"""quickstart-test - run the README's Quickstart exactly as written, from a fresh clone, and check what it says you
-should see.
+"""quickstart-test - run the README's Quickstart and docs/install.md's other ways exactly as written, from a fresh
+clone, and check what they say you should see.
 
     tools/quickstart-test [--only container|native|all] [--engine podman|docker] [--worktree] [--with-packages] [--keep] [--dry-run]
 
-The README marks each runnable block with an HTML comment on the line above its fence:
+README.md and docs/install.md mark each runnable block with an HTML comment on the line above its fence:
 
     <!-- quickstart: NAME [background] -->
     ```bash
@@ -45,8 +45,14 @@ BLOCK_RE = re.compile(r"<!--\s*quickstart:\s*(\S+)((?:\s+\S+)*?)\s*-->\s*\n```[a
 EXPECT_RE = re.compile(r"<!--\s*quickstart-expect:\s*(\S+)\s*-->\s*\n```[a-z]*\n(.*?)\n```", re.S)
 
 
+DOCS = ("README.md", os.path.join("docs", "install.md"))     # the Quickstart, then the other ways to run it
+
+
 def parse(readme):
-    text = open(readme, encoding="utf-8").read()
+    """The runnable blocks and expected outputs of `readme`, a path or a list of paths read as one text (the README's
+    Quickstart and docs/install.md: each block name is unique across them)."""
+    paths = [readme] if isinstance(readme, str) else list(readme)
+    text = "\n".join(open(p, encoding="utf-8").read() for p in paths)
     blocks = {m.group(1): {"flags": m.group(2).split(), "code": m.group(3)} for m in BLOCK_RE.finditer(text)}
     expects = {m.group(1): [l for l in m.group(2).splitlines() if l.strip()] for m in EXPECT_RE.finditer(text)}
     return blocks, expects
@@ -150,7 +156,7 @@ def main():
     ap.add_argument("--dry-run", action="store_true", help="list the steps and exit")
     a = ap.parse_args()
 
-    blocks, expects = parse(os.path.join(ROOT, "README.md"))
+    blocks, expects = parse([os.path.join(ROOT, d) for d in DOCS])
     plan = scenarios(a.only, a.with_packages, a.engine)
     for sc in plan:
         if sc[1] is None:
@@ -160,7 +166,7 @@ def main():
         for name in sc[1]:
             b = blocks.get(name)
             if b is None:
-                print("  %-22s MISSING in the README" % name)
+                print("  %-22s MISSING in README.md and docs/install.md" % name)
                 continue
             first = b["code"].splitlines()[0]
             print("  %-22s %s%s%s" % (name, "[background] " if "background" in b["flags"] else "", first,
@@ -173,7 +179,7 @@ def main():
         return 0
     missing = [n for sc in runnable for n in sc[1] if n not in blocks]
     if missing:
-        print("README has no block named: " + ", ".join(sorted(set(missing))))
+        print("README.md and docs/install.md have no block named: " + ", ".join(sorted(set(missing))))
         return 1
     for _ in range(80):                       # connections of an earlier run need up to a minute to leave TIME_WAIT
         busy = [p for p in PORTS if not port_free(p)]
