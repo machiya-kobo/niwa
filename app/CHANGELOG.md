@@ -3,6 +3,15 @@
 Niwa follows [SemVer](https://semver.org). Before 1.0, a new feature, a changed default or setting, or a changed API
 field is a minor bump, and a fix or wording change is a patch. Settings are listed in the README.
 
+## 0.9.0
+
+An owner review of how Niwa works, to keep it simple.
+
+- **The landing page is one list.** Your intro, the topic maps, then every note once, the most recently tended first, each with its stage. "Start here", "Recently tended", "Seedlings", "Needs tending", "Everything" (the full list grouped by stage) and "Projects in bloom" are gone: they listed the same notes up to four times. The type chips still filter the list.
+- **The Tend form is the stage.** Confidence and the "start here" pin have no controls and no badge. A note's `confidence` and `garden_pin` lines stay as they are, and saving the stage never removes them. (`POST /meta` still sets them for a script that sends them.)
+- **A note shows what publishing would accept.** Open a note that isn't in the garden and each scan finding is shown in full and highlighted in the text, and the button says what it accepts: "Publish with 1 error and 1 warning" (one click, no second page). It replaces "Publish anyway". A held-back note shows the same.
+- The queue's held-back badge says "held back by the scan".
+
 ## 0.8.4
 
 - vaultkit 0.25.2: code blocks, inline code and the search field's text use the menu text color, so they pass 4.5:1 contrast in the light themes (3.99 in Tokyo Night Day and 4.39 in Solarized Light before).

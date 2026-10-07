@@ -2318,6 +2318,73 @@ class WriteTest(unittest.TestCase):
         os.remove(path)
 
 
+class SimplerPagesTest(unittest.TestCase):
+    """The owner review (2026-10-07): the landing page is one list, the Tend form is the stage, a note shows what
+    publishing would accept."""
+
+    def test_the_landing_page_lists_every_note_once(self):
+        _, body = req("/")
+        for gone in ("Recently tended", "Needs tending", "Start here", "Everything", "Projects in bloom"):
+            self.assertNotIn(">%s" % gone, body, gone)
+        self.assertEqual(body.count('href="/n/Notes/Paper%20lanterns"'), 0)               # unpublished: not listed
+        slugs = re.findall(r'<li><a class="ntl" href="(/n/[^"]+)"', body)
+        self.assertEqual(len(slugs), len(set(slugs)))                                       # no note twice
+        self.assertEqual(len(slugs), len(niwa.garden.published()))                          # every published note, once
+        self.assertIn(">Notes <span", body)
+        status, typed = req("/?type=map")
+        self.assertEqual(status, 200)
+        self.assertNotIn("Topic maps", typed)
+
+    def test_the_tend_form_is_the_stage_and_leaves_confidence_and_pin_alone(self):
+        path = write_note("Notes/Tended.md", "---\ntitle: Tended\npublish: true\nconfidence: likely\ngarden_pin: true\n---\nBody.\n")
+        try:
+            _, page = req("/n/Notes/Tended")
+            form = page[page.index('class="metaform"'):]
+            form = form[:form.index("</form>")]
+            self.assertIn('name="growth"', form)
+            self.assertNotIn("confidence", form)
+            self.assertNotIn("garden_pin", form)
+            status, _ = req("/meta", {"rel": "Notes/Tended.md", "growth": "evergreen"})   # what the form sends
+            self.assertEqual(status, 302)
+            text = open(path).read()
+            self.assertIn("growth: evergreen", text)
+            self.assertIn("confidence: likely", text)
+            self.assertIn("garden_pin: true", text)
+            self.assertNotIn("likely</span>", req("/n/Notes/Tended")[1])                 # no confidence badge
+        finally:
+            os.remove(path)
+            niwa.sync.commit()
+
+    def test_a_note_not_in_the_garden_shows_what_publishing_would_accept(self):
+        path = write_note("Notes/Risky two.md", "---\ntitle: Risky two\n---\nThe NAS is at 10.0.0.12, mail me@example.com.\n")
+        try:
+            _, page = req("/n/Notes/Risky%20two")                       # opened, not yet asked to publish
+            self.assertIn('<mark class="found found-error">10.0.0.12</mark>', page)      # in the text, in full
+            self.assertIn('<mark class="found found-warn">me@example.com</mark>', page)
+            self.assertIn("LAN or tailnet address: ", page)
+            self.assertIn("Publish with 1 error and 1 warning", page)
+            self.assertNotIn("Publish anyway", page)
+            ack = re.search(r'name="ack" value="([0-9a-f]{64})"', page).group(1)
+            self.assertEqual(req("/publish", {"rel": "Notes/Risky two.md", "on": "1", "confirm": "1", "ack": ack})[0], 302)
+            self.assertTrue(niwa.garden.get("Notes/Risky two").published)                 # one click, informed
+        finally:
+            os.remove(path)
+            niwa.garden.revision += "x"
+            niwa.sync.commit()
+        _, clean = req("/n/Notes/Chochin%20folding")
+        self.assertNotIn('class="found', clean)
+
+    def test_highlight_only_touches_text(self):
+        import gmodern
+        out = gmodern.highlight('<p class="10.0.0.1">at 10.0.0.1 &amp; a@b.example</p>',
+                                [("error", "LAN", ["10.0.0.1"]), ("warn", "mail", ["a@b.example"])])
+        self.assertEqual(out, '<p class="10.0.0.1">at <mark class="found found-error">10.0.0.1</mark> &amp; '
+                              '<mark class="found found-warn">a@b.example</mark></p>')
+        self.assertEqual(gmodern.publish_label([("error", "x"), ("warn", "y"), ("warn", "z"), ("info", "i")]),
+                         "Publish with 1 error and 2 warnings")
+        self.assertEqual(gmodern.publish_label([("info", "i")]), "Publish to garden")
+
+
 class TrustedProxiesTest(unittest.TestCase):
     """NIWA_TRUSTED_PROXIES: identity headers count only from the listed peers; unset, from anyone as before."""
 
@@ -2448,7 +2515,7 @@ class PublicGardenTest(unittest.TestCase):
                 self.assertNotIn("set-cookie", hdrs, path)
                 for bad in self.SENTINELS + ("Secret plan", "Held note", "192.168", "Diary", 'method="post"', "/queue",
                                              "/settings", "Tend", "synced", "/sw.js", "manifest", "evil.example",
-                                             "Publish anyway", "Publish to garden", "Unpublish", "Preview"):
+                                             "Publish with", "Publish to garden", "Unpublish", "Preview", 'class="found'):
                     self.assertNotIn(bad, body, (path, bad))
         _, hdrs, body = self.get("/n/Notes/Public%20lantern")
         self.assertIn("Public lantern", body)
@@ -2546,7 +2613,8 @@ class HoldTest(unittest.TestCase):
         self.assertIn("Held Back", queue)
         _, page = req("/n/Notes/Box")
         self.assertIn("Held back", page)
-        self.assertIn("Publish anyway", page)
+        self.assertIn("Publish with 1 error", page)                               # the button says what it accepts
+        self.assertIn('<mark class="found found-error">192.168.1.20</mark>', page)   # the finding, in full, in the note
         ack = re.search(r'name="ack" value="([0-9a-f]{64})"', page).group(1)
         self.assertEqual(ack, niwa.garden.hold_digest(n))
         status, body = self.publish(confirm="1", ack="0" * 64)                   # not what was shown: shown again

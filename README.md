@@ -8,7 +8,7 @@ Niwa (庭, "garden") is the digital garden for Machiya and publishes the notes y
 <a href="https://machiya-kobo.github.io/">Machiya</a> · <a href="#grow-your-garden">Features</a> · <a href="#quickstart">Quickstart</a> · <a href="docs/install.md">Install</a> · <a href="docs/access.md">Access</a> · <a href="docs/settings.md">Settings</a> · <a href="docs/api.md">API</a> · <a href="#license">License</a>
 </p>
 
-<p align="center"><a href="docs/screenshots/niwa-garden-dark.png"><img src="docs/screenshots/niwa-garden-dark.png" alt="The garden's landing page in the dark theme: topic maps for Crafts and Travel, recently tended notes with their growth stages, and seedlings" width="100%"></a><br>Wander the garden</p>
+<p align="center"><a href="docs/screenshots/niwa-garden-dark.png"><img src="docs/screenshots/niwa-garden-dark.png" alt="The garden's landing page in the dark theme: topic maps for Crafts and Travel, then every note once with its growth stage" width="100%"></a><br>Wander the garden</p>
 <table>
   <tr>
     <td align="center" width="33%"><a href="docs/screenshots/niwa-note-light.png"><img src="docs/screenshots/niwa-note-light.png" alt="A note, Chochin folding, with its tip callout, backlinks and nearby notes" width="100%"></a><br>Tend a note</td>
@@ -21,14 +21,14 @@ Niwa (庭, "garden") is the digital garden for Machiya and publishes the notes y
 ## Grow your garden
 
 - Publish with one button. Niwa adds `publish: true` to the note's frontmatter and touches nothing else.
-- Growth stages (seedling, budding, evergreen), confidence, pins, backlinks, nearby notes and topic maps.
+- Growth stages (seedling, budding, evergreen), backlinks, nearby notes and topic maps.
 - A queue of notes worth sharing: your agents' suggestions and your most-linked notes come first.
 - A stream of what changed, an RSS feed, search and a random note.
 
 ## Keep your secrets
 
 - Every publish is scanned first: LAN and tailnet addresses, MAC addresses, keys, tokens, tailnet names, email addresses, and any words you list in `NIWA_SCAN_DENY`.
-- A note with an error stays out of the garden until you press "Publish anyway", even if `publish: true` came from somewhere else.
+- Niwa shows each finding in the note. A note with an error stays out of the garden until you publish it with its findings, even if `publish: true` came from somewhere else.
 - Notes in private folders (`NIWA_PRIVATE_FOLDERS`) never publish.
 
 ## Keep your links
@@ -109,12 +109,12 @@ Podman, Docker, OpenBSD, FreeBSD, NetBSD and the Machiya stack: [docs/install.md
 ## How it uses your vault
 
 - Niwa keeps its own clone of your vault and pushes with an ssh deploy key.
-- It writes only the garden's fields (`publish`, `growth`, `confidence`, `garden_pin`) and its events
+- It writes only the garden's fields (`publish` and `growth`) and its events
   (`.garden/events/`), never a note's body. Your changes go out as one commit, rebased onto whatever changed meanwhile.
 - [Konbini](https://github.com/machiya-kobo/konbini) adds board badges and the board half of the stream,
   [Kura](https://github.com/machiya-kobo/kura) links to the full note, and
   [Hister](https://github.com/asciimoo/hister) adds private link copies. Niwa works without them.
-- Its SQLite file holds link records and your "Publish anyway" acknowledgements. Back it up.
+- Its SQLite file holds link records and the findings you published with. Back it up.
 
 ## License
 

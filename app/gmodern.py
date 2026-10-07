@@ -8,7 +8,7 @@ import shell as modern
 import re
 
 from links import web_url
-from garden import CONFIDENCE, FRONT_RE, STAGES, TYPES, relative, stage_of
+from garden import FRONT_RE, STAGES, TYPES, relative, stage_of
 from vaultkit import _str
 from shell import COLUMN_TITLES, e
 
@@ -28,11 +28,8 @@ def glink(base, n):
     return '<a class="thing is-garden" href="%s/n/%s">%s</a>' % (base, quote(n.slug), e(n.title))
 
 
-def stage_badge(stage, confidence=""):
-    out = '<span class="stage stage-%s">%s</span>' % (stage, STAGE_NAME[stage])
-    if confidence:
-        out += ' <span class="conf conf-%s" title="confidence">%s</span>' % (confidence, e(confidence))
-    return out
+def stage_badge(stage):
+    return '<span class="stage stage-%s">%s</span>' % (stage, STAGE_NAME[stage])
 
 
 def note_row(ctx, base, g, n, cards, when=""):
@@ -42,7 +39,7 @@ def note_row(ctx, base, g, n, cards, when=""):
     tended = g.tended.get(n.rel, "")
     label = when or (("tended " + relative(tended)) if tended else "")
     return ('<li><a class="ntl" href="%s/n/%s">%s</a> %s%s%s%s</li>'
-            % (base, quote(n.slug), e(n.title), col, stage_badge(n.stage, n.confidence),
+            % (base, quote(n.slug), e(n.title), col, stage_badge(n.stage),
                (' <span class="tended">%s</span>' % e(label)) if label else "",
                ('<p class="summary">%s</p>' % e(n.description)) if n.description else ""))
 
@@ -54,16 +51,6 @@ def empty(title, line):
 
 def section(title, cls, inner):
     return '<section class="gsec"><h3 class="sechead %s">%s</h3>%s</section>' % (cls, title, inner)
-
-
-def stage_groups(ctx, base, g, notes, cards):
-    parts = []
-    for key, name, color in STAGES:
-        group = sorted((n for n in notes if n.stage == key), key=lambda n: n.title.lower())
-        if group:
-            parts.append(section('%s <span class="colcount">%d</span>' % (name, len(group)), "stage-" + key,
-                                 '<ul class="garden-list">%s</ul>' % "".join(note_row(ctx, base, g, n, cards) for n in group)))
-    return "".join(parts)
 
 
 from garden import DEFAULT_INTRO, INTRO  # noqa: E402,F401  (the landing intro; gemini and gopher use the same)
@@ -91,68 +78,43 @@ def home(ctx, base, g, cards, ntype=""):
                  '<span class="stage-budding">%d budding</span> &middot; <span class="stage-seedling">%d seedlings</span> &middot; '
                  '<a href="%s/random">random note</a></p><p class="typechips">%s</p>'
                  % (st["total"], st["evergreen"], st["budding"], st["seedling"], base, "".join(chips)))
+    shown = [n for n in notes if n.ntype == ntype] if ntype else notes
+    label = dict(TYPES).get(ntype, ntype) if ntype else ""
     if ntype:
-        shown = [n for n in notes if n.ntype == ntype]
-        label = dict(TYPES).get(ntype, ntype)
-        parts.append(stage_groups(ctx, base, g, shown, cards) or empty(
-            "No Published %s" % e(label), 'Nothing of this type is in the garden yet. <a href="%s/">Show All</a>' % base))
-        parts.append("</main>")
-        return gpage(ctx, base, label, "\n".join(parts), "garden")
-    maps = g.maps()
-    if maps:
-        tiles = "".join('<a class="maptile" href="%s/n/%s"><b>%s</b><span class="count">%d note%s</span>%s</a>'
-                        % (base, quote(n.slug), e(n.title), c, "" if c == 1 else "s",
-                           ('<p>%s</p>' % e(n.description)) if n.description else "") for n, c in maps)
-        parts.append(section("Topic maps", "", '<div class="maps">%s</div>' % tiles))
-    pinned = g.pinned()
-    if pinned:
-        parts.append(section("Start here", "", '<ul class="garden-list">%s</ul>' % "".join(note_row(ctx, base, g, n, cards) for n in pinned)))
-    recent = g.recent(8)
-    if recent:
-        parts.append(section("Recently tended", "", '<ul class="garden-list plain">%s</ul>' % "".join(
-            '<li>%s %s <span class="tended">%s</span></li>'
-            % (glink(base, n), stage_badge(n.stage), e(relative(g.tended.get(n.rel, "")))) for n in recent)))
-    bloom = [n for n in notes if n.ntype == "project" and cards.get(n.rel) and cards[n.rel]["board"]]
-    if bloom:
-        rows = []
-        for n in sorted(bloom, key=lambda n: n.title.lower()):
-            c = cards[n.rel]
-            rows.append('<li><a class="ntl" href="%s/n/%s">%s</a> <span class="col-badge col-%s">%s</span>%s</li>'
-                        % (base, quote(n.slug), e(n.title), c["board"], e(COLUMN_TITLES.get(c["board"], "")),
-                           ('<p class="next">next: %s</p>' % e(c["next"])) if c.get("next") else ""))
-        parts.append(section("Projects in bloom", "", '<ul class="garden-list">%s</ul>' % "".join(rows)))
-    seedlings = sorted((n for n in notes if n.stage == "seedling"), key=lambda n: n.title.lower())
-    if seedlings:
-        parts.append(section("Seedlings", "stage-seedling", '<ul class="garden-list plain">%s</ul>' % "".join(
-            '<li>%s%s</li>' % (glink(base, n), (' <span class="tended">%s</span>' % e(n.description)) if n.description else "")
-            for n in seedlings)))
-    needs = [] if modern.public(ctx) else g.needs_tending()       # the owner's to-do list
-    if needs:
-        parts.append(section("Needs tending", "", '<ul class="garden-list plain">%s</ul>' % "".join(
-            '<li>%s %s <span class="tended">%s</span></li>' % (glink(base, n), stage_badge(n.stage), e(why))
-            for n, why in needs)))
-    parts.append(section("Everything", "", stage_groups(ctx, base, g, notes, cards)))
+        if not shown:
+            parts.append(empty("No Published %s" % e(label), 'Nothing of this type is in the garden yet. <a href="%s/">Show All</a>' % base))
+            parts.append("</main>")
+            return gpage(ctx, base, label, "\n".join(parts), "garden")
+    else:
+        maps = g.maps()
+        if maps:
+            tiles = "".join('<a class="maptile" href="%s/n/%s"><b>%s</b><span class="count">%d note%s</span>%s</a>'
+                            % (base, quote(n.slug), e(n.title), c, "" if c == 1 else "s",
+                               ('<p>%s</p>' % e(n.description)) if n.description else "") for n, c in maps)
+            parts.append(section("Topic maps", "", '<div class="maps">%s</div>' % tiles))
+    # every note once, the most recently tended first (it carries its own stage badge)
+    shown = sorted(shown, key=lambda n: n.title.lower())
+    shown.sort(key=lambda n: g.tended.get(n.rel, ""), reverse=True)
+    parts.append(section('Notes <span class="colcount">%d</span>' % len(shown), "",
+                         '<ul class="garden-list">%s</ul>' % "".join(note_row(ctx, base, g, n, cards) for n in shown)))
     parts.append("</main>")
-    return gpage(ctx, base, "", "\n".join(parts), "garden")
+    return gpage(ctx, base, label, "\n".join(parts), "garden")
 
 
 def meta_form(base, n, g):
     growth = _str(n.fm.get("growth")).lower()
     opts = '<option value=""%s>auto (%s)</option>' % ("" if growth else " selected", stage_of({k: v for k, v in n.fm.items() if k != "growth"}))
     opts += "".join('<option value="%s"%s>%s</option>' % (k, " selected" if growth == k else "", name) for k, name, _ in STAGES[::-1])
-    conf = '<option value="">none</option>' + "".join('<option value="%s"%s>%s</option>' % (c, " selected" if n.confidence == c else "", c) for c in CONFIDENCE)
     return ('<form class="metaform" method="post" action="%s/meta"><input type="hidden" name="rel" value="%s">'
-            '<label>Stage <select name="growth">%s</select></label><label>Confidence <select name="confidence">%s</select></label>'
-            '<label class="check"><input type="checkbox" name="garden_pin" value="1"%s> start here</label>'
-            '<button type="submit" class="quiet">Save</button></form>'
-            % (base, e(n.rel), opts, conf, " checked" if n.pinned else ""))
+            '<label>Stage <select name="growth">%s</select></label>'
+            '<button type="submit" class="quiet">Save</button></form>' % (base, e(n.rel), opts))
 
 
 def note(ctx, base, g, n, cards, checks=None):
     card = cards.get(n.rel)
     tags = " ".join('<a class="tag" href="%s/t/%s">%s</a>' % (base, quote(t), e(t)) for t in n.tags
                     if t.startswith(("topic/", "area/")) and t != "area/projects")
-    meta = [stage_badge(n.stage, n.confidence), '<span class="ntype">%s</span>' % e(dict(TYPES).get(n.ntype, n.ntype).lower().rstrip("s"))]
+    meta = [stage_badge(n.stage), '<span class="ntype">%s</span>' % e(dict(TYPES).get(n.ntype, n.ntype).lower().rstrip("s"))]
     dates = []
     if n.planted:
         dates.append('planted <span title="%s">%s</span>' % (e(n.planted), e(relative(n.planted))))
@@ -172,8 +134,13 @@ def note(ctx, base, g, n, cards, checks=None):
     if modern.GARDEN_URL and n.published and not public:
         meta.append('<a class="postlink" href="%s/n/%s">public page</a>' % (e(modern.GARDEN_URL), quote(n.slug)))
     held = g.held.get(n.rel)
-    if held and checks is None:         # publish: true, held back by the scan: its findings and "Publish anyway"
-        checks = [c for c in g.check(n) if c[0] in ("error", "warn")]
+    hits = []
+    if not public and not n.published and checks is None:       # a note not in the garden: what publishing would accept
+        found = g.check(n)
+        if any(sev in ("error", "warn") for sev, _ in found):
+            checks = found
+    if checks and not public:
+        hits = g.scan_hits(n)
     banner = "" if n.published else (
         '<p class="preview"><b>Held back</b>: the scan found errors, so it is not in the garden. Only you can see this page.</p>'
         if held else '<p class="preview"><b>Preview</b>: not published. Only you can see this page.</p>')
@@ -193,6 +160,8 @@ def note(ctx, base, g, n, cards, checks=None):
     body = g.render(n, base, False).lstrip()
     if g.links:
         body = g.links.annotate(body, private=not public)  # the owner's pages: private copies are fine; never public
+    if hits:
+        body = highlight(body, hits)
     if body.startswith("<h1") and "</h1>" in body:
         cut = body.index("</h1>") + 5
         heading, body = body[:cut], body[cut:]
@@ -213,7 +182,7 @@ def note(ctx, base, g, n, cards, checks=None):
                 for r in recs if web_url(r["url"]))
             rel_links.append(section("Links", "", '<ul class="garden-list plain linklist">%s</ul>' % rows))
     tend = "" if public else ('<section class="gsec owner"><h3 class="sechead">Tend</h3>%s%s</section>'
-                              % (meta_form(base, n, g), publish_form(ctx, base, n, checks, g.hold_digest(n))))
+                              % (meta_form(base, n, g), publish_form(ctx, base, n, checks, g.hold_digest(n), hits)))
     main = ('<main class="garden"><article class="note">%s<header class="nhead">%s'
             '<p class="nmeta">%s<br>%s</p></header><div class="nbody is-garden">%s</div></article>%s%s</main>'
             % ("" if public else banner, heading, " &middot; ".join(meta), tags, body, "".join(rel_links), tend))
@@ -221,22 +190,52 @@ def note(ctx, base, g, n, cards, checks=None):
     return gpage(ctx, base, n.title, top(ctx, base, "", n.title) + main, "", pin)
 
 
-def publish_form(ctx, base, n, checks=None, ack=""):
-    """ack: the digest of the scan's errors shown here (garden.hold_digest): "Publish anyway" acknowledges exactly
-    those, so a finding added since holds the note back again."""
+def highlight(html, hits):
+    """Mark each scan finding's text in a rendered note, outside the tags: <mark class="found found-error">."""
+    sev = {}
+    for severity, _, texts in hits:
+        for t in texts:
+            if sev.get(t) != "error":
+                sev[t] = severity
+    if not sev:
+        return html
+    rx = re.compile("|".join(re.escape(e(t)) for t in sorted(sev, key=len, reverse=True)))
+    sev = {e(t): v for t, v in sev.items()}
+    mark = lambda m: '<mark class="found found-%s">%s</mark>' % (sev.get(m.group(0), "warn"), m.group(0))
+    return "".join(part if part.startswith("<") else rx.sub(mark, part) for part in re.split(r"(<[^>]*>)", html))
+
+
+def publish_label(checks):
+    """What the Publish button accepts: 'Publish with 1 error and 1 warning'."""
+    errs = sum(1 for s, _ in checks if s == "error")
+    warns = sum(1 for s, _ in checks if s == "warn")
+    said = ["%d %s%s" % (n, word, "" if n == 1 else "s") for n, word in ((errs, "error"), (warns, "warning")) if n]
+    return "Publish with " + " and ".join(said) if said else "Publish to garden"
+
+
+def publish_form(ctx, base, n, checks=None, ack="", hits=()):
+    """ack: the digest of the scan's errors shown here (garden.hold_digest): the button acknowledges exactly
+    those, so a finding added since holds the note back again. hits: garden.scan_hits(), shown in full."""
     warn = ""
     if checks:
-        warn = '<ul class="checks">%s</ul>' % "".join('<li class="chk-%s">%s: %s</li>' % (s, s, e(msg)) for s, msg in checks)
+        scan = {label for _, label, _ in hits}
+        rows = ['<li class="chk-%s"><b>%s</b>: %s: %s</li>' % (
+            sev, sev, e(label), ", ".join('<mark class="found found-%s">%s</mark>' % (sev, e(t)) for t in texts))
+            for sev, label, texts in hits]
+        rows += ['<li class="chk-%s"><b>%s</b>: %s</li>' % (sev, sev, e(msg)) for sev, msg in checks
+                 if not any(msg.startswith(label) for label in scan)]
+        warn = '<ul class="checks">%s</ul>' % "".join(rows)
     if n.published:
         return ('<form class="pubform" method="post" action="%s/publish"><input type="hidden" name="rel" value="%s">'
                 '<input type="hidden" name="on" value="0"><span>In the garden.</span> '
                 '<button type="submit" class="quiet">Unpublish</button></form>' % (base, e(n.rel)))
+    pending = [c for c in (checks or ()) if c[0] in ("error", "warn")]
     return ('<form class="pubform" method="post" action="%s/publish"><input type="hidden" name="rel" value="%s">'
             '<input type="hidden" name="on" value="1"><input type="hidden" name="confirm" value="%s">%s%s'
             '<button type="submit">%s</button></form>'
-            % (base, e(n.rel), "1" if checks else "",
-               ('<input type="hidden" name="ack" value="%s">' % e(ack)) if checks and ack else "", warn,
-               "Publish anyway" if checks else "Publish to garden"))
+            % (base, e(n.rel), "1" if pending else "",
+               ('<input type="hidden" name="ack" value="%s">' % e(ack)) if pending and ack else "", warn,
+               publish_label(pending)))
 
 
 def tag_page(ctx, base, g, tag, cards):
@@ -354,7 +353,7 @@ def queue(ctx, base, g, cards):
         badge = ""
         sug = suggested.get(n.rel)
         if n.rel in g.held:
-            badge = '<span class="sugg">held back: publish anyway to show it</span>'
+            badge = '<span class="sugg">held back by the scan</span>'
         elif sug:
             badge = '<span class="sugg">suggested%s%s</span>' % ((" by " + e(sug["who"])) if sug["who"] else "",
                                                                   (": " + e(sug["reason"])) if sug["reason"] else "")
@@ -368,7 +367,7 @@ def queue(ctx, base, g, cards):
                       '<button type="submit" class="quiet">Dismiss</button></form>' % (base, e(n.rel)))
         return ('<li class="qrow"><div class="qmain"><a class="ntl" href="%s/n/%s">%s</a> %s %s %s%s</div>'
                 '<div class="qacts">%s</div></li>'
-                % (base, quote(n.slug), e(n.title), stage_badge(n.stage, n.confidence), chk, badge,
+                % (base, quote(n.slug), e(n.title), stage_badge(n.stage), chk, badge,
                    ('<p class="summary">%s</p>' % e(n.description)) if n.description else "", forms))
 
     groups = {}

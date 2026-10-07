@@ -190,16 +190,23 @@ class Garden(Vault):
 
     # -- pre-publish scan ----------------------------------------------
 
+    def scan_hits(self, note):
+        """What the pattern scan found in a note's body, in full: [(severity, label, [text, ...])]. The owner's page
+        shows and highlights each one."""
+        body = FRONT_RE.sub("", note.text, count=1)
+        out = []
+        for severity, label, rx in list(CHECKS) + ([("error", DENY_LABEL, self.deny)] if self.deny else []):
+            hits = sorted({m.group(0) for m in rx.finditer(body)})
+            if hits:
+                out.append((severity, label, hits))
+        return out
+
     def check(self, note):
         self.index()
         found = []
-        body = FRONT_RE.sub("", note.text, count=1)
-        checks = list(CHECKS) + ([("error", DENY_LABEL, self.deny)] if self.deny else [])
-        for severity, label, rx in checks:
-            hits = sorted({m.group(0) for m in rx.finditer(body)})
-            if hits:
-                shown = ", ".join(h if severity == "warn" else h[:6] + "…" for h in hits[:4])
-                found.append((severity, "%s (%d): %s" % (label, len(hits), shown)))
+        for severity, label, hits in self.scan_hits(note):
+            shown = ", ".join(h if severity == "warn" else h[:6] + "…" for h in hits[:4])
+            found.append((severity, "%s (%d): %s" % (label, len(hits), shown)))
         private = sorted({self.notes[r].title for r in note.links if self.is_private(r)})
         if private:
             found.append(("warn", "links to private notes: " + ", ".join(private)))
@@ -230,32 +237,6 @@ class Garden(Vault):
                 count = sum(1 for r in n.links if r in self.notes and self.notes[r].published)
                 out.append((n, count))
         return sorted(out, key=lambda t: (-t[1], t[0].title.lower()))
-
-    def pinned(self):
-        return sorted((n for n in self.published() if n.pinned), key=lambda n: n.title.lower())
-
-    def recent(self, limit=8):
-        return sorted(self.published(), key=lambda n: self.tended.get(n.rel, ""), reverse=True)[:limit]
-
-    def needs_tending(self, stale_days=90, seedling_days=30, today=None):
-        today = today or datetime.date.today()
-        out = []
-        for n in self.published():
-            tended = self.tended.get(n.rel, "")
-            try:
-                age = (today - datetime.date.fromisoformat(tended)).days if tended else None
-            except ValueError:
-                age = None
-            planted_age = None
-            try:
-                planted_age = (today - datetime.date.fromisoformat(n.planted)).days if n.planted else None
-            except ValueError:
-                pass
-            if age is not None and age >= stale_days:
-                out.append((n, "tended %s" % relative(tended, today)))
-            elif n.stage == "seedling" and planted_age is not None and planted_age >= seedling_days:
-                out.append((n, "seedling planted %s" % relative(n.planted, today)))
-        return sorted(out, key=lambda t: t[0].title.lower())
 
     def random_note(self):
         import random

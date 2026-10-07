@@ -89,6 +89,9 @@ article.note .nhead h1 { margin: 10px 0 2px; font-size: var(--fs-xxl); line-heig
 .metaform label { display: inline-flex; align-items: center; gap: 6px; }
 .pubform { margin: var(--sp-5) 0; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; color: var(--muted); }
 .owner .pubform { margin: var(--sp-2) 0 var(--sp-5); }
+mark.found { background: color-mix(in srgb, var(--orange) 28%, transparent); color: inherit; border-radius: 3px; padding: 0 2px; }
+mark.found-error { background: color-mix(in srgb, var(--red) 28%, transparent); }
+ul.checks b { text-transform: uppercase; font-size: var(--fs-xs); letter-spacing: .04em; }
 ul.checks { list-style: none; padding: 0; margin: 0 0 10px; width: 100%; font-size: var(--fs-s); }
 .chk-error { color: var(--red); } .chk-warn { color: var(--orange); } .chk-info { color: var(--muted); }
 .popover { position: absolute; z-index: 40; width: 320px; padding: 10px var(--sp-3); border-radius: var(--r-m); background: var(--dark);

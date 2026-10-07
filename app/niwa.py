@@ -50,7 +50,7 @@ from vaultkit import read_secret  # noqa: E402
 from vaultkit import signin  # noqa: E402
 from writer import Writer, WriteError  # noqa: E402
 
-VERSION = "0.8.4"
+VERSION = "0.9.0"
 PORT = int(os.environ.get("NIWA_PORT", "8080"))
 USERS = set(filter(None, (u.strip() for u in os.environ.get("NIWA_USERS", "").split(","))))
 
@@ -890,8 +890,9 @@ def make_handler(listener):
                     n = garden.get(rel[:-3] if rel.endswith(".md") else rel)
                     if not n:
                         raise WriteError(404, "no such note")
-                    writer.set_garden_meta(n.rel, {"growth": data.get("growth", ""), "confidence": data.get("confidence", ""),
-                                                   "garden_pin": data.get("garden_pin", "")}, actor, label, power)
+                    # only what the form sent: the Tend form sets the stage and leaves a note's confidence and pin as they are
+                    writer.set_garden_meta(n.rel, {k: data[k] for k in ("growth", "confidence", "garden_pin") if k in data},
+                                           actor, label, power)
                     self.send(302, "", "text/plain", headers=[("Location", "%s/n/%s" % (base, quote(n.slug)))])
                 else:
                     raise WriteError(405, "no such write endpoint")
