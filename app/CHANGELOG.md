@@ -3,6 +3,10 @@
 Niwa follows [SemVer](https://semver.org). Before 1.0, a new feature, a changed default or setting, or a changed API
 field is a minor bump, and a fix or wording change is a patch. Settings are listed in the README.
 
+## 0.8.4
+
+- vaultkit 0.25.2: code blocks, inline code and the search field's text use the menu text color, so they pass 4.5:1 contrast in the light themes (3.99 in Tokyo Night Day and 4.39 in Solarized Light before).
+
 ## 0.8.3
 
 - vaultkit 0.25.0: accents on raised panels (Settings groups, the Rooms menu, toasts, code blocks) use their panel shades, so links and accent text there reach 4.5:1 in every palette; About says "License".
