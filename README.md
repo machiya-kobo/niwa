@@ -5,7 +5,7 @@
 Niwa (庭, "garden") is the digital garden for Machiya and publishes the notes you choose from your Obsidian vault to the Web. It's also a Gemini capsule and a Gopher hole.
 
 <p align="center">
-<a href="https://machiya-kobo.github.io/machiya/">Machiya</a> · <a href="#grow-your-garden">Features</a> · <a href="#quickstart">Quickstart</a> · <a href="docs/install.md">Install</a> · <a href="docs/access.md">Access</a> · <a href="docs/settings.md">Settings</a> · <a href="docs/api.md">API</a> · <a href="#license">License</a>
+<a href="https://machiya-kobo.github.io/">Machiya</a> · <a href="#grow-your-garden">Features</a> · <a href="#quickstart">Quickstart</a> · <a href="docs/install.md">Install</a> · <a href="docs/access.md">Access</a> · <a href="docs/settings.md">Settings</a> · <a href="docs/api.md">API</a> · <a href="#license">License</a>
 </p>
 
 <p align="center"><a href="docs/screenshots/niwa-garden-dark.png"><img src="docs/screenshots/niwa-garden-dark.png" alt="The garden's landing page in the dark theme: topic maps for Crafts and Travel, recently tended notes with their growth stages, and seedlings" width="100%"></a><br>Wander the garden</p>
