@@ -1,21 +1,32 @@
 # CLAUDE.md — Niwa
 
-Niwa 庭 is a digital garden: it publishes the notes of a Markdown vault (a Git repo) that carry `publish: true` as a website, a gemini capsule and a gopher hole (README.md). It is part of Machiya; shared docs and contracts live in `machiya-kobo/machiya`, and `app/vaultkit/` is vendored from there.
+Niwa 庭 is a digital garden: it publishes the notes of a Markdown vault (a Git repo) that carry `publish: true` as a website, a Gemini capsule and a Gopher hole. It is one of the Machiya apps; shared docs and contracts live in [machiya-kobo/machiya](https://github.com/machiya-kobo/machiya) (`docs/`, `docs/contracts`). The README is the overview and the Quickstart; `docs/` has the detail.
 
-## Rules
+## Layout
 
-- **Only the owner publishes** or changes `publish` and `growth`, from the web UI (same-origin form posts; the Tend form sets only the stage). `POST /meta` still sets `confidence` and `garden_pin`, but only the fields it is sent: saving a stage never clears them. Agents get 403; they may only `POST /api/suggest`. Writes edit frontmatter lines only, never note bodies.
-- **Identity:** with `MACHIYA_IDENTITY_FILE` (vaultkit `identity`, [Machiya's `docs/identity.md`](https://github.com/machiya-kobo/machiya/blob/main/docs/identity.md)), `Handler.who()` resolves the principal once per request, and "agents get 403" is enforced by grants: pages and read APIs need `niwa` `read`, `/api/suggest` `suggest`, and `/publish`, `/dismiss`, `/meta` `publish` (`Handler.may`, passed to `writer.py` as `power`). Same-origin stays the CSRF guard for form posts (and for any post made with a session cookie), never the source of the power; `X-Agent` is only the events' `agent` label, `actor` is the principal. No or a bad proof is 401, no grant 403; `who().cookies` go out on every response. Without the file the old gate (`NIWA_USERS`, the "web" label in `writer.py`) applies unchanged. Gemini and gopher are public (published notes only) and never consult it.
-- **Sign-in, pairing, preferences** (vaultkit `signin`): `/signin`, `/signout` and `POST /api/pair` (identity file only; 404 without one) come before the gate (after the open-mode `Host` check), each body read with `signin.read_body` and the module's limit; `GET/PUT /api/prefs` after it (`niwa` `read`), stored in `prefs.sqlite3` next to `NIWA_DB`. Without a file the old gate admits and `identity.ambient` names whose preferences they are (`Handler.principal()`); a page whose request has a principal passes `prefs_url` (`ctx.prefs_url`), and a session's name is `who=` (`ctx.who`). Every handler gets `ORIGINS` (`NIWA_PUBLIC_URL`); `http://` there means `secure=False`. Never answer these from gemini or gopher, and never put a password, hash or token in a page or log.
-- **Niwa → Konbini** carries Niwa's service token (`NIWA_KONBINI_TOKEN_FILE`, `Authorization: Bearer`, never logged, no redirects followed) and `X-Agent: niwa`.
-- **A note is what the garden publishes, on every channel.** The vault is read only through `Garden.source()`: a note with a `Garden` heading has `text` cut down to that section (and an `Updates` section), so the render, scan, links, search, feeds, word count and updates all see just that. Never read a note file directly for anything public. A `publish: true` note whose scan finds errors is held back everywhere (`Garden._apply_private`) until the owner publishes it with its findings: gemini, gopher, the feed and the public garden all go through `garden.published()`, so a new channel must too.
-- **Standalone:** everything Niwa needs is its own clone, state and code. Konbini, Kura and Hister are optional URLs, and a page must still render when they're unset or down.
-- **Never break gemini and gopher** (`app/smallweb.py`): they're part of the garden.
-- **The public garden** (`NIWA_PUBLIC_PORT`, `PublicHandler` in `app/niwa.py`) is public like gemini and gopher: published notes only, read-only, no cookies, never Hister, Kura or Konbini, and it never reads an identity header. Its tests sweep every route with sentinel URLs: keep them passing.
-- **Hister results, copies and `private_url`** appear only on the owner's web pages: never on gemini or gopher, which read only `archive_url` (Wayback). Every Hister call sends `Origin: hister://`; never `hister index --force` a URL Hister already has. Bump `HISTER_VERSION` in `app/Dockerfile` with the Hister server.
-- **Never edit `app/vaultkit/`**: fix it in `machiya-kobo/machiya` (`vaultkit/`), tag, then `tools/vendor-vaultkit <tag>`.
-- **No owner-specific defaults:** hostnames, user agents, folder names and the like come from settings (README), not from code, tests or comments.
-- **Never commit personal details, preferences or settings.** This repository ships neutral defaults only. Hostnames, tailnet and network names, people's names, logins and emails, device names and team IDs, vault and folder names, tokens, and anyone's own choices or settings (themes and text size, rooms, `.env` and `local.*` files, the identity file `identity.toml`, `prefs.sqlite3` and other data) stay outside the repository: in settings, gitignored files or the deployment's own repository. Code, tests, fixtures, docs, comments, screenshots and commit messages use `example.com`, `example.ts.net`, "the user" and the sample vault. Check the diff for them before you push: once the repository is public, its history can't take them back.
-- **Tests before every change ships:** `python3 -m unittest discover -s tests` (needs `markdown` 3.11 or later and `pyyaml`).
-- **Docs:** the README is an overview, one Quickstart and links; the detail lives in `docs/`. `tools/quickstart-test` reads the runnable blocks from `README.md` and `docs/install.md`, so keep them byte for byte. Prose follows machiya's `docs/voice.md` (American English, plain, no filler).
-- **Commits and releases:** commits are `niwa: …`, made as `Machiya <machiya-kobo@users.noreply.github.com>` and unsigned (set `user.name`, `user.email` and `commit.gpgsign false` in the clone). Work on `main`; push it to GitHub (`origin`) and to Forgejo as `github-main`. A release bumps `VERSION` in `app/niwa.py` and the CHANGELOG, then, with `main` already pushed, its tag is made with machiya's `tools/release-tag` (annotated, SSH-signed as the `machiya-bot` user, verified before it is kept; never a plain `git tag`) and pushed to both forges. Once a release tag is signed, keep signing. Push only `main` and tags on it, never `--tags` or `--mirror`. Deploying is done by the machiya and services sessions, never from here.
+- `app/niwa.py`: the web listeners (owner and public), the gate, the settings; `garden.py`: the vault as the garden publishes it (index, scan, relations); `gmodern.py`: the HTML pages; `shell.py`: the page shell and icons; `smallweb.py`: Gemini and Gopher; `writer.py`: the only code that writes to the vault; `stream.py`, `links.py`, `feed.py`, `state.py` (SQLite), `hister.py`, `konbini.py`: the stream, link checks, the feed, state and the optional sister services.
+- `app/static/`: `niwa.css` and `niwa.js` (the garden's own look), the icons, Mermaid. `app/vaultkit/` is vendored: see below.
+- `tests/test_niwa.py`: the whole suite. `sample-vault/` and `tools/`: the demo vault, the screenshots and the Quickstart test.
+
+## Set up, run, test
+
+From a fresh clone (Python 3.11 or later):
+
+```sh
+python3 -m venv .venv && .venv/bin/pip install 'markdown>=3.11' pyyaml
+.venv/bin/python -m unittest discover -s tests          # the tests; no linter is configured
+```
+
+Run it on the sample vault with the Quickstart in the [README](README.md#quickstart); `tools/quickstart-test` runs those blocks and checks their output, so keep them byte for byte. Settings are in [docs/settings.md](docs/settings.md).
+
+## Rules that matter when you change code
+
+- **Only the owner publishes.** `publish` and `growth` change only from the web UI (same-origin form posts); agents may only `POST /api/suggest`. Writes edit frontmatter lines, never note bodies. With `MACHIYA_IDENTITY_FILE` the same rules are enforced by grants (docs/access.md); the old gate (`NIWA_USERS`) applies without it.
+- **A note is what the garden publishes, on every channel.** Read the vault only through `Garden.source()`, never a note file directly for anything public. A `publish: true` note whose scan finds errors is held back everywhere until the owner publishes it with its findings: a new channel must go through `garden.published()`.
+- **Never break Gemini and Gopher** (`app/smallweb.py`), and never put Hister results, copies or private URLs on them.
+- **The public garden** (`PublicHandler`) is published notes only, read-only, no cookies, and never reads an identity header or calls Hister, Kura or Konbini. Its tests sweep every route with sentinel URLs: keep them passing.
+- **Standalone:** Konbini, Kura and Hister are optional URLs, and every page must still render when they are unset or down.
+- **Never edit `app/vaultkit/`.** It is vendored from machiya's `vaultkit/`; the image build fails if it is edited. Fix it upstream, then `tools/vendor-vaultkit <tag>`.
+- **Contrast:** every text stays at 4.5:1 in all ten themes (the style guide, rule 4). Add a check to the contrast test when you add a colour.
+- **No personal details in the repo:** hostnames, network and folder names, logins and emails come from settings, and tests, fixtures, docs and comments use `example.com` and the sample vault. `tests/test_private_names.py` guards this when you keep a names list outside the repo (see the file).
+- Add a test with any change in behavior. Prose follows machiya's `docs/voice.md`: American English, plain, no filler. Match the surrounding code's naming and comment density; commits start with `niwa: `.

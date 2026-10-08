@@ -1,8 +1,7 @@
 # Contributing to Niwa
 
 Thanks for helping. Niwa is a small server that shows the notes you mark `publish: true` in a Markdown vault
-(a Git repo) on the web (pages behind the owner's gate), as a gemini capsule and as a gopher hole. [CLAUDE.md](CLAUDE.md) is the detailed guide to how it
-works and the traps already found; read the part for what you're changing.
+(a Git repo) on the web (pages behind the owner's gate), as a gemini capsule and as a gopher hole. [CLAUDE.md](CLAUDE.md) is a short guide to the layout and the rules, written for coding agents and useful to people; read the rules before you change anything.
 
 ## Building
 
