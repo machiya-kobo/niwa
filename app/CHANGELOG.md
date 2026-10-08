@@ -3,6 +3,10 @@
 Niwa follows [SemVer](https://semver.org). Before 1.0, a new feature, a changed default or setting, or a changed API
 field is a minor bump, and a fix or wording change is a patch. Settings are listed in the README.
 
+## 0.13.5
+
+vaultkit 0.28.0: the index is faster and is built aside, then put in place at once, so a request during a re-index never sees notes without their links. A re-index after one commit on a 1,500-note vault takes 305 ms instead of 714 ms, and the longest wait a visitor sees during a resync dropped from 841 to 101 ms. The "tended" dates are unchanged (checked against the sample vault and a 1,500-note vault with 300 commits). No change to the app.
+
 ## 0.13.4
 
 A public image, and a pinned build. Each signed release tag now builds `ghcr.io/machiya-kobo/niwa:<version>` (and `:latest`) for amd64 and arm64 on GitHub Actions, and signs it with cosign (docs/install.md). The Dockerfile's base images (Python and the Hister CLI) are pinned by digest. No change to the app.
