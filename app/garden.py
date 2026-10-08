@@ -355,7 +355,7 @@ class Garden(Vault):
         self.index()
         n = self.notes.get("Garden.md")
         if n and n.published:
-            return self.render(n, base)
+            return self.render(n, base, remote_images="click")
         return None
 
     # -- queue ---------------------------------------------------------------

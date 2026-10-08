@@ -52,7 +52,7 @@ from vaultkit import read_secret  # noqa: E402
 from vaultkit import signin  # noqa: E402
 from writer import Writer, WriteError  # noqa: E402
 
-VERSION = "0.13.5"
+VERSION = "0.14.0"
 PORT = int(os.environ.get("NIWA_PORT", "8080"))
 USERS = set(filter(None, (u.strip() for u in os.environ.get("NIWA_USERS", "").split(","))))
 
@@ -502,7 +502,8 @@ def make_handler(listener):
             """The Hister sign-in's answer for this request (vaultkit.histerauth.Result), worked out once: a browser
             page that is signed out gets a redirect, an API call a 401 with the sign-in address."""
             if self._hres is None:
-                self._hres = HISTER_AUTH.resolve(self.headers, is_page=self.browser_page(), path=self.path)
+                self._hres = HISTER_AUTH.resolve(self.headers, is_page=self.browser_page(), path=self.path,
+                                                 client=self.client_address[0] if self.client_address else "")
             return self._hres
 
         def host_ok(self):

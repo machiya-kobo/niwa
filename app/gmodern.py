@@ -163,7 +163,7 @@ def note(ctx, base, g, n, cards, checks=None):
     if near:
         rel_links.append(section("Nearby", "", '<ul class="garden-list plain">%s</ul>' % "".join(
             '<li>%s %s</li>' % (glink(base, x), stage_badge(x.stage)) for x in near)))
-    body = g.render(n, base, False).lstrip()
+    body = g.render(n, base, False, remote_images="click").lstrip()     # a remote image loads on a click
     if g.links:
         body = g.links.annotate(body, private=not public)  # the owner's pages: private copies are fine; never public
     if hits:

@@ -741,6 +741,19 @@ class HisterSignInTest(unittest.TestCase):
     def cookie(self, sid=None):
         return {"Cookie": "machiya_sso=%s" % (sid or self.SID)}
 
+    def test_vaultkit_believes_the_fallback_login_only_from_the_trusted_proxies_itself(self):
+        """v0.29: Niwa passes the peer's address (resolve(client=…)), so histerauth's own trusted proxies decide, not only
+        Niwa's header stripping (which is off here: niwa.TRUSTED_PROXIES is empty)."""
+        import ipaddress
+        self.helper.down = True
+        self.assertEqual(niwa.TRUSTED_PROXIES, ())
+        niwa.HISTER_AUTH.trusted = (ipaddress.ip_network("10.210.4.2/32"),)
+        self.assertEqual(as_("/", dict(self.LOGIN, **self.PAGE))[0], 503)          # the peer is 127.0.0.1: not the proxy
+        niwa.HISTER_AUTH.trusted = (ipaddress.ip_network("127.0.0.0/8"),)
+        self.assertEqual(as_("/", dict(self.LOGIN, **self.PAGE))[0], 200)
+        niwa.HISTER_AUTH.trusted = None                                              # unset: as before
+        self.assertEqual(as_("/", dict(self.LOGIN, **self.PAGE))[0], 200)
+
     def test_signed_out_is_a_redirect_for_a_page_and_401_json_for_an_api_never_a_fallback(self):
         status, headers, _ = as_("/", self.PAGE)
         self.assertEqual(status, 302)
@@ -2875,6 +2888,22 @@ class PublicGardenTest(unittest.TestCase):
                 k, v = line.split(": ", 1)
                 hdrs.setdefault(k.lower(), []).append(v)
         return int(lines[0].split()[1]), hdrs, rest if raw else rest.decode("utf-8", "replace")
+
+    def test_a_remote_image_in_a_note_waits_for_a_click_everywhere_but_gemini_and_gopher(self):
+        """v0.29 (owner, 2026-10-08): opening a note must not tell another site; the image loads on "Load image". Images
+        from the vault are unchanged; gemini and gopher never show an image."""
+        note = write_note("Notes/Pictures.md", "---\ntitle: Pictures\npublish: true\n---\n"
+                          "A remote ![the sea](https://img.example.org/sea.png) and a vault ![[lantern.png]] image.\n")
+        self.made.append(note)
+        for label, body in (("public", self.get("/n/Notes/Pictures")[2]), ("owner", req("/n/Notes/Pictures")[1])):
+            self.assertIn('<span class="remote-img" data-src="https://img.example.org/sea.png" data-alt="the sea">', body, label)
+            self.assertIn('class="remote-img-load">Load image</button>', body, label)
+            self.assertNotIn('<img src="https://img.example.org', body, label)         # nothing is fetched until the click
+            self.assertIn('<img src="/a/Notes/lantern.png"', body, label)              # the vault's own image is unchanged
+        import smallweb
+        gem = smallweb.to_gemtext(niwa.garden, niwa.garden.get("Notes/Pictures"))
+        self.assertNotIn("Load image", gem)                                           # gemini and gopher are text, as they were
+        self.assertNotIn("remote-img", gem)
 
     def test_the_public_garden_is_gzipped_too(self):
         import gzip

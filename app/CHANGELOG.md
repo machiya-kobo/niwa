@@ -3,6 +3,14 @@
 Niwa follows [SemVer](https://semver.org). Before 1.0, a new feature, a changed default or setting, or a changed API
 field is a minor bump, and a fix or wording change is a patch. Settings are listed in the README.
 
+## 0.14.0
+
+vaultkit 0.29.0 (the sign-in hardening, owner decisions 2026-10-08).
+
+- **Remote images load on a click.** An image from another site in a note is a placeholder (its alt text, its address and a Load image button) on the web pages, the owner's and the public garden's, so opening a note no longer tells that site anything. Images from the vault are unchanged. Gemini and Gopher are text and are unchanged.
+- The Hister sign-in is told the peer's address, so the Tailscale fallback believes the login header only from `NIWA_TRUSTED_PROXIES` inside vaultkit too, not only in Niwa's own header stripping.
+- A `class` in a note's HTML survives only when it is one vaultkit allows (`task`, `wikilink`, `seed`, `mermaid`, `language-*`). All 27 notes of the sample vault render byte for byte as before.
+
 ## 0.13.5
 
 vaultkit 0.28.0: the index is faster and is built aside, then put in place at once, so a request during a re-index never sees notes without their links. A re-index after one commit on a 1,500-note vault takes 305 ms instead of 714 ms, and the longest wait a visitor sees during a resync dropped from 841 to 101 ms. The "tended" dates are unchanged (checked against the sample vault and a 1,500-note vault with 300 commits). No change to the app.
