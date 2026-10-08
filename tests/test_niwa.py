@@ -198,7 +198,7 @@ class ReadTest(unittest.TestCase):
             _, body = req("/n/MOC/Crafts")
             self.assertIn('<a href="https://konbini.test/" data-room="konbini">', body)
             self.assertIn('<a href="https://kura.test/" data-room="kura">', body)
-            self.assertIn('<a class="thing is-note" href="https://kura.test/n/MOC/Crafts">View in Kura</a>', body)
+            self.assertIn('<a class="chip link is-note" href="https://kura.test/n/MOC/Crafts">View in Kura</a>', body)
         finally:
             niwa.shell.BOARD_URL = niwa.shell.KURA_URL = ""
         os.environ["MACHIYA_ROOMS"] = "shiori=https://shiori.test,kura=https://kura.stack"
@@ -209,9 +209,30 @@ class ReadTest(unittest.TestCase):
         finally:
             del os.environ["MACHIYA_ROOMS"]
 
+    def test_chip_colours_pills_and_tinted_rows_stay_readable_in_every_theme(self):
+        """machiya's style guide, rule 4: every text at its minimum on what it is drawn on, in all ten themes, dark and
+        light. The shared components are tested in vaultkit; this is Niwa's use of them: each colour a chip, link chip or
+        pill is drawn in, on the page and on a Konbini row's tint (the Stream: .card.tinted.is-card), the outlined pill
+        and the current one (the page colour on the room's colour)."""
+        from vaultkit import palettes
+        failures = []
+        for key, _ in palettes.CHOICES:
+            for mode in ("dark", "light"):
+                v = palettes.tokens(key, mode)
+                tint = palettes.mix(v["magenta-panel"], v[palettes.tint_base(mode)], v["tint-mix"])
+                for t in ("green", "teal", "yellow", "blue", "orange", "red", "magenta", "fg2", "muted", "comment"):
+                    if palettes.contrast(v[t], v["bg"]) < palettes.minimum(mode, t):
+                        failures.append("%s %s: --%s on the page" % (key, mode, t))
+                    panel = v.get(t + "-panel", v["menu-muted"] if t in ("muted", "comment") else v["menu-fg"])
+                    if palettes.contrast(panel, tint) < palettes.minimum(mode, t):
+                        failures.append("%s %s: --%s on a Konbini row's tint" % (key, mode, t))
+                if palettes.contrast(v["bg"], v["green"]) < 4.5:
+                    failures.append("%s %s: the current pill's --bg on --green" % (key, mode))
+        self.assertEqual(failures, [])
+
     def test_icons_and_manifest(self):
         body = req("/")[1]
-        for icon in ("/static/icons/niwa.svg", "/static/icons/niwa-apple-180.png"):
+        for icon in ("/static/icons/niwa-small.svg", "/static/icons/niwa-apple-180.png"):
             self.assertIn('href="%s"' % icon, body)
             self.assertEqual(req(icon)[0], 200, icon)
         for old in ("garden.svg", "garden-192.png", "garden-512.png", "garden-apple-180.png", "garden-maskable-512.png"):
@@ -228,6 +249,37 @@ class ReadTest(unittest.TestCase):
         _, sw = req("/sw.js")
         self.assertIn("/static/icons/niwa.svg", sw)
         self.assertNotIn("garden-", sw)
+
+    def test_the_favicon_is_the_sprout_at_every_size(self):
+        import struct
+        icons = os.path.join(niwa.shell.ICON_DIR)
+        with open(os.path.join(icons, "niwa.ico"), "rb") as f:
+            ico = f.read()
+        count = struct.unpack_from("<HHH", ico)[2]
+        self.assertEqual(sorted(ico[6 + 16 * i] or 256 for i in range(count)), [16, 32, 48])    # the small variant's sizes
+        small = open(os.path.join(icons, "niwa-small.svg")).read()
+        for leaf in ("#9ece6a", "#73daca"):                  # the sprout's two leaves, as icons/niwa.svg draws them
+            self.assertIn(leaf, small)
+            self.assertIn(leaf, open(os.path.join(icons, "niwa.svg")).read())
+        body = req("/")[1]
+        self.assertIn('<link rel="icon" href="/static/icons/niwa-small.svg" type="image/svg+xml">', body)     # the tab: the small variant
+        self.assertIn('<link rel="alternate icon" href="/static/icons/niwa.ico" sizes="16x16 32x32 48x48">', body)
+        for path in ("/favicon.ico", "/static/icons/niwa.ico", "/static/icons/niwa-small.svg", "/static/icons/niwa.svg"):
+            st, headers, _ = call("GET", path, {"Tailscale-User-Login": "owner@test"})
+            self.assertEqual(st, 200, path)
+        self.assertEqual(call("GET", "/favicon.ico", {"Tailscale-User-Login": "owner@test"})[1]["Content-Type"], "image/x-icon")
+
+    def test_the_landing_filter_is_a_row_of_pills(self):
+        _, body = req("/")
+        nav = body[body.index('<nav class="pills"'):]
+        nav = nav[:nav.index("</nav>")]
+        self.assertEqual(re.findall(r'<a class="pill" href="[^"]*"( aria-current="page")?>', nav)[0], ' aria-current="page"')   # All
+        self.assertEqual(nav.count("aria-current"), 1)
+        self.assertRegex(nav, r'>All <span class="count">\d+</span>')
+        _, typed = req("/?type=map")
+        cur = re.findall(r'<a class="pill" href="[^"]*" aria-current="page">([^<]*)<', typed)
+        self.assertEqual(cur, ["Maps "])
+        self.assertNotIn("typechips", body)
 
     def test_a_light_device_gets_a_light_splash(self):
         self.assertEqual(json.loads(req("/manifest.webmanifest")[1])["background_color"], "#1a1b26")
@@ -251,7 +303,7 @@ class ReadTest(unittest.TestCase):
         name = dict((k, n) for k, n, _ in STAGES)[p["stage"]]
         self.assertEqual(p["stage_name"], name)
         self.assertTrue(name[0].isupper())
-        self.assertIn('<span class="stage stage-%s">%s</span>' % (p["stage"], name), req("/n/Projects/Lantern")[1])
+        self.assertIn('<span class="chip stage stage-%s">%s</span>' % (p["stage"], name), req("/n/Projects/Lantern")[1])
 
     def test_feed_carries_published_notes_only(self):
         import xml.etree.ElementTree as ET
@@ -458,6 +510,35 @@ class ReleaseDefaultsTest(unittest.TestCase):
         self.assertEqual(json.loads(req("/api/status")[1])["version"], niwa.VERSION)
         with open(os.path.join(HERE, "..", "app", "CHANGELOG.md")) as f:
             self.assertIn("\n## %s\n" % niwa.VERSION, f.read())
+
+    def test_the_streams_konbini_rows_are_tinted_and_the_rest_is_plain(self):
+        """Style guide rule 3: tint what comes from another room in a mixed list. Konbini's Now rows and project entries
+        are .card.tinted.is-card with a "Card · Konbini" line; garden events stay plain."""
+        import datetime
+        from konbini import Konbini
+        today = datetime.date.today().isoformat()
+
+        class FakeBoard(Konbini):
+            def get(self, path):
+                if path.startswith("/api/digest"):
+                    return {"now": {"wip": [{"slug": "hush", "title": "Hush Card", "next": "n", "claim": "", "updated": "", "note_slug": ""}],
+                                    "blocked": [{"slug": "hush2", "title": "Hush Blocked", "blocked_by": "waiting", "note_slug": ""}]},
+                            "entries": [{"kind": "project", "date": today, "slug": "hush", "title": "Hush Card", "path": "Notes/Paper lanterns.md",
+                                         "moves": ["wip"], "top": ["m"], "more": 0, "next": "", "board": "wip", "done": False,
+                                         "started": True, "rows_n": 1, "has_card": True, "note_slug": ""}]}
+                return None
+
+        old_board = niwa.garden.konbini
+        try:
+            niwa.garden.konbini = FakeBoard("http://board.test")
+            req("/api/suggest", json_body={"path": "Notes/Paper lanterns.md", "reason": "x"}, origin=False, agent="agent-a")
+            body = req("/stream")[1]
+            self.assertEqual(body.count('class="card tinted is-card"'), 2)                      # the Now rows
+            self.assertEqual(body.count('dentry project card tinted is-card"'), 1)              # the day's project entry
+            self.assertEqual(body.count("Card \u00b7 Konbini"), 3)
+            self.assertIn('<li class="dentry garden"><span class="ev ev-garden">', body)        # garden events: plain
+        finally:
+            niwa.garden.konbini = old_board
 
     def test_gemini_and_gopher_stream_never_carry_the_board_or_unpublished_notes(self):
         import datetime
@@ -2627,7 +2708,7 @@ class PublicGardenTest(unittest.TestCase):
     def test_the_owner_page_would_show_the_sentinels(self):
         _, body = req("/n/Notes/Public%20lantern")      # the owner's own port: the proof the sweep below means something
         for want in ("kura.sentinel", "konbini.sentinel", "hister.sentinel", "blog.sentinel", "Tend",
-                     'href="https://garden.example/n/Notes/Public%20lantern">public page</a>'):
+                     'href="https://garden.example/n/Notes/Public%20lantern">Public Page</a>'):
             self.assertIn(want, body)
 
     def test_public_pages_carry_nothing_of_the_owners(self):
@@ -2650,6 +2731,9 @@ class PublicGardenTest(unittest.TestCase):
         self.assertIn('name="niwa-public"', body)
         self.assertIn('<span class="seed" title="not in the garden">Lantern</span>', body)     # unpublished: plain text
         self.assertIn("public", hdrs["cache-control"][0])
+        st, h, _ = self.get("/favicon.ico")
+        self.assertEqual((st, h["content-type"][0], "set-cookie" in h), (200, "image/x-icon", False))      # the same sprout, no cookies
+        self.assertIn('href="/static/icons/niwa.ico"', body)
         _, _, rss = self.get("/feed.xml")
         self.assertIn("<link>https://garden.example/n/", rss)                    # NIWA_GARDEN_URL, never Host
 

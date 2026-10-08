@@ -50,7 +50,7 @@ from vaultkit import read_secret  # noqa: E402
 from vaultkit import signin  # noqa: E402
 from writer import Writer, WriteError  # noqa: E402
 
-VERSION = "0.10.1"
+VERSION = "0.11.0"
 PORT = int(os.environ.get("NIWA_PORT", "8080"))
 USERS = set(filter(None, (u.strip() for u in os.environ.get("NIWA_USERS", "").split(","))))
 
@@ -348,6 +348,8 @@ CHANGELOG_FILE = os.path.join(APP_DIR, "CHANGELOG.md")
 
 def static_file(name, query):
     """/static/<name>: Niwa's own files, the vendored shared UI and the icons -> (status, body, type, headers)."""
+    if name == "favicon.ico":       # the bare path browsers and feed readers ask for
+        name = "icons/" + shell.ROOM + ".ico"
     if name.startswith("icons/"):
         icon = name[6:]
         old = shell.OLD_ICON_PREFIX
@@ -356,7 +358,7 @@ def static_file(name, query):
                                            ("Cache-Control", "public, max-age=604800")]
         if icon in shell.ICONS:
             with open(os.path.join(shell.ICON_DIR, icon), "rb") as f:
-                return (200, f.read(), "image/svg+xml" if icon.endswith(".svg") else "image/png",
+                return (200, f.read(), shell.ICON_TYPES[os.path.splitext(icon)[1]],
                         [("Cache-Control", "public, max-age=604800")])
     elif name in STATIC_TYPES:
         cache = "public, max-age=31536000, immutable" if query.get("v") else "max-age=300"
@@ -651,8 +653,8 @@ def make_handler(listener):
                     return self.refuse()
                 return self.reply(*signin.handle_get(IDENTITY, self.headers, url.query))
             if (HISTER_AUTH is not None or IDENTITY is not None and IDENTITY.signin) and self.host_ok() \
-                    and (path in SHARED_UI or path.startswith("/static/icons/")):
-                return self.static(path[8:], query)      # the sign-in page's stylesheet and icons: vendored, no notes
+                    and (path in SHARED_UI or path.startswith("/static/icons/") or path == "/favicon.ico"):
+                return self.static("favicon.ico" if path == "/favicon.ico" else path[8:], query)      # the sign-in page's stylesheet and icons: vendored, no notes
             if not self.allowed():
                 return self.refuse()
             if path == "/api/prefs":        # the principal's own preferences (identity.ambient without a file)
@@ -680,6 +682,8 @@ def make_handler(listener):
                 return self.send(200, shell.offline(shell.prefs(self.headers.get("Cookie")), shell.ROOM))   # nobody's
             if path.startswith("/static/"):
                 return self.static(path[8:], query)
+            if path == "/favicon.ico":
+                return self.static("favicon.ico", query)
             if path == shell.FEED:          # published notes only, behind the same gate as the garden's pages
                 base = PUBLIC_URL or "https://%s" % (self.headers.get("Host") or "localhost")
                 return self.send(200, feed.rss(base, "Niwa", gmodern.INTRO, feed.notes(garden, NO_STORE_DIRS)),
@@ -993,8 +997,8 @@ def make_public_handler():
             if path == "/robots.txt":
                 return self.send(200, "User-agent: *\n%s\n" % ("Disallow: /" if NOINDEX else "Allow: /"), "text/plain",
                                  headers=[PUBLIC_CACHE])
-            if path.startswith("/static/"):
-                return self.send(*static_file(path[8:], query))
+            if path.startswith("/static/") or path == "/favicon.ico":
+                return self.send(*static_file("favicon.ico" if path == "/favicon.ico" else path[8:], query))
             if path == shell.FEED:
                 return self.send(200, feed.rss(GARDEN_URL, "Niwa", gmodern.INTRO, feed.notes(garden, NO_STORE_DIRS)),
                                  "application/rss+xml", headers=[PUBLIC_CACHE])

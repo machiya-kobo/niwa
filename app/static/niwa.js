@@ -80,7 +80,7 @@ if (matchMedia("(hover: hover)").matches) {
         if (!r.ok || hovered !== a) return;
         const p = await r.json();
         if (!pop) { pop = document.createElement("div"); pop.className = "popover"; document.body.append(pop); }
-        pop.innerHTML = "<b>" + esc(p.title) + "</b> <span class='stage stage-" + esc(p.stage) + "'>" + esc(p.stage_name || p.stage) + "</span>"
+        pop.innerHTML = "<b>" + esc(p.title) + "</b> <span class='chip stage stage-" + esc(p.stage) + "'>" + esc(p.stage_name || p.stage) + "</span>"
           + (p.description ? "<p>" + esc(p.description) + "</p>" : "")
           + (p.tended ? "<span class='when'>tended " + esc(p.tended) + "</span>" : "");
         const box = a.getBoundingClientRect();

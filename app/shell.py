@@ -17,7 +17,8 @@ from vaultkit.shell import e, prefs  # noqa: F401  (prefs: niwa.py reads the the
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 UI_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vaultkit", "ui")
 ICON_DIR = os.path.join(STATIC_DIR, "icons")
-ICONS = set(n for n in os.listdir(ICON_DIR) if n.endswith((".png", ".svg"))) if os.path.isdir(ICON_DIR) else set()
+ICONS = set(n for n in os.listdir(ICON_DIR) if n.endswith((".png", ".svg", ".ico"))) if os.path.isdir(ICON_DIR) else set()
+ICON_TYPES = {".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon"}
 GARDEN_HOST = ""    # niwa.py sets it from NIWA_HOST (gemini/gopher footer links); empty = no links
 COLUMN_TITLES = {"backlog": "Backlog", "ready": "Ready", "wip": "WIP", "blocked": "Blocked / On Hold",
                  "done": "Done", "archived": "Archived"}

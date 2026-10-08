@@ -8,31 +8,27 @@ main.msg { max-width: 640px; }
 .none, .hint { color: var(--muted); font-size: var(--fs-s); }
 .hint { color: var(--comment); }
 
-/* ---- chips: stages and board columns are filled (state), confidence is outlined ----------------------------- */
-.stage, .col-badge, .chk, .claim {
-  display: inline-flex; align-items: center; padding: 1px 8px; border-radius: var(--r-pill); font-size: var(--fs-xs);
-  font-weight: 500; line-height: 16px; white-space: nowrap; color: var(--muted);
-  background: color-mix(in srgb, currentColor 16%, transparent);
-}
+/* ---- state chips: the shared .chip (machiya.css), coloured with --chip. A stage is a season, a board column is one of
+   Konbini's lanes; a link chip (.chip.link) takes the same colours. -------------------------------------------------- */
 .stage { margin-left: 6px; }
-.stage-evergreen, .sechead.stage-evergreen { color: var(--green); }
-.stage-budding, .sechead.stage-budding { color: var(--teal); }
-.stage-seedling, .sechead.stage-seedling { color: var(--yellow); }
-.conf { display: inline-flex; padding: 0 7px; border: 1px solid var(--line2); border-radius: var(--r-pill);
-  font-size: var(--fs-xs); line-height: 16px; color: var(--muted); }
-.conf-certain { color: var(--green); } .conf-likely { color: var(--teal); } .conf-possible { color: var(--yellow); } .conf-speculative { color: var(--orange); }
-.col-badge { margin-left: 4px; font-weight: 600; }
-.col-badge.col-backlog, .col-badge.col-archived { color: var(--comment); }
-.col-badge.col-ready { color: var(--blue); }
-.col-badge.col-wip { color: var(--orange); }
-.col-badge.col-blocked { color: var(--red); }
-.col-badge.col-done { color: var(--green); }
-a.col-badge:hover { text-decoration: none; filter: brightness(1.1); }
-.claim { color: var(--yellow); }
+.chip.stage-evergreen { --chip: var(--green); }
+.chip.stage-budding { --chip: var(--teal); }
+.chip.stage-seedling { --chip: var(--yellow); }
+.gstats .stage-evergreen, .sechead.stage-evergreen { color: var(--green); }
+.gstats .stage-budding, .sechead.stage-budding { color: var(--teal); }
+.gstats .stage-seedling, .sechead.stage-seedling { color: var(--yellow); }
+.col-backlog, .col-archived { --chip: var(--comment); }
+.col-ready { --chip: var(--blue); }
+.col-wip { --chip: var(--orange); }
+.col-blocked { --chip: var(--red); }
+.col-done { --chip: var(--green); }
+.claim, .sugg { --chip: var(--yellow); }
+.reason { color: var(--muted); font-size: var(--fs-xs); }
+.chip.is-note { --chip: var(--orange); } .chip.is-card { --chip: var(--magenta); } .chip.is-garden { --chip: var(--green); }
+:where(.chip.link) { --chip: var(--fg2); }     /* a link to no room: neutral, as Obsidian is */
+.sechead .chip { margin-left: 4px; text-transform: none; letter-spacing: 0; }
 .when, .tended, .ntype { color: var(--muted); font-size: var(--fs-xs); }
 .tended { margin-left: 6px; }
-.colcount { display: inline-block; margin-left: 4px; padding: 0 7px; border-radius: var(--r-pill); background: var(--hl);
-  color: var(--fg2); font-size: 11px; font-weight: 500; letter-spacing: 0; line-height: 18px; text-transform: none; }
 
 /* ---- forms and buttons (the owner's Tend and Publish forms, the queue) ----------------------------------------- */
 select { background: var(--dark); color: var(--fg); border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px;
@@ -57,12 +53,7 @@ ul.garden-list .summary { margin: 3px 0 0; color: var(--muted); font-size: var(-
 .landing .intro.none { font-size: var(--fs-m); max-width: var(--measure); }
 .gstats { color: var(--muted); font-size: var(--fs-s); margin: 0 0 6px; }
 .gstats b { color: var(--fg); }
-.typechips { margin: 0 0 var(--sp-2); display: flex; flex-wrap: wrap; gap: 6px; }
-.typechips a { display: inline-block; padding: 3px 10px; border-radius: var(--r-pill); background: var(--dark); color: var(--muted);
-  font-size: var(--fs-s); border: 1px solid transparent; }
-.typechips a:hover { text-decoration: none; color: var(--fg); }
-.typechips a.here { background: var(--hl); color: var(--fg); border-color: var(--room); }
-.typechips a .n { color: var(--comment); margin-left: 3px; }
+.landing .pills { margin: 0 0 var(--sp-3); }
 .maps { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
 .maptile { display: block; padding: var(--sp-3) 14px; border-radius: var(--r-m); background: var(--dark); border: 1px solid var(--line);
   color: var(--fg); }
@@ -96,7 +87,8 @@ mark.found-error { background: color-mix(in srgb, var(--red) 28%, transparent); 
 .words.long { color: var(--orange); }
 ul.checks b { text-transform: uppercase; font-size: var(--fs-xs); letter-spacing: .04em; }
 ul.checks { list-style: none; padding: 0; margin: 0 0 10px; width: 100%; font-size: var(--fs-s); }
-.chk-error { color: var(--red); } .chk-warn { color: var(--orange); } .chk-info { color: var(--muted); }
+.chk-ok { --chip: var(--green); } .chk-warn { --chip: var(--orange); } .chk-err, .chk-error { --chip: var(--red); } .chk-info { --chip: var(--muted); }
+ul.checks li { color: var(--chip); }
 .popover { position: absolute; z-index: 40; width: 320px; padding: 10px var(--sp-3); border-radius: var(--r-m); background: var(--dark);
   border: 1px solid var(--line2); box-shadow: var(--shadow-2); font-size: var(--fs-s); color: var(--fg); pointer-events: none; }
 .popover p { margin: var(--sp-1) 0; color: var(--fg2); }
@@ -116,18 +108,17 @@ ul.checks { list-style: none; padding: 0; margin: 0 0 10px; width: 100%; font-si
 .tagcloud .n { color: var(--muted); margin-left: 2px; }
 
 /* ---- the stream ---------------------------------------------------------------------------------------------- */
-.stream .kind { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; margin-right: 4px; }
+.stream .ev { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; margin-right: 4px; }
 .ev-garden { color: var(--green); } .ev-reading { color: var(--blue); } .ev-systems { color: var(--cyan); }
 ul.digest { list-style: none; padding: 0; margin: 0 0 6px; }
 ul.digest > li { padding: var(--sp-2) 0; border-bottom: 1px solid var(--line); }
+ul.digest > li.tinted { margin: 0 0 var(--sp-2); padding: 10px var(--sp-3); box-shadow: none; }   /* a Konbini row: the shared tint's box */
 li.dentry .dhead { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 li.dentry .ntl { font-weight: 600; }
 li.dentry b.ntl { color: var(--fg); }   /* no card: plain text; a card link wears Konbini's colour (.is-card) */
 li.dentry.done .ntl { color: var(--green); }
 ul.nowlist-s .ntl { font-weight: 600; }
-.move { display: inline-block; font-size: 11px; line-height: 18px; padding: 0 7px; border-radius: 9px; background: var(--hl); color: var(--fg2); }
 .more { font-size: var(--fs-xs); color: var(--muted); }
-.nlink { font-size: var(--fs-xs); }
 li.dentry ul.top { margin: 4px 0 0; padding-left: 18px; color: var(--fg2); font-size: 13.5px; }
 li.dentry ul.top li { margin: 2px 0; }
 li.dentry .next, ul.nowlist-s .next { margin: 4px 0 0; color: var(--muted); font-size: 12.5px; }
@@ -139,15 +130,12 @@ li.dentry.systems, li.dentry.garden { color: var(--muted); font-size: var(--fs-s
 .week details summary b { color: var(--room); }
 .week .wsum { color: var(--muted); font-size: var(--fs-s); }
 .week details[open] summary { border-bottom: 1px solid var(--line); margin-bottom: 4px; }
-.postlink { color: var(--green); }
 
 /* ---- the queue ----------------------------------------------------------------------------------------------- */
 li.qrow { display: flex; gap: var(--sp-3); align-items: flex-start; }
 .qmain { flex: 1; min-width: 0; }
 .qacts { display: flex; gap: 6px; flex-shrink: 0; }
 .qacts form { margin: 0; }
-.chk-ok { color: var(--green); } .chk-warn { color: var(--orange); } .chk-err { color: var(--red); }
-.sugg { display: inline-block; font-size: var(--fs-xs); color: var(--yellow); }
 
 /* ---- banners (niwa.js: offline copy, install hint) and the installed app's back button ----------------------- */
 .banner { padding: 9px var(--sp-3); border-radius: var(--r-m); margin: 0 0 var(--sp-3); font-size: var(--fs-s); display: flex; gap: 10px; align-items: center; }

@@ -3,6 +3,16 @@
 Niwa follows [SemVer](https://semver.org). Before 1.0, a new feature, a changed default or setting, or a changed API
 field is a minor bump, and a fix or wording change is a patch. Settings are listed in the README.
 
+## 0.11.0
+
+Shiori's look, shared by every Machiya app (machiya's docs/style-guide.md), with vaultkit 0.26.1 vendored. Niwa keeps its own: airy, a 68ch measure, stages as seasons, the garden's green.
+
+- **Filter pills.** The landing page's All, Notes, Projects and Maps are pills (the shared `.pills`), the current one filled, with counts. The Queue has no filter row and gets none.
+- **Chips.** Stages, board columns, the Queue's Clean, Error and Warning counts, the claim and the suggestion badges are the shared state chips. Links that open something (Board, Blog Post, View in Kura, Public Page, Garden, Archived Copy, Private Copy) are outlined link chips in the colour of what they open.
+- **Tinted rows.** In the Stream, what comes from Konbini (the Now rows and the project entries) is tinted and says "Card · Konbini". Garden events, system lines and reading lines stay plain. The public garden has none of this.
+- **Icons.** `favicon.ico` (16, 32 and 48 px) and `niwa-small.svg`, the sprout with the baseline dropped and the stem and leaves bolder, so the tab icon reads at 16 px. `/favicon.ico` is served by the owner's pages and the public garden. The home-screen, manifest and header icons were already the same sprout.
+- Niwa's own CSS for the type chips, count badges, stage, column and check badges and move labels is gone.
+
 ## 0.10.1
 
 The owner's choices for the short-post features, replacing 0.10.0's comment markers and 1,500-word default. The comment markers never published anything the owner wrote: nobody had used them.

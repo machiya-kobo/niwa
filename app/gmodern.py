@@ -30,12 +30,12 @@ def glink(base, n):
 
 
 def stage_badge(stage):
-    return '<span class="stage stage-%s">%s</span>' % (stage, STAGE_NAME[stage])
+    return '<span class="chip stage stage-%s">%s</span>' % (stage, STAGE_NAME[stage])
 
 
 def note_row(ctx, base, g, n, cards, when=""):
     card = cards.get(n.rel)
-    col = ('<span class="col-badge col-%s">%s</span>' % (card["board"], e(COLUMN_TITLES.get(card["board"], "")))
+    col = ('<span class="chip col-%s">%s</span>' % (card["board"], e(COLUMN_TITLES.get(card["board"], "")))
            if card and card["board"] else "")
     tended = g.tended.get(n.rel, "")
     label = when or (("tended " + relative(tended)) if tended else "")
@@ -72,13 +72,15 @@ def home(ctx, base, g, cards, ntype=""):
         parts.append("</main>")
         return gpage(ctx, base, "", "\n".join(parts), "garden")
     st = g.stats()
-    chips = ['<a href="%s/"%s>all</a>' % (base, ' class="here"' if not ntype else "")]
-    chips += ['<a href="%s/?type=%s"%s>%s <span class="n">%d</span></a>' % (base, k, ' class="here"' if ntype == k else "", label.lower(), st["types"][k])
-              for k, label in TYPES if st["types"].get(k)]
+    pills = ['<a class="pill" href="%s/"%s>All <span class="count">%d</span></a>' % (
+        base, ' aria-current="page"' if not ntype else "", st["total"])]
+    pills += ['<a class="pill" href="%s/?type=%s"%s>%s <span class="count">%d</span></a>' % (
+        base, k, ' aria-current="page"' if ntype == k else "", label, st["types"][k])
+        for k, label in TYPES if st["types"].get(k)]
     parts.append('<p class="gstats"><b>%d notes</b> &middot; <span class="stage-evergreen">%d evergreen</span> &middot; '
                  '<span class="stage-budding">%d budding</span> &middot; <span class="stage-seedling">%d seedlings</span> &middot; '
-                 '<a href="%s/random">random note</a></p><p class="typechips">%s</p>'
-                 % (st["total"], st["evergreen"], st["budding"], st["seedling"], base, "".join(chips)))
+                 '<a href="%s/random">random note</a></p><nav class="pills" aria-label="Note types">%s</nav>'
+                 % (st["total"], st["evergreen"], st["budding"], st["seedling"], base, "".join(pills)))
     shown = [n for n in notes if n.ntype == ntype] if ntype else notes
     label = dict(TYPES).get(ntype, ntype) if ntype else ""
     if ntype:
@@ -96,7 +98,7 @@ def home(ctx, base, g, cards, ntype=""):
     # every note once, the most recently tended first (it carries its own stage badge)
     shown = sorted(shown, key=lambda n: n.title.lower())
     shown.sort(key=lambda n: g.tended.get(n.rel, ""), reverse=True)
-    parts.append(section('Notes <span class="colcount">%d</span>' % len(shown), "",
+    parts.append(section('Notes <span class="chip">%d</span>' % len(shown), "",
                          '<ul class="garden-list">%s</ul>' % "".join(note_row(ctx, base, g, n, cards) for n in shown)))
     parts.append("</main>")
     return gpage(ctx, base, label, "\n".join(parts), "garden")
@@ -124,18 +126,18 @@ def note(ctx, base, g, n, cards, checks=None):
     if dates:
         meta.append('<span class="tended">%s</span>' % " &middot; ".join(dates))
     if card and card["board"]:
-        meta.append('<a class="col-badge col-%s" href="%s">board: %s</a>' % (
+        meta.append('<a class="chip link col-%s" href="%s">Board: %s</a>' % (
             card["board"], ("/p/" if base else modern.BOARD_URL + "/p/") + quote(card["slug"]),
             e(COLUMN_TITLES.get(card["board"], ""))))
     if card and card.get("post_url"):
-        meta.append('<a class="postlink" href="%s">blog post</a>' % e(card["post_url"]))
+        meta.append('<a class="chip link" href="%s">Blog Post</a>' % e(card["post_url"]))
     public = modern.public(ctx)
     if not public:
         meta.append(words_badge(g, n))
     if modern.KURA_URL and not public:
-        meta.append('<a class="thing is-note" href="%s/n/%s">View in Kura</a>' % (e(modern.KURA_URL), quote(n.slug)))
+        meta.append('<a class="chip link is-note" href="%s/n/%s">View in Kura</a>' % (e(modern.KURA_URL), quote(n.slug)))
     if modern.GARDEN_URL and n.published and not public:
-        meta.append('<a class="postlink" href="%s/n/%s">public page</a>' % (e(modern.GARDEN_URL), quote(n.slug)))
+        meta.append('<a class="chip link is-garden" href="%s/n/%s">Public Page</a>' % (e(modern.GARDEN_URL), quote(n.slug)))
     held = g.held.get(n.rel)
     hits = []
     if not public and not n.published and checks is None:       # a note not in the garden: what publishing would accept
@@ -174,12 +176,12 @@ def note(ctx, base, g, n, cards, checks=None):
         recs = g.links.for_note(n.rel)
         if recs:
             rows = "".join(
-                '<li><span class="chk chk-%s">%s</span> <a href="%s">%s</a>%s</li>' % (
-                    {"live": "ok", "dead": "err"}.get(r["status"], "warn"), e(r["status"] or "unchecked"), e(r["url"]),
+                '<li><span class="chip chk-%s">%s</span> <a href="%s">%s</a>%s</li>' % (
+                    {"live": "ok", "dead": "err"}.get(r["status"], "warn"), e((r["status"] or "unchecked").capitalize()), e(r["url"]),
                     e(r["url"] if len(r["url"]) <= 70 else r["url"][:67] + "\u2026"),
-                    ((' <a class="nlink" href="%s" title="archived %s">archived copy</a>' % (e(r["archive_url"]), e(r.get("archived_at") or "")))
+                    ((' <a class="chip link" href="%s" title="archived %s">Archived Copy</a>' % (e(r["archive_url"]), e(r.get("archived_at") or "")))
                      if web_url(r.get("archive_url")) else "")
-                    + ((' <a class="nlink" href="%s" title="%s %s">private copy</a>' % (
+                    + ((' <a class="chip link" href="%s" title="%s %s">Private Copy</a>' % (
                         e(r["private_url"]), "Archived snapshot" if r.get("private_backend") == "cold" else "Hister copy",
                         e(r.get("private_at") or ""))) if web_url(r.get("private_url")) and not public else ""))
                 for r in recs if web_url(r["url"]))
@@ -288,28 +290,32 @@ def stream(ctx, base, g, d):
     card_url = lambda slug: ("/p/" if base else modern.BOARD_URL + "/p/") + quote(slug)
     roundup_url = lambda date: ("" if base else modern.BOARD_URL) + "/roundup?period=day&date=" + date.isoformat()
 
+    # Konbini's rows are another room's things in a mixed list: tinted (the style guide's rule 3); the public garden is plain
+    tinted = "" if modern.public(ctx) else " card tinted is-card"
+    kind = "" if modern.public(ctx) else '<span class="kind">Card \u00b7 Konbini</span>'
+
     def note_link(x):
-        return (' <a class="nlink thing is-garden" href="%s/n/%s">garden</a>' % (base, quote(x["note_slug"]))) if x.get("note_slug") else ""
+        return (' <a class="chip link is-garden" href="%s/n/%s">Garden</a>' % (base, quote(x["note_slug"]))) if x.get("note_slug") else ""
 
     def entry(x):
         if x["kind"] == "systems":
             if modern.public(ctx):          # the roundup is on the board: the owner's
                 return ""
             n = x["count"]
-            return ('<li class="dentry systems"><span class="kind ev-systems">system</span> <b>%s</b>: '
+            return ('<li class="dentry systems"><span class="ev ev-systems">system</span> <b>%s</b>: '
                     '<a href="%s">%d change%s</a></li>' % (e(x["host"]), roundup_url(x["date"]), n, "" if n == 1 else "s"))
         if x["kind"] == "garden":
             title = ('<a class="thing is-garden" href="%s/n/%s">%s</a>' % (base, quote(x["note_slug"]), e(x["title"]))) if x.get("note_slug") else e(x["title"])
-            return '<li class="dentry garden"><span class="kind ev-garden">%s</span> %s%s</li>' % (
+            return '<li class="dentry garden"><span class="ev ev-garden">%s</span> %s%s</li>' % (
                 e(x["event"]), title, (' <span class="utext">%s</span>' % e(x["text"])) if x.get("text") else "")
-        moves = "".join('<span class="move">%s</span>' % e(m) for m in x["moves"])
+        moves = "".join('<span class="chip">%s</span>' % e(m) for m in x["moves"])
         top = "".join("<li>%s</li>" % e(t if len(t) <= 170 else t[:167].rstrip() + "…") for t in x["top"])
         more = (' <span class="more">+%d update%s</span>' % (x["more"], "" if x["more"] == 1 else "s")) if x["more"] else ""
         nxt = ('<p class="next">next: %s</p>' % e(x["next"] if len(x["next"]) <= 140 else x["next"][:137] + "…")) \
             if x["next"] and x["board"] in ("ready", "wip", "blocked") else ""
         title = ('<a class="ntl thing is-card" href="%s">%s</a>' % (card_url(x["slug"]), e(x["title"]))) if x["has_card"] else '<b class="ntl">%s</b>' % e(x["title"])
-        return ('<li class="dentry project%s"><div class="dhead">%s %s%s%s</div>%s%s</li>'
-                % (" done" if x["done"] else "", title, moves, more, note_link(x),
+        return ('<li class="dentry project%s%s">%s<div class="dhead">%s %s%s%s</div>%s%s</li>'
+                % (" done" if x["done"] else "", tinted, kind, title, moves, more, note_link(x),
                    ('<ul class="top">%s</ul>' % top) if top else "", nxt))
 
     parts = [top(ctx, base, "stream"), '<main class="garden stream">',
@@ -319,16 +325,16 @@ def stream(ctx, base, g, d):
     if now and (now["wip"] or now["blocked"]):
         rows = []
         for c in now["wip"]:
-            rows.append('<li><a class="ntl thing is-card" href="%s">%s</a> <span class="col-badge col-wip">WIP</span>%s%s%s%s</li>' % (
-                card_url(c["slug"]), e(c["title"]),
-                (' <span class="claim">%s</span>' % e(c["claim"])) if c["claim"] else "",
+            rows.append('<li class="%s">%s<a class="ntl thing is-card" href="%s">%s</a> <span class="chip col-wip">WIP</span>%s%s%s%s</li>' % (
+                tinted.strip(), kind, card_url(c["slug"]), e(c["title"]),
+                (' <span class="chip claim">%s</span>' % e(c["claim"])) if c["claim"] else "",
                 (' <span class="when">%s</span>' % e(ago(c["updated"]))) if c["updated"] else "",
-                (' <a class="nlink thing is-garden" href="%s/n/%s">garden</a>' % (base, quote(c["note_slug"]))) if c["note_slug"] else "",
+                (' <a class="chip link is-garden" href="%s/n/%s">Garden</a>' % (base, quote(c["note_slug"]))) if c["note_slug"] else "",
                 ('<p class="next">next: %s</p>' % e(c["next"])) if c["next"] else ""))
         for c in now["blocked"]:
-            rows.append('<li><a class="ntl thing is-card" href="%s">%s</a> <span class="col-badge col-blocked">Blocked</span>%s%s</li>' % (
-                card_url(c["slug"]), e(c["title"]),
-                (' <a class="nlink thing is-garden" href="%s/n/%s">garden</a>' % (base, quote(c["note_slug"]))) if c["note_slug"] else "",
+            rows.append('<li class="%s">%s<a class="ntl thing is-card" href="%s">%s</a> <span class="chip col-blocked">Blocked</span>%s%s</li>' % (
+                tinted.strip(), kind, card_url(c["slug"]), e(c["title"]),
+                (' <a class="chip link is-garden" href="%s/n/%s">Garden</a>' % (base, quote(c["note_slug"]))) if c["note_slug"] else "",
                 ('<p class="blocked">blocked: %s</p>' % e(c["blocked_by"])) if c["blocked_by"] else ""))
         parts.append('<section class="gsec now"><h3 class="sechead">Now</h3><ul class="digest nowlist-s">%s</ul></section>' % "".join(rows))
     def reading_line(w):
@@ -336,7 +342,7 @@ def stream(ctx, base, g, d):
         if not r:
             return ""
         top = ", ".join("%s %d" % (e(k), n) for k, n in r["top"])
-        return ('<p class="reading"><span class="kind ev-reading">read</span> <a href="%s">%d page%s saved</a>%s</p>'
+        return ('<p class="reading"><span class="ev ev-reading">read</span> <a href="%s">%d page%s saved</a>%s</p>'
                 % (e(r["search"]), r["total"], "" if r["total"] == 1 else "s", (": " + top) if top else ""))
 
     for w in d["weeks"]:
@@ -360,20 +366,20 @@ def queue(ctx, base, g, cards):
     def row(n):
         errs, warns = g.check_summary(n)
         if errs:
-            chk = '<span class="chk chk-err">%d error%s</span>' % (errs, "" if errs == 1 else "s")
+            chk = '<span class="chip chk-err">%d Error%s</span>' % (errs, "" if errs == 1 else "s")
         elif warns:
-            chk = '<span class="chk chk-warn">%d warning%s</span>' % (warns, "" if warns == 1 else "s")
+            chk = '<span class="chip chk-warn">%d Warning%s</span>' % (warns, "" if warns == 1 else "s")
         else:
-            chk = '<span class="chk chk-ok">clean</span>'
+            chk = '<span class="chip chk-ok">Clean</span>'
         badge = ""
         sug = suggested.get(n.rel)
         if n.rel in g.held:
-            badge = '<span class="sugg">held back by the scan</span>'
+            badge = '<span class="chip sugg">Held Back by the Scan</span>'
         elif sug:
-            badge = '<span class="sugg">suggested%s%s</span>' % ((" by " + e(sug["who"])) if sug["who"] else "",
-                                                                  (": " + e(sug["reason"])) if sug["reason"] else "")
+            badge = '<span class="chip sugg">Suggested%s</span>%s' % (
+                (" by " + e(sug["who"])) if sug["who"] else "", (' <span class="reason">%s</span>' % e(sug["reason"])) if sug["reason"] else "")
         elif n.rel in linked:
-            badge = '<span class="sugg">linked from %d notes</span>' % linked[n.rel]
+            badge = '<span class="chip sugg">Linked from %d Notes</span>' % linked[n.rel]
         if errs:        # findings: the note's own page shows them in full and holds the button that accepts them
             forms = '<a class="button" href="%s/n/%s">Review</a>' % (base, quote(n.slug))
         else:
@@ -410,7 +416,7 @@ def queue(ctx, base, g, cards):
                  " Private notes (%s) are left out." % ", ".join(e(p) for p in g.private) if g.private else "")]
     for folder in sorted(groups, key=lambda k: (order.get(k, 2), k.lower())):
         notes = sorted(groups[folder], key=lambda n: (n.rel not in suggested, n.title.lower()))
-        parts.append(section('%s <span class="colcount">%d</span>' % (e(folder), len(notes)), "",
+        parts.append(section('%s <span class="chip">%d</span>' % (e(folder), len(notes)), "",
                              '<ul class="garden-list qlist">%s</ul>' % "".join(row(n) for n in notes)))
     if not groups:
         parts.append(empty("Nothing to Publish", "Every note%s%s is already in the garden." % (
