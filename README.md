@@ -23,7 +23,7 @@ Niwa (庭, "garden") is the digital garden for Machiya and publishes the notes y
 - Publish with one button. Niwa adds `publish: true` to the note's frontmatter and touches nothing else.
 - Growth stages (seedling, budding, evergreen), backlinks, nearby notes and topic maps.
 - A queue of notes worth sharing: your agents' suggestions first, limited to one garden folder if you like.
-- Short posts: Niwa shows each note's length, warns when it's long, publishes just a marked excerpt, and lists one-line dated updates in the Stream ([how](docs/writing.md)).
+- Short posts: Niwa shows each note's length, warns when it's long, publishes just the part under a Garden heading, and lists one-line dated updates in the Stream ([how](docs/writing.md)).
 - A stream of what changed, an RSS feed, search and a random note.
 
 ## Keep your secrets

@@ -46,29 +46,44 @@ CHECKS = [
 ]
 DENY_LABEL = "denied word (NIWA_SCAN_DENY)"
 
-# A long note is a warning, not an error: NIWA_LONG_WORDS (default 1500, 0 turns it off).
+# A long note is a warning, not an error: NIWA_LONG_WORDS (default 800, 0 turns it off).
 try:
-    LONG_WORDS = int(os.environ.get("NIWA_LONG_WORDS", "").strip() or 1500)
+    LONG_WORDS = int(os.environ.get("NIWA_LONG_WORDS", "").strip() or 800)
 except ValueError:
-    LONG_WORDS = 1500
+    LONG_WORDS = 800
 
-# A note can publish just a part of itself: the text between <!-- garden --> and <!-- /garden --> (an unclosed marker runs
-# to the end of the note; several pairs join up). The rest never reaches the garden, its scan, links, search or feeds.
-EXCERPT_OPEN = re.compile(r"<!--\s*garden\s*-->", re.I)
-EXCERPT_RE = re.compile(r"<!--\s*garden\s*-->(.*?)(?:<!--\s*/garden\s*-->|\Z)", re.I | re.S)
+# A note can publish just a part of itself: the section under a heading called Garden (and its sub-sections), plus a
+# section called Updates when there is one. The rest never reaches the garden, its scan, links, search or feeds. A note
+# with no Garden heading publishes whole.
+HEADING = re.compile(r"^(#{1,6})[ \t]+(.*?)[ \t]*#*[ \t]*$")
 UPDATES_HEAD = re.compile(r"^(#{1,6})\s+updates\s*$", re.I | re.M)
 UPDATE_LINE = re.compile(r"^\s*[-*]\s+(\d{4}-\d{2}-\d{2})\s*(?:[:\u2014\u2013-]\s*)?(.+?)\s*$", re.M)
 
 
 def excerpt(text):
-    """The part of a note the garden publishes: frontmatter plus what sits between its garden markers, or None when the
-    note has no marker (the whole note is published)."""
+    """The part of a note the garden publishes: its frontmatter, the section under a Garden heading (to the next
+    heading of the same level or above) and an Updates section; None when the note has no Garden heading, so it
+    publishes whole. Headings inside a code fence don't count."""
     m = FRONT_RE.match(text)
     head = m.group(0) if m else ""
-    body = text[len(head):]
-    if not EXCERPT_OPEN.search(body):
+    lines = text[len(head):].split("\n")
+    marks, fence = [], False                      # (line, level, name) of every heading outside a code fence
+    for i, line in enumerate(lines):
+        if line.lstrip().startswith(("```", "~~~")):
+            fence = not fence
+        elif not fence:
+            h = HEADING.match(line)
+            if h:
+                marks.append((i, len(h.group(1)), h.group(2).strip().lower()))
+    if not any(name == "garden" for _, _, name in marks):
         return None
-    parts = [p.strip() for p in EXCERPT_RE.findall(body)]
+    parts, covered = [], 0
+    for k, (i, level, name) in enumerate(marks):
+        if name not in ("garden", "updates") or i < covered:
+            continue                              # not ours, or already inside a section we took
+        end = next((j for j, lv, _ in marks[k + 1:] if lv <= level), len(lines))
+        parts.append("\n".join(lines[i + 1 if name == "garden" else i:end]).strip())
+        covered = end
     return head + "\n\n".join(p for p in parts if p) + "\n"
 
 
@@ -273,7 +288,7 @@ class Garden(Vault):
         if LONG_WORDS and words > LONG_WORDS:
             whole = self.full_words.get(note.rel)
             found.append(("warn", "long: %s words, over %s. A focused post is shorter: shorten it, or publish an excerpt "
-                                  "(wrap it in <!-- garden --> and <!-- /garden -->)" % (format(words, ","), format(LONG_WORDS, ","))
+                                  "(put it under a Garden heading)" % (format(words, ","), format(LONG_WORDS, ","))
                           + ((" (the whole note is %s)" % format(whole, ",")) if whole else "")))
         private = sorted({self.notes[r].title for r in note.links if self.is_private(r)})
         if private:

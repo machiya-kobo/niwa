@@ -2420,11 +2420,11 @@ class GardenPostsTest(unittest.TestCase):
         self.paths.append(write_note(rel, text))
         return niwa.garden.get(rel[:-3])
 
-    def test_an_excerpt_publishes_only_the_marked_part_everywhere(self):
+    def test_an_excerpt_publishes_only_the_garden_section_everywhere(self):
         n = self.note("Notes/Cut.md", "---\ntitle: Cut note\npublish: true\n---\nPrivate: the NAS is 192.168.1.50 and "
-                      "zebrafish.\n<!-- garden -->\nThe short public part about lanterns.\n<!-- /garden -->\nMore private "
+                      "zebrafish.\n## Garden\nThe short public part about lanterns.\n## Private notes\nMore private "
                       "zebrafish.\n")
-        self.assertTrue(n.published)                                    # the secret sits outside the excerpt: not held
+        self.assertTrue(n.published)                                    # the secret sits outside the section: not held
         self.assertNotIn("Notes/Cut.md", niwa.garden.held)
         self.assertEqual(niwa.garden.errors(n), [])
         self.assertEqual(niwa.garden.word_count(n), 6)
@@ -2441,17 +2441,26 @@ class GardenPostsTest(unittest.TestCase):
                         niwa.feed.rss("https://g.example", "Niwa", "", niwa.feed.notes(niwa.garden))):
             self.assertNotIn("zebrafish", channel)
             self.assertNotIn("192.168.1.50", channel)
+
+    def test_excerpt_rules(self):
         import garden as g
-        self.assertIsNone(g.excerpt("---\na: 1\n---\nNo marker.\n"))                            # no marker: the whole note
-        self.assertEqual(g.excerpt("A\n<!-- garden -->\nB\n"), "B\n")                           # an open marker runs to the end
-        self.assertEqual(g.excerpt("<!--garden-->x<!--/garden-->y<!-- GARDEN -->z<!-- /Garden -->"), "x\n\nz\n")
+        self.assertIsNone(g.excerpt("---\na: 1\n---\nNo heading.\n## Garden notes\nx\n"))   # whole note; "Garden notes" isn't it
+        self.assertEqual(g.excerpt("A\n## Garden\nB\n## Private\nC\n"), "B\n")
+        self.assertEqual(g.excerpt("# Garden\nx\n## Sub\ny\n# Other\nz\n"), "x\n## Sub\ny\n")        # sub-sections come along
+        self.assertEqual(g.excerpt("## Garden\nB\n## Private\nC\n## Updates\n- 2026-10-07: u\n## More\nm\n"),
+                         "B\n\n## Updates\n- 2026-10-07: u\n")                                   # Updates is published too
+        self.assertEqual(g.excerpt("## Garden\nB\n### Updates\n- 2026-10-07: u\n## Other\nz\n"),
+                         "B\n### Updates\n- 2026-10-07: u\n")                                    # not twice when it sits inside
+        self.assertEqual(g.excerpt("## Garden\n```\n# Garden\nx\n```\nB\n## Other\nC\n"), "```\n# Garden\nx\n```\nB\n")   # fences
+        self.assertEqual(g.excerpt("text\n## GARDEN ##\nB\n"), "B\n")
+        self.assertEqual(g.excerpt("---\ntitle: T\n---\nIntro\n## Garden\nB\n"), "---\ntitle: T\n---\nB\n")
 
     def test_a_long_note_gets_a_warning_and_an_excerpt_clears_it(self):
         body = "word " * 1600
         n = self.note("Notes/Long.md", "---\ntitle: Long note\n---\n" + body + "\n")
         longs = [m for sev, m in niwa.garden.check(n) if sev == "warn" and m.startswith("long:")]
         self.assertEqual(len(longs), 1)
-        self.assertIn("1,600 words, over 1,500", longs[0])
+        self.assertIn("1,600 words, over 800", longs[0])
         _, queue = req("/queue")
         row = queue[queue.index("Long note"):]
         self.assertIn('<span class="words long">1,600 words</span>', row[:row.index("</li>")])
@@ -2459,7 +2468,7 @@ class GardenPostsTest(unittest.TestCase):
         self.assertIn("Publish with 1 warning", page)                   # a warning: it informs, it doesn't block
         with mock.patch.object(niwa.garden_mod, "LONG_WORDS", 0):
             self.assertFalse([m for _, m in niwa.garden.check(n) if m.startswith("long:")])
-        n = self.note("Notes/Long.md", "---\ntitle: Long note\n---\n" + body + "<!-- garden -->\nShort.\n<!-- /garden -->\n")
+        n = self.note("Notes/Long.md", "---\ntitle: Long note\n---\n" + body + "\n## Garden\nShort.\n")
         self.assertFalse([m for _, m in niwa.garden.check(n) if m.startswith("long:")])
 
     def test_the_queue_lists_only_the_garden_folder_and_what_agents_suggest(self):

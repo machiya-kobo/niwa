@@ -3,6 +3,13 @@
 Niwa follows [SemVer](https://semver.org). Before 1.0, a new feature, a changed default or setting, or a changed API
 field is a minor bump, and a fix or wording change is a patch. Settings are listed in the README.
 
+## 0.10.1
+
+The owner's choices for the short-post features (0.10.0 was never deployed).
+
+- An excerpt is the section under a heading called `Garden` (with its sub-sections), plus an `Updates` section. It replaces the `<!-- garden -->` comment markers of 0.10.0. A note with no `Garden` heading publishes whole. See docs/writing.md.
+- `NIWA_LONG_WORDS` defaults to 800 (was 1,500).
+
 ## 0.10.0
 
 Short, focused posts (owner request, 2026-10-07): the notes in a vault are long, and a garden is short posts with small updates. See docs/writing.md.
