@@ -22,5 +22,6 @@ COPY . /app
 RUN python3 -m vaultkit.verify
 
 ENV HOME=/data PYTHONDONTWRITEBYTECODE=1
+USER 1000:1000
 EXPOSE 8080 1965 7070
 CMD ["python3", "-u", "/app/niwa.py"]

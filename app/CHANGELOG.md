@@ -3,6 +3,16 @@
 Niwa follows [SemVer](https://semver.org). Before 1.0, a new feature, a changed default or setting, or a changed API
 field is a minor bump, and a fix or wording change is a patch. Settings are listed in the README.
 
+## 0.12.0
+
+From the pre-launch security review, and a pass over the README and install page.
+
+- **Refuses to start on a public bind without `NIWA_TRUSTED_PROXIES`.** `NIWA_AUTH=tailscale` or `header`, and `NIWA_AUTH=hister` with the tailscale fallback (its default), believe a login header. On a bind other than `127.0.0.1` anyone who reaches the port could send it, publish writes included, so Niwa now exits unless `NIWA_TRUSTED_PROXIES` names the proxy (like `10.210.4.2/32`), as Kura and Konbini do. It used to start with a warning. `NIWA_BIND_BEHIND_PROXY=1` alone no longer suffices, since it can't tell the proxy from another container on the network. `NIWA_AUTH=open` is unchanged. **Upgrade note:** a container or LAN install on the default bind that used the tailscale gate must set `NIWA_TRUSTED_PROXIES` or bind `127.0.0.1`.
+- Log lines no longer carry the query string (search terms, sign-in codes), on the owner's listeners and the public garden.
+- The image runs as `USER 1000:1000`.
+- vaultkit 0.26.3 (link chips and chips thicken their outline on hover instead of filling).
+- The Quickstart and the container and BSD runs set `NIWA_GOPHER_PUBLIC_PORT=7070`, so the Gopher menus link to the port that listens. README and install page tightened.
+
 ## 0.11.1
 
 vaultkit 0.26.2: chips are outlined in their colour on no fill, as Shiori draws them. A soft fill behind a text colour pulled it under 4.5:1 in most themes (Niwa's audit of 0.11.0); only the current pill is filled now. Link chips keep a light fill on hover. No markup changes.

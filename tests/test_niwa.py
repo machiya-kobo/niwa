@@ -71,7 +71,7 @@ os.environ.pop("MACHIYA_ROOMS", None)
 os.environ.update(NIWA_REPO_URL="file://" + REMOTE, NIWA_REPO_DIR=CLONE, NIWA_REPO_REFERENCE=MIRROR, NIWA_REPO_SUBDIR="personal",
                   NIWA_REPO_SPARSE="personal, .garden,.board/",
                   NIWA_DB=os.path.join(TMP, "data", "niwa.sqlite3"), NIWA_USERS="owner@test", NIWA_ARCHIVE="none",
-                  NIWA_PORT="0", NIWA_KONBINI_URL="", NIWA_HOST="niwa.test")
+                  NIWA_PORT="0", NIWA_KONBINI_URL="", NIWA_HOST="niwa.test", NIWA_BIND="127.0.0.1")
 sys.path.insert(0, os.path.join(HERE, "..", "app"))
 
 import niwa        # noqa: E402
@@ -451,7 +451,7 @@ class AuthTest(unittest.TestCase):
         self.assertEqual(niwa.auth_mode(" Open "), "open")
         with self.assertRaises(SystemExit):
             niwa.auth_mode("none")                                    # a typo never opens the garden
-        self.assertEqual(niwa.BIND, "0.0.0.0")
+        self.assertEqual(niwa.BIND, "127.0.0.1")                     # the suite's own bind: the default 0.0.0.0 refuses to start
         self.assertEqual(json.loads(req("/api/status")[1])["auth"], "tailscale")
 
     def test_open_mode_skips_the_allow_list_only(self):
@@ -1915,7 +1915,7 @@ class IdentityTest(unittest.TestCase):
             niwa.IDENTITY = saved
 
     def test_identity_settings_at_start(self):
-        """With an identity file a header mode refuses a public bind unless a proxy is the only way in."""
+        """With an identity file a header mode refuses a public bind unless NIWA_TRUSTED_PROXIES names the proxy."""
         code = "import niwa; print(niwa.IDENTITY.auth, niwa.IDENTITY.room)"
         env = dict(os.environ, MACHIYA_IDENTITY_FILE=os.path.join(self.folder, "identity.toml"),
                    NIWA_DB=os.path.join(TMP, "identity-start", "niwa.sqlite3"))
@@ -1926,11 +1926,14 @@ class IdentityTest(unittest.TestCase):
                                   text=True, timeout=60)
         r = run(NIWA_BIND="0.0.0.0")
         self.assertNotEqual(r.returncode, 0)
-        self.assertIn("niwa: identity:", r.stderr)
+        self.assertIn("NIWA_TRUSTED_PROXIES", r.stderr)
         self.assertIn("127.0.0.1", r.stderr)
         r = run(NIWA_BIND="127.0.0.1")
         self.assertEqual((r.returncode, r.stdout.strip().splitlines()[-1]), (0, "tailscale niwa"), r.stderr)
-        r = run(NIWA_BIND="0.0.0.0", NIWA_BIND_BEHIND_PROXY="1")
+        r = run(NIWA_BIND="0.0.0.0", NIWA_BIND_BEHIND_PROXY="1")              # the flag can't tell the proxy from a neighbor
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("NIWA_TRUSTED_PROXIES", r.stderr)
+        r = run(NIWA_BIND="0.0.0.0", NIWA_TRUSTED_PROXIES="10.210.4.2/32")
         self.assertEqual(r.returncode, 0, r.stderr)
         r = run(NIWA_BIND="127.0.0.1", NIWA_AUTH="header")                     # header mode names its header
         self.assertNotEqual(r.returncode, 0)
@@ -2593,6 +2596,75 @@ class GardenPostsTest(unittest.TestCase):
             public.shutdown()
 
 
+class PublicBindTest(unittest.TestCase):
+    """A mode that believes a login header refuses to start on a non-loopback bind without NIWA_TRUSTED_PROXIES: anyone
+    who reaches the port (another container on the network, a LAN peer) could send the header, publish writes included."""
+    APP = os.path.join(HERE, "..", "app")
+    HISTER = dict(NIWA_AUTH="hister", NIWA_AUTH_SIGNIN_URL="https://hister.test/machiya/signin", NIWA_HISTER_USERS="owner",
+                  NIWA_PUBLIC_URL="https://niwa.test", NIWA_USERS="owner@test")
+
+    def run_niwa(self, **extra):
+        env = {k: v for k, v in os.environ.items() if not k.startswith(("NIWA_AUTH", "NIWA_BIND", "NIWA_TRUSTED", "NIWA_USERS",
+                                                                          "NIWA_HISTER", "NIWA_PUBLIC_URL", "MACHIYA_"))}
+        env.update(NIWA_DB=os.path.join(TMP, "bind-start", "niwa.sqlite3"), **extra)
+        return subprocess.run([sys.executable, "-c", "import niwa; print(niwa.AUTH, niwa.BIND)"], cwd=self.APP, env=env,
+                              capture_output=True, text=True, timeout=60)
+
+    def test_the_tailscale_gate_refuses_a_public_bind(self):
+        r = self.run_niwa(NIWA_USERS="owner@test")                                  # no NIWA_BIND: 0.0.0.0
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("NIWA_TRUSTED_PROXIES", r.stderr)
+        r = self.run_niwa(NIWA_USERS="owner@test", NIWA_BIND="0.0.0.0", NIWA_BIND_BEHIND_PROXY="1")
+        self.assertNotEqual(r.returncode, 0)                                        # the flag alone can't tell the proxy
+        self.assertIn("NIWA_TRUSTED_PROXIES", r.stderr)
+        r = self.run_niwa(NIWA_USERS="owner@test", NIWA_BIND="0.0.0.0", NIWA_TRUSTED_PROXIES="10.210.4.2/32")
+        self.assertEqual((r.returncode, r.stdout.strip().splitlines()[-1]), (0, "tailscale 0.0.0.0"), r.stderr)
+        for bind in ("127.0.0.1", "::1", "localhost"):
+            r = self.run_niwa(NIWA_USERS="owner@test", NIWA_BIND=bind)
+            self.assertEqual(r.returncode, 0, (bind, r.stderr))
+        r = self.run_niwa(NIWA_AUTH="open", NIWA_BIND="0.0.0.0")                    # open mode has its own Host allow-list
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_hister_with_the_tailscale_fallback_needs_the_proxy_too(self):
+        r = self.run_niwa(NIWA_BIND="0.0.0.0", **self.HISTER)                       # the fallback defaults to tailscale
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("NIWA_AUTH_FALLBACK=tailscale", r.stderr)
+        self.assertIn("NIWA_TRUSTED_PROXIES", r.stderr)
+        r = self.run_niwa(NIWA_BIND="0.0.0.0", NIWA_AUTH_FALLBACK="tailscale", NIWA_BIND_BEHIND_PROXY="1", **self.HISTER)
+        self.assertNotEqual(r.returncode, 0)
+        r = self.run_niwa(NIWA_BIND="0.0.0.0", NIWA_TRUSTED_PROXIES="10.210.4.2", **self.HISTER)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        r = self.run_niwa(NIWA_BIND="0.0.0.0", NIWA_AUTH_FALLBACK="none", NIWA_AUTH_URL="http://hister-login:8081", **self.HISTER)
+        self.assertEqual(r.returncode, 0, r.stderr)                                 # no header is believed
+        r = self.run_niwa(NIWA_BIND="127.0.0.1", **self.HISTER)
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_a_bad_trusted_proxy_refuses_to_start(self):
+        r = self.run_niwa(NIWA_USERS="owner@test", NIWA_BIND="0.0.0.0", NIWA_TRUSTED_PROXIES="nonsense")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("NIWA_TRUSTED_PROXIES", r.stderr)
+
+
+class LogTest(unittest.TestCase):
+    """A log line names the request without its query: search terms and sign-in codes are the visitor's, not the log's."""
+    def test_log_line_drops_the_query(self):
+        line = niwa.log_line('"%s" %s %s', ("GET /search?q=zebra+secret&code=mhc_abc123 HTTP/1.1", "200", "-"))
+        self.assertEqual(line, '"GET /search HTTP/1.1" 200 -')
+        self.assertEqual(niwa.log_line("code %d, message %s", (400, "Bad request ('GET /x?code=mhc_zz HTTP/1.1')")),
+                         "code 400, message Bad request ('GET /x HTTP/1.1')")
+        self.assertEqual(niwa.log_line("no args %s %d", ("x",)), "no args %s %d")           # a mismatched call never raises
+        self.assertLessEqual(len(niwa.log_line("%s", ("a" * 1000,))), 300)
+
+    def test_the_owners_listener_logs_no_query(self):
+        err = io.StringIO()
+        with mock.patch.object(sys, "stderr", err):
+            self.assertEqual(req("/search?q=zebracrossing&code=mhc_sentinel")[0], 200)
+        out = err.getvalue()
+        self.assertIn("GET /search HTTP/1.1", out)
+        self.assertNotIn("zebracrossing", out)
+        self.assertNotIn("mhc_sentinel", out)
+
+
 class TrustedProxiesTest(unittest.TestCase):
     """NIWA_TRUSTED_PROXIES: identity headers count only from the listed peers; unset, from anyone as before."""
 
@@ -2704,6 +2776,13 @@ class PublicGardenTest(unittest.TestCase):
                 k, v = line.split(": ", 1)
                 hdrs.setdefault(k.lower(), []).append(v)
         return int(lines[0].split()[1]), hdrs, rest.decode("utf-8", "replace")
+
+    def test_the_public_listener_logs_no_query(self):
+        err = io.StringIO()
+        with mock.patch.object(sys, "stderr", err):
+            self.assertEqual(self.get("/search?q=zebracrossing")[0], 200)
+        self.assertIn("GET /search HTTP/1.0", err.getvalue())
+        self.assertNotIn("zebracrossing", err.getvalue())
 
     def test_the_owner_page_would_show_the_sentinels(self):
         _, body = req("/n/Notes/Public%20lantern")      # the owner's own port: the proof the sweep below means something
