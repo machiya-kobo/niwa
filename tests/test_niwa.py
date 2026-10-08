@@ -230,6 +230,8 @@ class ReadTest(unittest.TestCase):
                     panel = v.get(t + "-panel", v["menu-muted"] if t in ("muted", "comment") else v["menu-fg"])
                     if palettes.contrast(panel, v["card"]) < palettes.minimum(mode, t):
                         failures.append("%s %s: --%s on a card" % (key, mode, t))
+                if palettes.contrast(v["green-panel"], v["hl"]) < 4.5:                  # the hovered pill (vaultkit 0.27.3)
+                    failures.append("%s %s: a hovered pill's --green panel shade on --hl" % (key, mode))
                 if palettes.contrast(v["menu-fg"], v["card"]) < 4.5 or palettes.contrast(v["fg2"], v["card"]) < 4.5:
                     failures.append("%s %s: a card's snippet or text" % (key, mode))
                 if palettes.contrast(v["bg"], v["green"]) < 4.5:
