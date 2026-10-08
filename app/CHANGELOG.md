@@ -3,6 +3,10 @@
 Niwa follows [SemVer](https://semver.org). Before 1.0, a new feature, a changed default or setting, or a changed API
 field is a minor bump, and a fix or wording change is a patch. Settings are listed in the README.
 
+## 0.13.1
+
+vaultkit 0.27.2: an unselected filter pill fills with 26% of its colour under the pointer (the landing page's All, Notes, Projects and Maps). Niwa has no sidebar, selectable rows or tabbed lists, so `.sidehead` and `.rows` are vendored but unused. No markup change.
+
 ## 0.13.0
 
 A performance pass, and round 2 of Shiori's look (vaultkit 0.27.1). No settings or API change.
