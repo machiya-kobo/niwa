@@ -4,6 +4,8 @@
 
 Niwa (庭, garden) is Machiya's digital garden. Publish the notes you choose from your Obsidian vault to the Web. It's also a Gemini capsule and a Gopher hole.
 
+Agentically coded with [Claude Code](https://docs.anthropic.com/en/docs/claude-code).
+
 <p align="center">
 <a href="https://machiya-kobo.github.io/">Machiya</a> · <a href="#quickstart">Quickstart</a> · <a href="docs/install.md">Install</a> · <a href="docs/settings.md">Settings</a> · <a href="docs/access.md">Access</a> · <a href="docs/api.md">API</a> · <a href="#license">License</a>
 </p>
