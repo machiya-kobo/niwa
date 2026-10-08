@@ -5,7 +5,7 @@ field is a minor bump, and a fix or wording change is a patch. Settings are list
 
 ## 0.10.1
 
-The owner's choices for the short-post features (0.10.0 was never deployed).
+The owner's choices for the short-post features, replacing 0.10.0's comment markers and 1,500-word default. The comment markers never published anything the owner wrote: nobody had used them.
 
 - An excerpt is the section under a heading called `Garden` (with its sub-sections), plus an `Updates` section. It replaces the `<!-- garden -->` comment markers of 0.10.0. A note with no `Garden` heading publishes whole. See docs/writing.md.
 - `NIWA_LONG_WORDS` defaults to 800 (was 1,500).
