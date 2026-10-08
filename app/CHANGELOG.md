@@ -3,6 +3,10 @@
 Niwa follows [SemVer](https://semver.org). Before 1.0, a new feature, a changed default or setting, or a changed API
 field is a minor bump, and a fix or wording change is a patch. Settings are listed in the README.
 
+## 0.11.1
+
+vaultkit 0.26.2: chips are outlined in their colour on no fill, as Shiori draws them. A soft fill behind a text colour pulled it under 4.5:1 in most themes (Niwa's audit of 0.11.0); only the current pill is filled now. Link chips keep a light fill on hover. No markup changes.
+
 ## 0.11.0
 
 Shiori's look, shared by every Machiya app (machiya's docs/style-guide.md), with vaultkit 0.26.1 vendored. Niwa keeps its own: airy, a 68ch measure, stages as seasons, the garden's green.

@@ -211,8 +211,8 @@ class ReadTest(unittest.TestCase):
 
     def test_chip_colours_pills_and_tinted_rows_stay_readable_in_every_theme(self):
         """machiya's style guide, rule 4: every text at its minimum on what it is drawn on, in all ten themes, dark and
-        light. The shared components are tested in vaultkit; this is Niwa's use of them: each colour a chip, link chip or
-        pill is drawn in, on the page and on a Konbini row's tint (the Stream: .card.tinted.is-card), the outlined pill
+        light. The shared components are tested in vaultkit; this is Niwa's use of them: each colour a chip (outlined, on no
+        fill since vaultkit 0.26.2), link chip or pill is drawn in, on the page and on a Konbini row's tint (the Stream: .card.tinted.is-card), the outlined pill
         and the current one (the page colour on the room's colour)."""
         from vaultkit import palettes
         failures = []

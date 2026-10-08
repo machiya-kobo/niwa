@@ -8,8 +8,8 @@ main.msg { max-width: 640px; }
 .none, .hint { color: var(--muted); font-size: var(--fs-s); }
 .hint { color: var(--comment); }
 
-/* ---- state chips: the shared .chip (machiya.css), coloured with --chip. A stage is a season, a board column is one of
-   Konbini's lanes; a link chip (.chip.link) takes the same colours. -------------------------------------------------- */
+/* ---- chips: the shared .chip (machiya.css, outlined), coloured with --chip. A stage is a season, a board column is one of
+   Konbini's lanes; a link chip (.chip.link, which fills lightly on hover) takes the same colours. -------------------------------------------------- */
 .stage { margin-left: 6px; }
 .chip.stage-evergreen { --chip: var(--green); }
 .chip.stage-budding { --chip: var(--teal); }
