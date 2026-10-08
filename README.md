@@ -22,12 +22,13 @@ Niwa (庭, "garden") is the digital garden for Machiya and publishes the notes y
 
 - Publish with one button. Niwa adds `publish: true` to the note's frontmatter and touches nothing else.
 - Growth stages (seedling, budding, evergreen), backlinks, nearby notes and topic maps.
-- A queue of notes worth sharing: your agents' suggestions and your most-linked notes come first.
+- A queue of notes worth sharing: your agents' suggestions first, limited to one garden folder if you like.
+- Short posts: Niwa shows each note's length, warns when it's long, publishes just a marked excerpt, and lists one-line dated updates in the Stream ([how](docs/writing.md)).
 - A stream of what changed, an RSS feed, search and a random note.
 
 ## Keep your secrets
 
-- Every publish is scanned first: LAN and tailnet addresses, MAC addresses, keys, tokens, tailnet names, email addresses, and any words you list in `NIWA_SCAN_DENY`.
+- Every publish is scanned first (the part you publish): LAN and tailnet addresses, MAC addresses, keys, tokens, tailnet names, email addresses, and any words you list in `NIWA_SCAN_DENY`.
 - Niwa shows each finding in the note. A note with an error stays out of the garden until you publish it with its findings, even if `publish: true` came from somewhere else.
 - Notes in private folders (`NIWA_PRIVATE_FOLDERS`) never publish.
 

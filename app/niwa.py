@@ -50,7 +50,7 @@ from vaultkit import read_secret  # noqa: E402
 from vaultkit import signin  # noqa: E402
 from writer import Writer, WriteError  # noqa: E402
 
-VERSION = "0.9.1"
+VERSION = "0.10.0"
 PORT = int(os.environ.get("NIWA_PORT", "8080"))
 USERS = set(filter(None, (u.strip() for u in os.environ.get("NIWA_USERS", "").split(","))))
 
@@ -208,6 +208,8 @@ ALLOWED_HOSTS = allowed_hosts(HOST, os.environ.get("NIWA_ALLOWED_HOSTS"), PUBLIC
 SMALLWEB_HOST = HOST or "localhost"
 PRIVATE = tuple(p.strip().strip("/") + "/" for p in os.environ.get("NIWA_PRIVATE_FOLDERS", "").split(",") if p.strip().strip("/"))
 SCAN_DENY = [w.strip() for w in os.environ.get("NIWA_SCAN_DENY", "").split(",") if w.strip()]
+# The Queue lists only notes in these folders (and what agents suggest). Unset: every unpublished note.
+QUEUE_FOLDERS = tuple(p.strip().strip("/") + "/" for p in os.environ.get("NIWA_QUEUE_FOLDERS", "").split(",") if p.strip().strip("/"))
 AUTHOR = (os.environ.get("NIWA_GIT_NAME", "garden"), os.environ.get("NIWA_GIT_EMAIL", "garden@niwa"))
 DATA_DIR = os.path.dirname(DB) or "."
 # Per-user preferences (GET/PUT /api/prefs, with an identity file): their own SQLite file next to NIWA_DB, made (0600)
@@ -297,6 +299,7 @@ borrow_reference()
 state = State(DB, REPO)
 garden = Garden(REPO, SUBDIR, state, private=PRIVATE)
 garden.deny = garden_mod.deny_re(SCAN_DENY)
+garden.queue_folders = QUEUE_FOLDERS
 garden._apply_private()
 def konbini_token(path):
     """NIWA_KONBINI_TOKEN_FILE: Niwa's token for Konbini (a room token, mht_…, when Konbini is in AUTH=hister mode, or a

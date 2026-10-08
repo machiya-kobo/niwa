@@ -8,6 +8,7 @@ import shell as modern
 import re
 
 from links import web_url
+import garden as garden_mod
 from garden import FRONT_RE, STAGES, TYPES, relative, stage_of
 from vaultkit import _str
 from shell import COLUMN_TITLES, e
@@ -129,6 +130,8 @@ def note(ctx, base, g, n, cards, checks=None):
     if card and card.get("post_url"):
         meta.append('<a class="postlink" href="%s">blog post</a>' % e(card["post_url"]))
     public = modern.public(ctx)
+    if not public:
+        meta.append(words_badge(g, n))
     if modern.KURA_URL and not public:
         meta.append('<a class="thing is-note" href="%s/n/%s">View in Kura</a>' % (e(modern.KURA_URL), quote(n.slug)))
     if modern.GARDEN_URL and n.published and not public:
@@ -213,6 +216,17 @@ def publish_label(checks):
     return "Publish with " + " and ".join(said) if said else "Publish to garden"
 
 
+def words_label(g, n):
+    """'1,196 words', or for a note that publishes an excerpt 'excerpt, 240 of 3,100 words'."""
+    words, whole = g.word_count(n), g.full_words.get(n.rel)
+    return ("excerpt, %s of %s words" % (format(words, ","), format(whole, ","))) if whole else "%s words" % format(words, ",")
+
+
+def words_badge(g, n):
+    long = garden_mod.LONG_WORDS and g.word_count(n) > garden_mod.LONG_WORDS
+    return '<span class="words%s">%s</span>' % (" long" if long else "", e(words_label(g, n)))
+
+
 def publish_form(ctx, base, n, checks=None, ack="", hits=()):
     """ack: the digest of the scan's errors shown here (garden.hold_digest): the button acknowledges exactly
     those, so a finding added since holds the note back again. hits: garden.scan_hits(), shown in full."""
@@ -286,7 +300,8 @@ def stream(ctx, base, g, d):
                     '<a href="%s">%d change%s</a></li>' % (e(x["host"]), roundup_url(x["date"]), n, "" if n == 1 else "s"))
         if x["kind"] == "garden":
             title = ('<a class="thing is-garden" href="%s/n/%s">%s</a>' % (base, quote(x["note_slug"]), e(x["title"]))) if x.get("note_slug") else e(x["title"])
-            return '<li class="dentry garden"><span class="kind ev-garden">%s</span> %s</li>' % (e(x["event"]), title)
+            return '<li class="dentry garden"><span class="kind ev-garden">%s</span> %s%s</li>' % (
+                e(x["event"]), title, (' <span class="utext">%s</span>' % e(x["text"])) if x.get("text") else "")
         moves = "".join('<span class="move">%s</span>' % e(m) for m in x["moves"])
         top = "".join("<li>%s</li>" % e(t if len(t) <= 170 else t[:167].rstrip() + "…") for t in x["top"])
         more = (' <span class="more">+%d update%s</span>' % (x["more"], "" if x["more"] == 1 else "s")) if x["more"] else ""
@@ -368,18 +383,21 @@ def queue(ctx, base, g, cards):
         if sug:
             forms += ('<form class="qpub" method="post" action="%s/dismiss"><input type="hidden" name="rel" value="%s">'
                       '<button type="submit" class="quiet">Dismiss</button></form>' % (base, e(n.rel)))
-        return ('<li class="qrow"><div class="qmain"><a class="ntl" href="%s/n/%s">%s</a> %s %s %s%s</div>'
+        return ('<li class="qrow"><div class="qmain"><a class="ntl" href="%s/n/%s">%s</a> %s %s %s %s%s</div>'
                 '<div class="qacts">%s</div></li>'
-                % (base, quote(n.slug), e(n.title), stage_badge(n.stage), chk, badge,
+                % (base, quote(n.slug), e(n.title), stage_badge(n.stage), chk, words_badge(g, n), badge,
                    ('<p class="summary">%s</p>' % e(n.description)) if n.description else "", forms))
 
+    scope = g.queue_folders      # NIWA_QUEUE_FOLDERS: only these folders, plus held notes and what agents suggested
     groups = {}
     for n in g.notes.values():
         if n.published or g.is_private(n.rel):
             continue
+        if scope and not (n.rel.startswith(scope) or n.rel in g.held or n.rel in suggested):
+            continue
         if n.rel in g.held:
             groups.setdefault("Held Back", []).append(n)
-        elif n.rel in suggested or n.rel in linked:
+        elif n.rel in suggested or n.rel in linked and (not scope or n.rel.startswith(scope)):
             groups.setdefault("Suggested", []).append(n)
         elif n.ntype == "map":
             groups.setdefault("Topic maps", []).append(n)
@@ -387,15 +405,17 @@ def queue(ctx, base, g, cards):
             groups.setdefault(n.rel.split("/")[0] if "/" in n.rel else "Vault root", []).append(n)
     order = {"Held Back": -1, "Suggested": 0, "Topic maps": 1}
     parts = [top(ctx, base, "queue"), '<main class="garden queue">',
-             '<p class="none">Unpublished notes, suggestions first.%s Review shows what the pre-publish check found.</p>' % (
+             '<p class="none">%s, suggestions first.%s Review shows what the pre-publish check found.</p>' % (
+                 ("Unpublished notes in %s" % ", ".join(e(p) for p in scope)) if scope else "Unpublished notes",
                  " Private notes (%s) are left out." % ", ".join(e(p) for p in g.private) if g.private else "")]
     for folder in sorted(groups, key=lambda k: (order.get(k, 2), k.lower())):
         notes = sorted(groups[folder], key=lambda n: (n.rel not in suggested, n.title.lower()))
         parts.append(section('%s <span class="colcount">%d</span>' % (e(folder), len(notes)), "",
                              '<ul class="garden-list qlist">%s</ul>' % "".join(row(n) for n in notes)))
     if not groups:
-        parts.append(empty("Nothing to Publish", "Every note%s is already in the garden." % (
-            " outside " + " and ".join(e(p) for p in g.private) if g.private else "")))
+        parts.append(empty("Nothing to Publish", "Every note%s%s is already in the garden." % (
+            (" in " + " and ".join(e(p) for p in scope)) if scope else "",
+            (" outside " + " and ".join(e(p) for p in g.private)) if g.private else "")))
     parts.append("</main>")
     return gpage(ctx, base, "Queue", "\n".join(parts), "queue")
 

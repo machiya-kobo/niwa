@@ -105,6 +105,11 @@ def build(garden, days=30, links=None, reading=None, public=False):
             garden_events.append({"kind": "garden", "date": d, "event": "planted" if kind == "publish" else "unpublished",
                                   "title": n.title if n else rel, "note_slug": n.slug if n and n.published else "",
                                   "rel": rel})
+    for rel, n in published.items():            # short dated updates a note carries (its "Updates" list)
+        for d, text in garden.updates(n):
+            if start <= d < end:
+                garden_events.append({"kind": "garden", "date": d, "event": "update", "title": n.title,
+                                      "note_slug": n.slug, "rel": rel, "text": text})
     planted = {(g["rel"], g["date"]) for g in garden_events}
     if links:
         for d, r in links.died_between(start, end):

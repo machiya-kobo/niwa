@@ -3,6 +3,16 @@
 Niwa follows [SemVer](https://semver.org). Before 1.0, a new feature, a changed default or setting, or a changed API
 field is a minor bump, and a fix or wording change is a patch. Settings are listed in the README.
 
+## 0.10.0
+
+Short, focused posts (owner request, 2026-10-07): the notes in a vault are long, and a garden is short posts with small updates. See docs/writing.md.
+
+- **A garden folder for the Queue.** `NIWA_QUEUE_FOLDERS` limits the Queue to those folders, plus held-back notes and what agents suggested. Unset, nothing changes.
+- **Word counts.** Each Queue row and the owner's note page show the note's length.
+- **A length warning.** A note over `NIWA_LONG_WORDS` (default 1,500; `0` turns it off) gets a "long" warning. It informs, it never blocks.
+- **Excerpts.** The text between `<!-- garden -->` and `<!-- /garden -->` is all the garden publishes of a note: the web, Gemini, Gopher, the feed, search, the scan, link checking and the word count see only that. A secret outside the markers doesn't hold the note back. A note with no marker publishes whole.
+- **Short updates.** Dated bullets (`- 2026-10-07: text`) under an `Updates` heading show in the Stream, on the web, the public garden, Gemini and Gopher.
+
 ## 0.9.1
 
 - The queue's "Review" is a link to the note (which shows every finding and holds the Publish button) instead of a form post. A clean note still has its Publish button.

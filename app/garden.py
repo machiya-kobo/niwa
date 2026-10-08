@@ -46,6 +46,35 @@ CHECKS = [
 ]
 DENY_LABEL = "denied word (NIWA_SCAN_DENY)"
 
+# A long note is a warning, not an error: NIWA_LONG_WORDS (default 1500, 0 turns it off).
+try:
+    LONG_WORDS = int(os.environ.get("NIWA_LONG_WORDS", "").strip() or 1500)
+except ValueError:
+    LONG_WORDS = 1500
+
+# A note can publish just a part of itself: the text between <!-- garden --> and <!-- /garden --> (an unclosed marker runs
+# to the end of the note; several pairs join up). The rest never reaches the garden, its scan, links, search or feeds.
+EXCERPT_OPEN = re.compile(r"<!--\s*garden\s*-->", re.I)
+EXCERPT_RE = re.compile(r"<!--\s*garden\s*-->(.*?)(?:<!--\s*/garden\s*-->|\Z)", re.I | re.S)
+UPDATES_HEAD = re.compile(r"^(#{1,6})\s+updates\s*$", re.I | re.M)
+UPDATE_LINE = re.compile(r"^\s*[-*]\s+(\d{4}-\d{2}-\d{2})\s*(?:[:\u2014\u2013-]\s*)?(.+?)\s*$", re.M)
+
+
+def excerpt(text):
+    """The part of a note the garden publishes: frontmatter plus what sits between its garden markers, or None when the
+    note has no marker (the whole note is published)."""
+    m = FRONT_RE.match(text)
+    head = m.group(0) if m else ""
+    body = text[len(head):]
+    if not EXCERPT_OPEN.search(body):
+        return None
+    parts = [p.strip() for p in EXCERPT_RE.findall(body)]
+    return head + "\n\n".join(p for p in parts if p) + "\n"
+
+
+def count_words(text):
+    return len(FRONT_RE.sub("", text, count=1).split())
+
 
 def deny_re(words):
     """NIWA_SCAN_DENY: words or names (hostnames, people, places) that must never be published, matched whole and
@@ -65,6 +94,8 @@ class Garden(Vault):
         super().__init__(repo, subdir, git=git)
         self.store = state
         self.deny = None     # deny_re(NIWA_SCAN_DENY), set by niwa.py
+        self.queue_folders = ()      # NIWA_QUEUE_FOLDERS, set by niwa.py: the only folders the Queue lists (and suggestions)
+        self.full_words = {}         # rel -> words in the whole note, for a note that publishes an excerpt
         self.held = {}       # rel -> the error findings that hold a `publish: true` note back (see _apply_private)
         self._errors = {}    # rel -> (hash of text and deny list, [(label, hit)]): the scan's errors, once per text
         self.private = private    # folder prefixes ("Private/") whose notes are never queued or published (see the setter)
@@ -149,6 +180,37 @@ class Garden(Vault):
         if stale:
             self._apply_private()
 
+    def source(self):
+        """The vault's notes, a note with garden markers cut down to its excerpt: everything downstream (the render,
+        the scan, links, search, the feeds, the word count) then sees only what the garden publishes."""
+        self.full_words = {}
+        for rel, fm, text in super().source():
+            part = excerpt(text)
+            if part is not None:
+                self.full_words[rel] = count_words(text)
+                text = part
+            yield rel, fm, text
+
+    def word_count(self, note):
+        """Words in the part of the note the garden shows."""
+        return count_words(note.text)
+
+    def updates(self, note):
+        """The note's short dated updates, newest first: [(date, text)]. They are the "- 2026-10-07: text" bullets under
+        a heading called Updates, up to the next heading of the same level or above."""
+        m = UPDATES_HEAD.search(note.text)
+        if not m:
+            return []
+        rest = note.text[m.end():]
+        end = re.search(r"^#{1,%d}\s" % len(m.group(1)), rest, re.M)
+        out = []
+        for d, text in UPDATE_LINE.findall(rest[:end.start()] if end else rest):
+            try:
+                out.append((datetime.date.fromisoformat(d), text))
+            except ValueError:
+                pass
+        return sorted(out, key=lambda t: t[0], reverse=True)
+
     def is_private(self, rel):
         return rel.startswith(self._private)
 
@@ -207,6 +269,12 @@ class Garden(Vault):
         for severity, label, hits in self.scan_hits(note):
             shown = ", ".join(h if severity == "warn" else h[:6] + "…" for h in hits[:4])
             found.append((severity, "%s (%d): %s" % (label, len(hits), shown)))
+        words = self.word_count(note)
+        if LONG_WORDS and words > LONG_WORDS:
+            whole = self.full_words.get(note.rel)
+            found.append(("warn", "long: %s words, over %s. A focused post is shorter: shorten it, or publish an excerpt "
+                                  "(wrap it in <!-- garden --> and <!-- /garden -->)" % (format(words, ","), format(LONG_WORDS, ","))
+                          + ((" (the whole note is %s)" % format(whole, ",")) if whole else "")))
         private = sorted({self.notes[r].title for r in note.links if self.is_private(r)})
         if private:
             found.append(("warn", "links to private notes: " + ", ".join(private)))

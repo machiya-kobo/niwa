@@ -244,7 +244,8 @@ def stream_lines(garden, timeline):
     out = [("%d entries from the last %d days." % (d["entries"], d["days"]), None)]
 
     def entry(x):
-        return ("* %s: %s" % (clean(x["event"]), clean(x["title"])), x.get("note_slug") or None)
+        return ("* %s: %s%s" % (clean(x["event"]), clean(x["title"]), (": " + clean(x["text"])) if x.get("text") else ""),
+                x.get("note_slug") or None)
 
     for w in d["weeks"]:
         out.append(("## " + w["label"], None))

@@ -620,7 +620,6 @@ class ReleaseDefaultsTest(unittest.TestCase):
             found = niwa.garden.check(note)
             self.assertIn(("error", "Notes/ notes are private and shouldn't be published"), found)
             queue = req("/queue")[1]
-            self.assertNotIn("Paper lanterns", queue)
             self.assertIn("Private notes (Notes/) are left out.", queue)
             niwa.garden.private = ()
             self.assertNotIn("left out", req("/queue")[1])
@@ -2397,6 +2396,111 @@ class SimplerPagesTest(unittest.TestCase):
         self.assertEqual(gmodern.publish_label([("error", "x"), ("warn", "y"), ("warn", "z"), ("info", "i")]),
                          "Publish with 1 error and 2 warnings")
         self.assertEqual(gmodern.publish_label([("info", "i")]), "Publish to garden")
+
+
+class GardenPostsTest(unittest.TestCase):
+    """Short focused posts (owner, 2026-10-07): the Queue's garden folder, word counts, a length warning, excerpts and
+    dated updates."""
+
+    def setUp(self):
+        self.paths = []
+
+    def tearDown(self):
+        for path in set(self.paths):
+            os.remove(path)
+        for folder in ("Garden", "Empty"):
+            path = os.path.join(niwa.garden.root, folder)
+            if os.path.isdir(path) and not os.listdir(path):
+                os.rmdir(path)
+        niwa.garden.revision += "x"
+        niwa.sync.commit()
+
+    def note(self, rel, text):
+        os.makedirs(os.path.dirname(os.path.join(niwa.garden.root, rel)), exist_ok=True)
+        self.paths.append(write_note(rel, text))
+        return niwa.garden.get(rel[:-3])
+
+    def test_an_excerpt_publishes_only_the_marked_part_everywhere(self):
+        n = self.note("Notes/Cut.md", "---\ntitle: Cut note\npublish: true\n---\nPrivate: the NAS is 192.168.1.50 and "
+                      "zebrafish.\n<!-- garden -->\nThe short public part about lanterns.\n<!-- /garden -->\nMore private "
+                      "zebrafish.\n")
+        self.assertTrue(n.published)                                    # the secret sits outside the excerpt: not held
+        self.assertNotIn("Notes/Cut.md", niwa.garden.held)
+        self.assertEqual(niwa.garden.errors(n), [])
+        self.assertEqual(niwa.garden.word_count(n), 6)
+        self.assertGreater(niwa.garden.full_words["Notes/Cut.md"], 12)
+        _, page = req("/n/Notes/Cut")
+        self.assertIn("The short public part about lanterns.", page)
+        self.assertNotIn("192.168.1.50", page)
+        self.assertNotIn("zebrafish", page)
+        self.assertIn("excerpt, 6 of ", page)                           # the owner sees both lengths
+        import gmodern
+        self.assertEqual([h[0].title for h in gmodern.find(niwa.garden, "zebrafish")], [])      # search sees the excerpt only
+        self.assertEqual([h[0].title for h in gmodern.find(niwa.garden, "lanterns")].count("Cut note"), 1)
+        for channel in (SweepFixesTest.gemini("/n/Notes/Cut"), SweepFixesTest.gopher("/n/Notes/Cut"),
+                        niwa.feed.rss("https://g.example", "Niwa", "", niwa.feed.notes(niwa.garden))):
+            self.assertNotIn("zebrafish", channel)
+            self.assertNotIn("192.168.1.50", channel)
+        import garden as g
+        self.assertIsNone(g.excerpt("---\na: 1\n---\nNo marker.\n"))                            # no marker: the whole note
+        self.assertEqual(g.excerpt("A\n<!-- garden -->\nB\n"), "B\n")                           # an open marker runs to the end
+        self.assertEqual(g.excerpt("<!--garden-->x<!--/garden-->y<!-- GARDEN -->z<!-- /Garden -->"), "x\n\nz\n")
+
+    def test_a_long_note_gets_a_warning_and_an_excerpt_clears_it(self):
+        body = "word " * 1600
+        n = self.note("Notes/Long.md", "---\ntitle: Long note\n---\n" + body + "\n")
+        longs = [m for sev, m in niwa.garden.check(n) if sev == "warn" and m.startswith("long:")]
+        self.assertEqual(len(longs), 1)
+        self.assertIn("1,600 words, over 1,500", longs[0])
+        _, queue = req("/queue")
+        row = queue[queue.index("Long note"):]
+        self.assertIn('<span class="words long">1,600 words</span>', row[:row.index("</li>")])
+        _, page = req("/n/Notes/Long")
+        self.assertIn("Publish with 1 warning", page)                   # a warning: it informs, it doesn't block
+        with mock.patch.object(niwa.garden_mod, "LONG_WORDS", 0):
+            self.assertFalse([m for _, m in niwa.garden.check(n) if m.startswith("long:")])
+        n = self.note("Notes/Long.md", "---\ntitle: Long note\n---\n" + body + "<!-- garden -->\nShort.\n<!-- /garden -->\n")
+        self.assertFalse([m for _, m in niwa.garden.check(n) if m.startswith("long:")])
+
+    def test_the_queue_lists_only_the_garden_folder_and_what_agents_suggest(self):
+        self.note("Garden/Short post.md", "---\ntitle: Short post\n---\nA focused post.\n")
+        self.note("Notes/Elsewhere.md", "---\ntitle: Elsewhere note\n---\nOutside the garden folder.\n")
+        self.note("Notes/Sugg.md", "---\ntitle: Suggested outside\n---\nAn agent suggested this.\n")
+        niwa.state.add_event("suggest", "a", "agent-a", path="Notes/Sugg.md", body="good")
+        niwa.garden.revision += "x"
+        _, everything = req("/queue")
+        self.assertIn("Elsewhere note", everything)
+        with mock.patch.object(niwa.garden, "queue_folders", ("Garden/",)):
+            _, queue = req("/queue")
+        self.assertIn("Short post", queue)
+        self.assertIn("Suggested outside", queue)                          # a suggestion shows wherever it is
+        self.assertNotIn("Elsewhere note", queue)
+        self.assertIn("Unpublished notes in Garden/", queue)
+        with mock.patch.object(niwa.garden, "queue_folders", ("Empty/",)):
+            self.assertIn("in Empty/", req("/queue")[1])
+        self.assertEqual(niwa.QUEUE_FOLDERS, ())                           # unset in the suite: everything, as before
+
+    def test_dated_updates_reach_the_stream_on_every_channel(self):
+        import datetime, garden as g
+        today = datetime.date.today().isoformat()
+        n = self.note("Notes/Journal post.md", "---\ntitle: Journal post\npublish: true\n---\nBody.\n## Updates\n"
+                      "- %s: refolded the seam\n- 2020-01-01: too old to show\n- 2026-13-45: not a date\n## Next\n- %s: not an update\n"
+                      % (today, today))
+        self.assertEqual([t for _, t in niwa.garden.updates(n)], ["refolded the seam", "too old to show"])
+        _, stream = req("/stream")
+        self.assertIn("refolded the seam", stream)
+        self.assertNotIn("too old to show", stream)
+        self.assertNotIn("not an update", stream)
+        import smallweb
+        lines = [t for t, _ in smallweb.stream_lines(niwa.garden, None)]
+        self.assertIn("* update: Journal post: refolded the seam", lines)
+        public = niwa.ThreadingHTTPServer(("127.0.0.1", 0), niwa.make_public_handler())
+        threading.Thread(target=public.serve_forever, daemon=True).start()
+        try:
+            with urllib.request.urlopen("http://127.0.0.1:%d/stream" % public.server_address[1], timeout=10) as r:
+                self.assertIn("refolded the seam", r.read().decode())
+        finally:
+            public.shutdown()
 
 
 class TrustedProxiesTest(unittest.TestCase):
