@@ -3,6 +3,10 @@
 Niwa follows [SemVer](https://semver.org). Before 1.0, a new feature, a changed default or setting, or a changed API
 field is a minor bump, and a fix or wording change is a patch. Settings are listed in the README.
 
+## 0.13.4
+
+A public image, and a pinned build. Each signed release tag now builds `ghcr.io/machiya-kobo/niwa:<version>` (and `:latest`) for amd64 and arm64 on GitHub Actions, and signs it with cosign (docs/install.md). The Dockerfile's base images (Python and the Hister CLI) are pinned by digest. No change to the app.
+
 ## 0.13.3
 
 vaultkit 0.27.4: a hovered, unselected filter pill fills with 24% of its colour over the raised colour, and its text and outline take a hover shade that reads at 4.5:1 on that fill in every theme. No markup change.

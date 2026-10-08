@@ -1,9 +1,9 @@
 # Niwa (machiya-kobo/niwa): stdlib Python + markdown + pyyaml + git/ssh + openssl (the gemini certificate) + the hister
 # CLI (link rot saves pages into Hister). Runs as uid 1000.
 ARG HISTER_VERSION=v0.20.0
-FROM ghcr.io/asciimoo/hister:${HISTER_VERSION} AS hister
+FROM ghcr.io/asciimoo/hister:${HISTER_VERSION}@sha256:5ffd0a702482c71010a67db8e6b567344189844ed42072d1b4cdae511b2aa7bb AS hister
 
-FROM public.ecr.aws/docker/library/python:3.13-slim
+FROM public.ecr.aws/docker/library/python:3.13-slim@sha256:bf44cdfcb76cd3b41e879bc058fc37ec5872002ccfde7fcb765e218cde0cd79c
 
 # markdown >= 3.11: older ones run out of memory on one note under Python 3.13 (vaultkit refuses them at import).
 RUN apt-get update \

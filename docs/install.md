@@ -10,6 +10,14 @@ build pulls its base images from the internet). Ports 8080 (web), 1965 (Gemini) 
 
 ## In a container
 
+You can build the image from the clone, as below, or use the public one, `ghcr.io/machiya-kobo/niwa:latest` (or a version, like `:0.13.4`): leave out the `build` line and put the image's name where the run line has `niwa-demo` last. It is built from each signed release tag for amd64 and arm64 and signed with cosign:
+
+```sh
+cosign verify ghcr.io/machiya-kobo/niwa:latest \
+  --certificate-identity-regexp '^https://github.com/machiya-kobo/niwa/' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+
 *Container with podman* (on Debian or Ubuntu, install it first):
 
 <!-- quickstart: packages-podman-debian -->
