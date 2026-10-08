@@ -11,6 +11,7 @@ main.msg { max-width: 640px; }
 /* ---- chips: the shared .chip (machiya.css, outlined), coloured with --chip. A stage is a season, a board column is one of
    Konbini's lanes; a link chip (.chip.link, which fills lightly on hover) takes the same colours. -------------------------------------------------- */
 .stage { margin-left: 6px; }
+.meta .stage, .meta .tended, .meta .words { margin-left: 0; }
 .chip.stage-evergreen { --chip: var(--green); }
 .chip.stage-budding { --chip: var(--teal); }
 .chip.stage-seedling { --chip: var(--yellow); }
@@ -45,8 +46,6 @@ ul.garden-list { list-style: none; padding: 0; margin: 0 0 var(--sp-2); }
 ul.garden-list li { padding: var(--sp-2) 0; border-bottom: 1px solid var(--line); }
 ul.garden-list.plain li { padding: 6px 0; }
 ul.garden-list .ntl { font-weight: 600; color: var(--fg); }
-ul.garden-list .summary { margin: 3px 0 0; color: var(--muted); font-size: var(--fs-s);
-  overflow-wrap: anywhere; }   /* break-word misses the phone queue: its column flex sizes rows to min-content */
 
 /* ---- landing ------------------------------------------------------------------------------------------------- */
 .landing .intro { margin: var(--sp-1) 0 var(--sp-3); }
@@ -55,18 +54,8 @@ ul.garden-list .summary { margin: 3px 0 0; color: var(--muted); font-size: var(-
 .gstats b { color: var(--fg); }
 .landing .pills { margin: 0 0 var(--sp-3); }
 .maps { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
-.maptile { display: block; padding: var(--sp-3) 14px; border-radius: var(--r-m); background: var(--dark); border: 1px solid var(--line);
-  color: var(--fg); }
-.maptile:hover { text-decoration: none; border-color: var(--room); box-shadow: var(--shadow-2); }
-.maptile b { display: block; font-size: 15px; color: var(--room); }
-.maptile .count { font-size: var(--fs-xs); color: var(--muted); }
-.maptile p { margin: 6px 0 0; font-size: var(--fs-s); color: var(--fg2); }
-/* Niwa's own raised panels take the house's panel shades (vaultkit 0.25, docs/ui.md "Colours on raised panels"), so a
-   map's title, a preview's stage and the Tend row's accents reach 4.5:1 on --dark too */
-.maptile, .popover, .metaform {
-  --blue: var(--blue-panel); --orange: var(--orange-panel); --red: var(--red-panel); --yellow: var(--yellow-panel);
-  --green: var(--green-panel); --teal: var(--teal-panel); --magenta: var(--magenta-panel); --cyan: var(--cyan-panel);
-  --slate: var(--slate-panel); --house: var(--blue-panel); --room: var(--room-panel); --room2: var(--room2-panel); }
+a.maptile { color: var(--fg); }       /* a card that is a link: Niwa's topic maps */
+a.maptile:hover { text-decoration: none; box-shadow: var(--shadow-2); }
 
 /* ---- a note -------------------------------------------------------------------------------------------------- */
 article.note .nhead h1 { margin: 10px 0 2px; font-size: var(--fs-xxl); line-height: 1.2; letter-spacing: -.01em; font-weight: 700; }
@@ -108,12 +97,16 @@ ul.checks li { color: var(--chip); }
 .tagcloud .n { color: var(--muted); margin-left: 2px; }
 
 /* ---- the stream ---------------------------------------------------------------------------------------------- */
-.stream .ev { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; margin-right: 4px; }
+.stream .ev { display: inline-block; font-size: var(--fs-xs); font-weight: 600; margin-right: 4px; }
+.stream .ev::first-letter { text-transform: uppercase; }
 .ev-garden { color: var(--green); } .ev-reading { color: var(--blue); } .ev-systems { color: var(--cyan); }
 ul.digest { list-style: none; padding: 0; margin: 0 0 6px; }
 ul.digest > li { padding: var(--sp-2) 0; border-bottom: 1px solid var(--line); }
-ul.digest > li.tinted { margin: 0 0 var(--sp-2); padding: 10px var(--sp-3); box-shadow: none; }   /* a Konbini row: the shared tint's box */
-li.dentry .dhead { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+ul.digest.cards > li:not(.card) { padding: 6px 4px; }                         /* a plain row among the cards: no divider */
+ul.digest.cards > li:not(.card), ul.digest.cards { border-bottom: 0; }
+ul.digest > li.card { padding: 12px 14px; }                                  /* a Konbini row: the shared tinted card */
+li.dentry .dhead { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }       /* the public stream's rows */
+.card .more, .card .when { color: var(--menu-muted, var(--muted)); font-size: var(--fs-xs); }
 li.dentry .ntl { font-weight: 600; }
 li.dentry b.ntl { color: var(--fg); }   /* no card: plain text; a card link wears Konbini's colour (.is-card) */
 li.dentry.done .ntl { color: var(--green); }
@@ -125,7 +118,7 @@ li.dentry .next, ul.nowlist-s .next { margin: 4px 0 0; color: var(--muted); font
 ul.nowlist-s .blocked { margin: 4px 0 0; color: var(--red); font-size: 12.5px; }
 li.dentry.systems, li.dentry.garden { color: var(--muted); font-size: var(--fs-s); }
 .reading { margin: 4px 0 var(--sp-2); color: var(--muted); font-size: var(--fs-s); }
-.dayhead { margin: 14px 0 4px; font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 600; }
+.dayhead { margin: 14px 4px 6px; font-size: var(--fs-s); color: var(--muted); font-weight: 600; }
 .week details summary { cursor: pointer; padding: var(--sp-2) 0; color: var(--fg2); }
 .week details summary b { color: var(--room); }
 .week .wsum { color: var(--muted); font-size: var(--fs-s); }
@@ -157,4 +150,8 @@ li.qrow { display: flex; gap: var(--sp-3); align-items: flex-start; }
 }
 
 /* ---- search (the room's own: published notes) ------------------------------------------------------------------ */
-main.search mark, ul.garden-list mark { background: color-mix(in srgb, var(--yellow) 30%, transparent); color: inherit; border-radius: 3px; padding: 0 1px; }
+main.search mark, .card mark, ul.garden-list mark { background: color-mix(in srgb, var(--yellow) 30%, transparent); color: inherit; border-radius: 3px; padding: 0 1px; }
+
+/* ---- cards (Shiori's result card, vaultkit 0.27): long words wrap, as the phone queue's column flex sizes rows to min-content */
+.card .title, .card .snippet { overflow-wrap: anywhere; }
+ul.cards { margin-bottom: var(--sp-2); }

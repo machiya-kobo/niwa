@@ -10,6 +10,7 @@ Listeners: web (NIWA_PORT; owner gate on Tailscale-User-Login, or Machiya's iden
 gopher 7070, and with NIWA_PUBLIC_PORT the public garden (PublicHandler: published notes for anyone, read-only).
 /api/status is open (monitoring).
 """
+import gzip
 import ipaddress
 import json
 import os
@@ -18,6 +19,7 @@ import subprocess
 import sys
 import threading
 import time
+import zlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, quote, unquote, urlsplit
 
@@ -50,7 +52,7 @@ from vaultkit import read_secret  # noqa: E402
 from vaultkit import signin  # noqa: E402
 from writer import Writer, WriteError  # noqa: E402
 
-VERSION = "0.12.0"
+VERSION = "0.13.0"
 PORT = int(os.environ.get("NIWA_PORT", "8080"))
 USERS = set(filter(None, (u.strip() for u in os.environ.get("NIWA_USERS", "").split(","))))
 
@@ -174,6 +176,48 @@ def proxied(env):
     if trusted_proxies(env.get("NIWA_TRUSTED_PROXIES")):
         env["NIWA_BIND_BEHIND_PROXY"] = "1"
     return env
+
+
+COMPRESSIBLE = ("text/", "application/json", "application/xml", "application/rss+xml", "application/manifest+json",
+                "application/javascript", "image/svg+xml")
+
+
+def gzipped(request_headers, data, ctype, extra=()):
+    """(data, headers): the body gzipped when the client accepts it (Accept-Encoding: gzip, not q=0), the type is text
+    and the body is worth it (the Queue's 640 KB list is 12 times smaller); `extra` are the response's own headers,
+    with Accept-Encoding added to a Vary it already has. Nothing in a page is secret from the reader, so there is no
+    BREACH to mind: the CSRF guard is the same-origin check, not a token."""
+    extra = list(extra)
+    if len(data) < 1024 or not ctype.startswith(COMPRESSIBLE):
+        return data, extra
+    vary = [i for i, (k, _) in enumerate(extra) if k.lower() == "vary"]
+    if vary:
+        extra[vary[0]] = ("Vary", extra[vary[0]][1] + ", Accept-Encoding")
+    else:
+        extra.append(("Vary", "Accept-Encoding"))
+    for part in (request_headers.get("Accept-Encoding") or "").lower().split(","):
+        name, _, q = part.strip().partition(";")
+        if name.strip() == "gzip" and q.replace(" ", "") not in ("q=0", "q=0.0", "q=0.00", "q=0.000"):
+            return gzip_cached(data), extra + [("Content-Encoding", "gzip")]
+    return data, extra
+
+
+GZ_CACHE = {}       # (length, crc32) -> gzipped body, for the big bodies (Mermaid's 5.4 MB takes 115 ms to compress)
+GZ_BIG = 256 << 10
+GZ_KEEP = 8
+
+
+def gzip_cached(data):
+    if len(data) < GZ_BIG:
+        return gzip.compress(data, 5, mtime=0)
+    key = (len(data), zlib.crc32(data))
+    packed = GZ_CACHE.get(key)
+    if packed is None:
+        packed = gzip.compress(data, 5, mtime=0)
+        while len(GZ_CACHE) >= GZ_KEEP:
+            GZ_CACHE.pop(next(iter(GZ_CACHE)), None)
+        GZ_CACHE[key] = packed
+    return packed
 
 
 def log_line(fmt, args):
@@ -366,6 +410,10 @@ garden.links = links
 
 def on_pull(head):
     garden.revision = head
+    try:
+        garden.index()      # here, in the sync thread: the first visitor after a pull doesn't wait for the re-index
+    except Exception as err:        # a bad note must not stop the sync; the next request tries again and shows it
+        print("niwa: re-index after pull failed: %s" % err, file=sys.stderr, flush=True)
 
 
 sync = GitSync(REPO, AUTHOR, [SUBDIR or ".", EVENTS_DIR], events_dir=EVENTS_DIR, label="garden",
@@ -634,6 +682,7 @@ def make_handler(listener):
                 ctype += "; charset=utf-8"
             else:
                 data = body
+            data, headers = gzipped(self.headers, data, ctype, headers)
             self.send_response(status)
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(data)))
@@ -992,6 +1041,7 @@ def make_public_handler():
         def send(self, status, body, ctype="text/html", headers=()):
             if isinstance(body, str):
                 body, ctype = body.encode("utf-8"), ctype + "; charset=utf-8"
+            body, headers = gzipped(self.headers, body, ctype, headers)
             self.send_response(status)
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(body)))

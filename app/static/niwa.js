@@ -67,7 +67,7 @@ if (matchMedia("(hover: hover)").matches) {
     if (ev.detail.key === "linkPreviews") { previews = ev.detail.value !== false; if (!previews) hide(); }
   });
   // delegated, so the live search results (machiya.js swaps <main> as you type) get previews too
-  const links = "a.wikilink, .maps a.maptile, ul.garden-list a.ntl, ul.garden-list a.is-garden";
+  const links = "a.wikilink, .maps a.maptile, ul.garden-list a.ntl, ul.garden-list a.is-garden, ul.cards a.title[href*='/n/']";
   document.addEventListener("mouseover", (ev) => {
     const a = ev.target.closest?.(links);
     if (!a || a === hovered) return;

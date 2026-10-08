@@ -17,6 +17,7 @@ import datetime
 import hashlib
 import os
 import re
+import threading
 
 from vaultkit import _str
 # The shared vault core (vendored from machiya-kobo/machiya vaultkit/; don't edit app/vaultkit/ here). Re-exported for
@@ -113,6 +114,9 @@ class Garden(Vault):
         self.full_words = {}         # rel -> words in the whole note, for a note that publishes an excerpt
         self.held = {}       # rel -> the error findings that hold a `publish: true` note back (see _apply_private)
         self._errors = {}    # rel -> (hash of text and deny list, [(label, hit)]): the scan's errors, once per text
+        self._hits = {}      # rel -> (the same hash, scan_hits): the full scan, once per text (the Queue scans every note)
+        self._index_lock = threading.RLock()     # one re-index at a time: requests that arrive during it wait for it
+        self._applied = None     # the revision whose index and holds are both done
         self.private = private    # folder prefixes ("Private/") whose notes are never queued or published (see the setter)
         self.links = None    # set by niwa.py (links.Links)
         self.hister = None
@@ -170,9 +174,12 @@ class Garden(Vault):
         self.index()
         self._apply_private()
 
+    def scan_key(self, note):
+        return hashlib.sha256(("%s\0%s" % (self.deny.pattern if self.deny else "", note.text)).encode("utf-8")).digest()
+
     def errors(self, note):
         """The scan's error findings in a note's body, in full: [(label, hit)], sorted. Cached per text."""
-        body_key = hashlib.sha256(("%s\0%s" % (self.deny.pattern if self.deny else "", note.text)).encode("utf-8")).digest()
+        body_key = self.scan_key(note)
         cached = self._errors.get(note.rel)
         if cached and cached[0] == body_key:
             return cached[1]
@@ -190,10 +197,17 @@ class Garden(Vault):
         return digest(found) if found else ""
 
     def index(self):
-        stale = self.key() != self._key
-        super().index()
-        if stale:
-            self._apply_private()
+        """Index the vault for the current revision, once: the first caller after a pull does the work (the sync thread,
+        niwa.py's on_pull) and the others wait for it. `_applied` is set only after the holds are worked out, so nobody
+        sees the new notes before they know what is published."""
+        if self.key() == self._applied:
+            return
+        with self._index_lock:
+            key = self.key()
+            if key != self._applied:
+                super().index()
+                self._apply_private()
+                self._applied = key
 
     def source(self):
         """The vault's notes, a note with garden markers cut down to its excerpt: everything downstream (the render,
@@ -270,12 +284,17 @@ class Garden(Vault):
     def scan_hits(self, note):
         """What the pattern scan found in a note's body, in full: [(severity, label, [text, ...])]. The owner's page
         shows and highlights each one."""
+        key = self.scan_key(note)
+        cached = self._hits.get(note.rel)
+        if cached and cached[0] == key:
+            return cached[1]
         body = FRONT_RE.sub("", note.text, count=1)
         out = []
         for severity, label, rx in list(CHECKS) + ([("error", DENY_LABEL, self.deny)] if self.deny else []):
             hits = sorted({m.group(0) for m in rx.finditer(body)})
             if hits:
                 out.append((severity, label, hits))
+        self._hits[note.rel] = (key, out)
         return out
 
     def check(self, note):

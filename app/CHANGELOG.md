@@ -3,6 +3,20 @@
 Niwa follows [SemVer](https://semver.org). Before 1.0, a new feature, a changed default or setting, or a changed API
 field is a minor bump, and a fix or wording change is a patch. Settings are listed in the README.
 
+## 0.13.0
+
+A performance pass, and round 2 of Shiori's look (vaultkit 0.27.1). No settings or API change.
+
+**Faster** (1,500-note vault, 424 published, 300 commits of history, on this VM):
+- The Queue scanned every unpublished note on every view: 490 to 760 ms, and 640 KB of HTML. The scan runs once per note text now, so the view takes about 100 ms (the first view after a start still scans: about 640 ms).
+- A re-index after a pull ran once for every request that arrived during it, in the request path: eight visitors saw up to 8 s and kept the server busy for 13 s of CPU. One request-independent re-index now runs in the sync thread, and anyone who asks meanwhile waits for that one (the worst wait was 0.84 s). The new revision's holds are worked out before anyone sees its notes.
+- Pages, the feeds, the stylesheet and scripts are gzipped for a client that accepts it: the Queue is 59 KB instead of 674 KB, the landing page 24 KB instead of 165 KB, the Stream 9 KB instead of 72 KB. Mermaid (5.4 MB) goes out as 1.6 MB and is compressed once, not on every request.
+
+**Looks** (Shiori's result card, section headings and header from vaultkit 0.27):
+- Notes in the garden, search results, the Queue's rows and the topic maps are cards: a title in the garden's green, a snippet, a meta row with the chips. The Stream's Konbini rows are tinted cards of the same shape. Plain lists (Linked From, Nearby, Links) stay rows.
+- Section headings are Title Case as written ("Topic Maps", "Linked From", "This Week"); the Stream's day and event labels lose their capitals-and-spacing style too.
+- The current page in the header is a raised pill, with no underline.
+
 ## 0.12.0
 
 From the pre-launch security review, and a pass over the README and install page.

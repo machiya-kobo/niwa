@@ -226,6 +226,12 @@ class ReadTest(unittest.TestCase):
                     panel = v.get(t + "-panel", v["menu-muted"] if t in ("muted", "comment") else v["menu-fg"])
                     if palettes.contrast(panel, tint) < palettes.minimum(mode, t):
                         failures.append("%s %s: --%s on a Konbini row's tint" % (key, mode, t))
+                for t in ("green", "teal", "yellow", "blue", "orange", "red", "magenta", "muted", "comment", "fg2"):     # a note's card (vaultkit 0.27)
+                    panel = v.get(t + "-panel", v["menu-muted"] if t in ("muted", "comment") else v["menu-fg"])
+                    if palettes.contrast(panel, v["card"]) < palettes.minimum(mode, t):
+                        failures.append("%s %s: --%s on a card" % (key, mode, t))
+                if palettes.contrast(v["menu-fg"], v["card"]) < 4.5 or palettes.contrast(v["fg2"], v["card"]) < 4.5:
+                    failures.append("%s %s: a card's snippet or text" % (key, mode))
                 if palettes.contrast(v["bg"], v["green"]) < 4.5:
                     failures.append("%s %s: the current pill's --bg on --green" % (key, mode))
         self.assertEqual(failures, [])
@@ -388,7 +394,7 @@ class ReadTest(unittest.TestCase):
                       'name="q" value="lantern"', body)                                    # the pill carries the query
         main = body[body.index("<main"):]
         self.assertNotIn("<form", main)                                                    # /search has no field of its own
-        self.assertIn('class="ntl"', main)                                                 # the results are in <main>, for the live swap
+        self.assertIn('class="title"', main)                                               # the results are in <main>, for the live swap
         self.assertNotIn("search searchbar", req("/offline")[1])                                 # nothing to search offline
 
     def test_empty_states(self):
@@ -2410,13 +2416,13 @@ class SimplerPagesTest(unittest.TestCase):
         for gone in ("Recently tended", "Needs tending", "Start here", "Everything", "Projects in bloom"):
             self.assertNotIn(">%s" % gone, body, gone)
         self.assertEqual(body.count('href="/n/Notes/Paper%20lanterns"'), 0)               # unpublished: not listed
-        slugs = re.findall(r'<li><a class="ntl" href="(/n/[^"]+)"', body)
+        slugs = re.findall(r'<li class="card"><a class="title" href="(/n/[^"]+)"', body)
         self.assertEqual(len(slugs), len(set(slugs)))                                       # no note twice
         self.assertEqual(len(slugs), len(niwa.garden.published()))                          # every published note, once
         self.assertIn(">Notes <span", body)
         status, typed = req("/?type=map")
         self.assertEqual(status, 200)
-        self.assertNotIn("Topic maps", typed)
+        self.assertNotIn("Topic Maps", typed)
 
     def test_the_tend_form_is_the_stage_and_leaves_confidence_and_pin_alone(self):
         path = write_note("Notes/Tended.md", "---\ntitle: Tended\npublish: true\nconfidence: likely\ngarden_pin: true\n---\nBody.\n")
@@ -2645,6 +2651,96 @@ class PublicBindTest(unittest.TestCase):
         self.assertIn("NIWA_TRUSTED_PROXIES", r.stderr)
 
 
+class SpeedTest(unittest.TestCase):
+    """The performance pass: what makes a page slow is done once, not on every request."""
+    OWNER = {"Tailscale-User-Login": "owner@test"}
+
+    def raw(self, path, **headers):
+        r = urllib.request.Request(BASE + path, headers=dict(self.OWNER, **headers))
+        with urllib.request.urlopen(r, timeout=20) as resp:
+            return resp.status, resp.headers, resp.read()
+
+    def test_a_big_page_is_gzipped_for_a_client_that_accepts_it(self):
+        import gzip
+        _, plain_headers, plain = self.raw("/queue")
+        self.assertGreater(len(plain), 1024)
+        self.assertNotIn("Content-Encoding", plain_headers)                       # no Accept-Encoding: as before
+        _, headers, packed = self.raw("/queue", **{"Accept-Encoding": "gzip, deflate, br"})
+        self.assertEqual(headers["Content-Encoding"], "gzip")
+        self.assertIn("Accept-Encoding", headers["Vary"])
+        self.assertEqual(headers["Content-Length"], str(len(packed)))
+        self.assertLess(len(packed), len(plain))
+        self.assertEqual(gzip.decompress(packed), plain)
+        for refuse in ("identity", "gzip;q=0", "br"):
+            self.assertNotIn("Content-Encoding", self.raw("/queue", **{"Accept-Encoding": refuse})[1], refuse)
+        _, headers, _ = self.raw("/static/niwa.css", **{"Accept-Encoding": "gzip"})        # versioned files too, cache headers kept
+        self.assertEqual(headers["Content-Encoding"], "gzip")
+        self.assertIn("max-age", headers["Cache-Control"])
+        _, headers, body = self.raw("/manifest.webmanifest", **{"Accept-Encoding": "gzip"})
+        self.assertIn("Sec-CH-Prefers-Color-Scheme", headers["Vary"])                       # one Vary, merged
+        self.assertIn("Accept-Encoding", headers["Vary"])
+        self.assertEqual(len(headers.get_all("Vary")), 1)
+
+    def test_a_small_body_and_a_binary_are_left_alone(self):
+        _, headers, _ = self.raw("/api/status", **{"Accept-Encoding": "gzip"})
+        self.assertNotIn("Content-Encoding", headers)                              # under 1 KB: not worth it
+        _, headers, _ = self.raw("/static/icons/niwa-192.png", **{"Accept-Encoding": "gzip"})
+        self.assertNotIn("Content-Encoding", headers)
+
+    def test_big_compressed_bodies_are_kept_not_recompressed(self):
+        big = (b"x" * 100 + b"\n") * 4000
+        niwa.GZ_CACHE.clear()
+        first = niwa.gzip_cached(big)
+        self.assertIs(niwa.gzip_cached(big), first)
+        for i in range(niwa.GZ_KEEP + 3):
+            niwa.gzip_cached(bytes([i]) * (niwa.GZ_BIG + 1))
+        self.assertLessEqual(len(niwa.GZ_CACHE), niwa.GZ_KEEP)
+
+    def test_the_scan_runs_once_per_text(self):
+        g = niwa.garden
+        g.index()
+        n = next(x for x in g.notes.values() if not x.published)
+        first = g.scan_hits(n)
+        self.assertIs(g.scan_hits(n), first)                                       # the Queue scans every note, every view
+        old = n.text
+        try:
+            n.text = old + "\nA stray address 192.168.4.5 in the text.\n"
+            changed = g.scan_hits(n)
+            self.assertIsNot(changed, first)
+            self.assertTrue(any(label == "LAN or tailnet address" for _, label, _ in changed))
+        finally:
+            n.text = old
+        self.assertEqual(g.scan_hits(n), first)
+
+    def test_the_vault_is_indexed_once_for_everyone_who_asks_after_a_pull(self):
+        from vaultkit.vault import Vault
+        g, calls, real = niwa.garden, [], Vault.index
+        g.index()
+        revision = g.revision
+
+        def slow_index(self):
+            calls.append(threading.current_thread().name)
+            time.sleep(0.3)                     # long enough for every thread below to be waiting on the lock
+            return real(self)
+        try:
+            with mock.patch.object(Vault, "index", slow_index):
+                g.revision = revision + "-pulled"
+                threads = [threading.Thread(target=g.published) for _ in range(8)]
+                [t.start() for t in threads]
+                [t.join(30) for t in threads]
+            self.assertEqual(len(calls), 1, calls)
+            self.assertEqual(g._applied, revision + "-pulled")                     # holds worked out before anyone is let in
+            with mock.patch.object(Vault, "index", slow_index):
+                calls.clear()
+                niwa.on_pull(revision + "-again")                                  # the sync thread indexes, not a request
+                self.assertEqual((len(calls), g._applied), (1, revision + "-again"))
+                g.published()
+                self.assertEqual(len(calls), 1)
+        finally:
+            g.revision = revision
+            g.index()
+
+
 class LogTest(unittest.TestCase):
     """A log line names the request without its query: search terms and sign-in codes are the visitor's, not the log's."""
     def test_log_line_drops_the_query(self):
@@ -2757,7 +2853,7 @@ class PublicGardenTest(unittest.TestCase):
         niwa.state.links_version += 1
         niwa.garden.revision += "x"
 
-    def get(self, path, method="GET", headers=()):
+    def get(self, path, method="GET", headers=(), raw=False):
         import socket
         head = "".join("%s: %s\r\n" % kv for kv in (("Host", "evil.example"),) + tuple(headers))
         with socket.create_connection(("127.0.0.1", self.port), timeout=10) as c:
@@ -2775,7 +2871,17 @@ class PublicGardenTest(unittest.TestCase):
             if ": " in line:
                 k, v = line.split(": ", 1)
                 hdrs.setdefault(k.lower(), []).append(v)
-        return int(lines[0].split()[1]), hdrs, rest.decode("utf-8", "replace")
+        return int(lines[0].split()[1]), hdrs, rest if raw else rest.decode("utf-8", "replace")
+
+    def test_the_public_garden_is_gzipped_too(self):
+        import gzip
+        hdrs = (("Accept-Encoding", "gzip"),)
+        _, h, plain = self.get("/")
+        _, hz, packed = self.get("/", headers=hdrs, raw=True)
+        self.assertEqual(hz["content-encoding"], ["gzip"])
+        self.assertNotIn("content-encoding", h)
+        self.assertNotIn("set-cookie", hz)
+        self.assertEqual(gzip.decompress(packed).decode("utf-8", "replace"), plain)
 
     def test_the_public_listener_logs_no_query(self):
         err = io.StringIO()
