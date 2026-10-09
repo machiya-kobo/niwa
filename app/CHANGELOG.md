@@ -3,6 +3,13 @@
 Niwa follows [SemVer](https://semver.org). Before 1.0, a new feature, a changed default or setting, or a changed API
 field is a minor bump, and a fix or wording change is a patch. Settings are listed in the README.
 
+## 0.14.1
+
+Hardening from CodeQL's review (nothing was exploitable).
+
+- The `/theme` redirect builds its target with `websafe.location`: a local path, percent-encoded, never `//host` or `/\host`. It no longer depends on `urlsplit` dropping CR and LF from a folded Referer.
+- Every response header, cookies included, goes through `websafe.header_value` before anything is written, on the owner's and the public port. A CR, LF, NUL or other control character in a header value now gives a plain 500 and never a second header.
+
 ## 0.14.0
 
 vaultkit 0.29.0 (the sign-in hardening, owner decisions 2026-10-08).

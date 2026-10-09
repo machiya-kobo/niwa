@@ -52,7 +52,7 @@ from vaultkit import read_secret  # noqa: E402
 from vaultkit import signin  # noqa: E402
 from writer import Writer, WriteError  # noqa: E402
 
-VERSION = "0.14.0"
+VERSION = "0.14.1"
 PORT = int(os.environ.get("NIWA_PORT", "8080"))
 USERS = set(filter(None, (u.strip() for u in os.environ.get("NIWA_USERS", "").split(","))))
 
@@ -218,6 +218,27 @@ def gzip_cached(data):
             GZ_CACHE.pop(next(iter(GZ_CACHE)), None)
         GZ_CACHE[key] = packed
     return packed
+
+
+def safe_headers(pairs):
+    """The response's (name, value) pairs, each checked with websafe.header_value: a CR, LF, NUL or other control
+    character (request text that reached a header, a folded Referer) raises ValueError, so it never ends a header and
+    starts another."""
+    return [(websafe.header_value(k), websafe.header_value(v)) for k, v in pairs]
+
+
+def refuse_header(handler):
+    """What the handler sends when a header value was refused: a plain 500, nothing from the bad value."""
+    print("niwa: refused a response header with a control character (%s)" % log_line("%s", (getattr(handler, "path", ""),)),
+          file=sys.stderr, flush=True)
+    body = b"internal error\n"
+    handler.send_response(500)
+    for k, v in (("Content-Type", "text/plain; charset=utf-8"), ("Content-Length", str(len(body))), ("Connection", "close")):
+        handler.send_header(k, v)
+    handler.end_headers()
+    handler.close_connection = True
+    if handler.command != "HEAD":
+        handler.wfile.write(body)
 
 
 def log_line(fmt, args):
@@ -579,18 +600,22 @@ def make_handler(listener):
 
         def reply(self, status, headers, body):
             """A vaultkit.signin or histerauth answer: (status, [(header, value)], bytes)."""
-            self.send_response(status)
-            for k, v in headers:
-                self.send_header(k, v)
+            out = list(headers)
             if any(k.lower() == "content-type" and v.startswith("text/html") for k, v in headers):
-                for k, v in shell.house.security_headers():     # the sign-in pages: Niwa's CSP on top of theirs
-                    self.send_header(k, v)
-            self.send_header("Content-Length", str(len(body)))
+                out += shell.house.security_headers()     # the sign-in pages: Niwa's CSP on top of theirs
+            out.append(("Content-Length", str(len(body))))
+            if status == 413:
+                out.append(("Connection", "close"))
+            out += [("Set-Cookie", c) for c in self.session_cookies(headers)]
+            try:
+                out = safe_headers(out)
+            except ValueError:
+                return refuse_header(self)
             if status == 413:
                 self.close_connection = True
-                self.send_header("Connection", "close")
-            for c in self.session_cookies(headers):
-                self.send_header("Set-Cookie", c)          # a renewed session, or a bad one cleared
+            self.send_response(status)
+            for k, v in out:
+                self.send_header(k, v)
             self.end_headers()
             if self.command != "HEAD":
                 self.wfile.write(body)
@@ -684,21 +709,20 @@ def make_handler(listener):
             else:
                 data = body
             data, headers = gzipped(self.headers, data, ctype, headers)
-            self.send_response(status)
-            self.send_header("Content-Type", ctype)
-            self.send_header("Content-Length", str(len(data)))
+            out = [("Content-Type", ctype), ("Content-Length", str(len(data)))]
             if status == 413:
-                self.send_header("Connection", "close")
-            if ctype.startswith("text/html"):           # every page: the CSP (no inline script), nosniff, Referrer
-                for k, v in shell.house.security_headers():
-                    self.send_header(k, v)
-            else:
-                for k, v in websafe.base_headers():          # nosniff, SAMEORIGIN, Referrer-Policy: every response
-                    self.send_header(k, v)
-            for k, v in headers:
+                out.append(("Connection", "close"))
+            # every page: the CSP (no inline script), nosniff, Referrer; every other response: nosniff, SAMEORIGIN, Referrer-Policy
+            out += shell.house.security_headers() if ctype.startswith("text/html") else websafe.base_headers()
+            out += list(headers)
+            out += [("Set-Cookie", c) for c in self.session_cookies(headers)]      # a renewed session, or a bad one cleared
+            try:
+                out = safe_headers(out)
+            except ValueError:
+                return refuse_header(self)
+            self.send_response(status)
+            for k, v in out:
                 self.send_header(k, v)
-            for c in self.session_cookies(headers):
-                self.send_header("Set-Cookie", c)          # a renewed session, or a bad one cleared
             self.end_headers()
             if self.command != "HEAD":
                 self.wfile.write(data)
@@ -782,9 +806,7 @@ def make_handler(listener):
                 theme = (query.get("set") or ["system"])[0]
                 theme = {"auto": "system"}.get(theme, theme)
                 theme = theme if theme in ("night", "day", "system") else "system"
-                back = urlsplit(self.headers.get("Referer") or "").path
-                if not back.startswith("/") or back[1:2] in ("/", "\\"):     # //host and /\host leave the site
-                    back = "/"
+                back = websafe.location(urlsplit(self.headers.get("Referer") or "").path)     # same site only, percent-encoded
                 return self.send(302, "", "text/plain", headers=[
                     ("Location", back), ("Set-Cookie", "theme=%s; path=/; max-age=31536000" % theme)])
             self.garden_get(path, "", query, ctx)
@@ -1043,14 +1065,17 @@ def make_public_handler():
             if isinstance(body, str):
                 body, ctype = body.encode("utf-8"), ctype + "; charset=utf-8"
             body, headers = gzipped(self.headers, body, ctype, headers)
-            self.send_response(status)
-            self.send_header("Content-Type", ctype)
-            self.send_header("Content-Length", str(len(body)))
-            for k, v in (shell.house.security_headers() if ctype.startswith("text/html") else websafe.base_headers()):
-                self.send_header(k, v)
+            out = [("Content-Type", ctype), ("Content-Length", str(len(body)))]
+            out += shell.house.security_headers() if ctype.startswith("text/html") else websafe.base_headers()
             if NOINDEX:
-                self.send_header("X-Robots-Tag", "noindex")
-            for k, v in headers:
+                out.append(("X-Robots-Tag", "noindex"))
+            out += list(headers)
+            try:
+                out = safe_headers(out)
+            except ValueError:
+                return refuse_header(self)
+            self.send_response(status)
+            for k, v in out:
                 self.send_header(k, v)
             self.end_headers()
             if self.command != "HEAD":

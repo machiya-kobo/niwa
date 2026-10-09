@@ -1676,6 +1676,52 @@ class HardeningTest(unittest.TestCase):
             status, headers, _ = raw("GET", "/theme?set=day", [user, ("Referer", referer)])
             self.assertEqual((status, headers.get("Location")), (302, back), referer)
 
+    def head_of(self, path, headers):
+        """The raw response head as lines (a dict would hide a second Set-Cookie)."""
+        import socket
+        head = "".join("%s: %s\r\n" % kv for kv in headers)
+        with socket.create_connection(("127.0.0.1", SERVER.server_address[1]), timeout=10) as c:
+            c.sendall(("GET %s HTTP/1.0\r\n%s\r\n" % (path, head)).encode("utf-8"))
+            data = b""
+            while True:
+                chunk = c.recv(65536)
+                if not chunk:
+                    break
+                data += chunk
+        return data.partition(b"\r\n\r\n")[0].decode("latin-1").split("\r\n")
+
+    def test_a_folded_referer_cannot_split_the_theme_redirect(self):
+        user = ("Tailscale-User-Login", "owner@test")
+        lines = self.head_of("/theme?set=day", [user, ("Referer", "http://h/a\r\n Set-Cookie: evil=1")])
+        self.assertTrue(lines[0].startswith("HTTP/1.0 302"), lines[0])
+        self.assertEqual([l for l in lines if l.lower().startswith("set-cookie:")],
+                         ["Set-Cookie: theme=day; path=/; max-age=31536000"])        # one cookie, and it's ours
+        location = [l for l in lines if l.startswith("Location:")]
+        self.assertEqual(location, ["Location: /a%20Set-Cookie:%20evil=1"])          # a path: spaces percent-encoded, no line break, no header
+        self.assertFalse([l for l in lines if l.lower().startswith("evil")])
+        self.assertFalse([l for l in lines[1:] if l.startswith(" ")])                # no folded continuation line either
+
+    def test_a_referer_with_a_space_or_non_ascii_is_percent_encoded(self):
+        user = ("Tailscale-User-Login", "owner@test")
+        for referer, back in (("http://h/a b/c", "/a%20b/c"), ("http://h/\u00fc/x", "/%C3%83%C2%BC/x"),
+                              ("http://h/tags?q=1", "/tags")):     # the query goes, as before; the header bytes read as latin-1
+            lines = self.head_of("/theme?set=night", [user, ("Referer", referer)])
+            self.assertEqual([l for l in lines if l.startswith("Location:")], ["Location: " + back], referer)
+
+    def test_a_header_value_with_a_line_break_never_reaches_the_wire(self):
+        user = {"Tailscale-User-Login": "owner@test"}
+        for name, value in (("X-Test", "a\r\nInjected: 1"), ("Set-Cookie", "a=b\r\nInjected: 1"), ("X-Test", "a\nInjected: 1"),
+                            ("X-Test", "a\x00b")):
+            with mock.patch.object(niwa, "static_file", lambda n, q: (200, "body", "text/css", [(name, value)])):
+                status, headers, body = raw("GET", "/static/niwa.css", list(user.items()))
+            self.assertEqual(status, 500, (name, value))
+            self.assertNotIn("Injected", headers)
+            self.assertNotIn("Set-Cookie", headers)
+            self.assertNotIn("X-Test", headers)
+            self.assertEqual(body, "internal error\n")
+        status, headers, _ = raw("GET", "/static/niwa.css", list(user.items()))        # and a normal answer is as before
+        self.assertEqual(status, 200)
+
     def test_status_keeps_addresses_and_credentials_to_the_owner(self):
         from konbini import Konbini
         self.assertEqual(niwa.redact("fatal: https://user:tok@git.test/v.git and git@git.test:v.git"),
@@ -2914,6 +2960,14 @@ class PublicGardenTest(unittest.TestCase):
         self.assertNotIn("content-encoding", h)
         self.assertNotIn("set-cookie", hz)
         self.assertEqual(gzip.decompress(packed).decode("utf-8", "replace"), plain)
+
+    def test_a_header_value_with_a_line_break_never_reaches_the_wire_on_the_public_port_either(self):
+        with mock.patch.object(niwa, "static_file", lambda n, q: (200, "body", "text/css", [("X-Test", "a\r\nInjected: 1")])):
+            status, hdrs, body = self.get("/static/niwa.css")
+        self.assertEqual((status, body), (500, "internal error\n"))
+        self.assertNotIn("injected", hdrs)
+        self.assertNotIn("x-test", hdrs)
+        self.assertEqual(self.get("/static/niwa.css")[0], 200)
 
     def test_the_public_listener_logs_no_query(self):
         err = io.StringIO()
