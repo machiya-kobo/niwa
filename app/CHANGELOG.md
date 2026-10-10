@@ -3,6 +3,14 @@
 Niwa follows [SemVer](https://semver.org). Before 1.0, a new feature, a changed default or setting, or a changed API
 field is a minor bump, and a fix or wording change is a patch. Settings are listed in the README.
 
+## 0.15.0
+
+vaultkit 0.30.1 (the one-row header, owner decision 2026-10-10).
+
+- **The search pill moves into the top bar from 1100px**, centered between the tabs and the icons, on the owner's garden and on the public one. Narrower, and on phones, it stays the second row under the top bar. The markup is unchanged.
+- A long note title in the header is cut with an ellipsis, so the top bar stays one row. The icons stay at the right.
+- The shared script sets `--hdr-h` (the header's height) on the page.
+
 ## 0.14.2
 
 Base images re-pinned to the current digests (security fixes in the base layers).

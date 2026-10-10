@@ -3008,6 +3008,29 @@ class PublicGardenTest(unittest.TestCase):
         _, _, rss = self.get("/feed.xml")
         self.assertIn("<link>https://garden.example/n/", rss)                    # NIWA_GARDEN_URL, never Host
 
+    def test_the_header_keeps_the_markup_machiya_css_lays_out_as_one_row(self):
+        """From 1100px machiya.css makes .topbar's children the header's own items (display: contents) and seats the
+        .searchrow between the tabs and the tools, and caps .topbar > .subtitle: the owner's header and the public one
+        (empty tools) both need that shape, and the subtitle a note's title."""
+        for path in ("/", "/n/Notes/Public%20lantern", "/search?q=lantern"):
+            for who, body in (("owner", req(path)[1]), ("public", self.get(path)[2])):
+                head = body[body.index('<header class="top">'):body.index("</header>")]
+                self.assertTrue(head.startswith('<header class="top"><div class="topbar"><a class="brand" href="/">'), (who, path))
+                self.assertIn('</nav><div class="tools">', head)
+                self.assertEqual(head.count('<div class="searchrow"><form class="search searchbar"'), 1, (who, path))
+                self.assertIn('</div></div><div class="searchrow">', head)      # tools close, the top bar closes, then the pill
+                if "subtitle" in head:
+                    self.assertLess(head.index('class="subtitle"'), head.index('<nav class="nav">'), (who, path))
+        head = self.get("/")[2]
+        head = head[head.index('<header class="top">'):head.index("</header>")]
+        self.assertIn('<div class="tools"></div>', head)                        # nothing of the owner's tools
+        for gone in ("rooms", "iconbtn", "/settings", "/queue"):
+            self.assertNotIn(gone, head)
+        owner = req("/")[1]
+        self.assertIn('class="iconbtn gear"', owner[owner.index('<header class="top">'):owner.index("</header>")])
+        note = self.get("/n/Notes/Public%20lantern")[2]
+        self.assertIn('<span class="subtitle">Public lantern</span>', note[note.index('<header class="top">'):])
+
     def test_a_live_link_keeps_its_original_with_an_archive_link_beside_it(self):
         want = ('<a href="https://live.example/y">the live page</a> <a class="arch" title="Archived copy from 2026-09-02" '
                 'href="https://web.archive.org/web/2026/https://live.example/y">archive.org</a>')
