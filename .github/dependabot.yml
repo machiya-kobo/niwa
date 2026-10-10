@@ -1,0 +1,23 @@
+# Version updates for what Dependabot can see: the pinned GitHub Actions and the Dockerfile base-image digests
+# (python, hister). The pip installs are inline in the Dockerfile, so they are not covered here.
+# Dependabot only opens PRs; merging one means pulling it onto main like any other commit (tests green first).
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "niwa: "
+    groups:
+      actions:
+        patterns: ["*"]
+  - package-ecosystem: docker
+    directory: /app
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "niwa: "
+    groups:
+      base-images:
+        patterns: ["*"]
