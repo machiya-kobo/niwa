@@ -3,6 +3,10 @@
 Niwa follows [SemVer](https://semver.org). Before 1.0, a new feature, a changed default or setting, or a changed API
 field is a minor bump, and a fix or wording change is a patch. Settings are listed in the README.
 
+## 0.14.2
+
+Base images re-pinned to the current digests (security fixes in the base layers).
+
 ## 0.14.1
 
 Hardening from CodeQL's review (nothing was exploitable).
