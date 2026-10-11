@@ -436,6 +436,10 @@ class ReadTest(unittest.TestCase):
         install = core.split('addEventListener("install"', 1)[1].split("});", 1)[0]
         self.assertNotIn("self.skipWaiting", install)                           # waits for the toast
         self.assertIn('type === "SKIP_WAITING") self.skipWaiting()', core)
+        _, js = req("/static/machiya.js")                                       # v0.31.1: a refresh is a yes to the waiting version
+        self.assertIn('.type === "reload"', js)
+        self.assertIn('reg.waiting.postMessage({ type: "SKIP_WAITING" })', js)
+        self.assertIn("toast(reg.waiting)", js)                                 # and the toast stays for a visit that wasn't a refresh
 
     def test_offline_reading(self):
         self.assertEqual(json.loads(req("/api/offline")[1]), {"urls": ["/n/MOC/Crafts"]})   # Archive/ never

@@ -3,6 +3,12 @@
 Niwa follows [SemVer](https://semver.org). Before 1.0, a new feature, a changed default or setting, or a changed API
 field is a minor bump, and a fix or wording change is a patch. Settings are listed in the README.
 
+## 0.15.2
+
+vaultkit 0.31.1 (owner decision 2026-10-11).
+
+- **Refreshing the page, plain or hard, applies a waiting new version**, as the "New Version · Reload" button does. Before, the toast came back after a refresh. The toast stays. A plain refresh then loads once more by itself; a hard one doesn't need to.
+
 ## 0.15.1
 
 vaultkit 0.31.0 (the header's one row, owner decision 2026-10-11).
