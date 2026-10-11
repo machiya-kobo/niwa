@@ -3,6 +3,12 @@
 Niwa follows [SemVer](https://semver.org). Before 1.0, a new feature, a changed default or setting, or a changed API
 field is a minor bump, and a fix or wording change is a patch. Settings are listed in the README.
 
+## 0.15.3
+
+vaultkit 0.31.2 (owner decision 2026-10-11).
+
+- **The search pill is three quarters as wide from 1100px** (at most 420px, was 560px). The Rooms menu and the gear stay where they were, and so does the pill's right edge. Narrower, and on phones, nothing changes.
+
 ## 0.15.2
 
 vaultkit 0.31.1 (owner decision 2026-10-11).

@@ -3044,7 +3044,9 @@ class PublicGardenTest(unittest.TestCase):
                       css)
         shared = os.path.join(os.path.dirname(__file__), "..", "app", "vaultkit", "ui", "machiya.css")
         with open(shared) as f:
-            self.assertIn(".topbar > .subtitle { flex: 0 1 auto; max-width: clamp(96px, 14vw, 320px); }", f.read())
+            shared_css = f.read()
+        self.assertIn(".topbar > .subtitle { flex: 0 1 auto; max-width: clamp(96px, 14vw, 320px); }", shared_css)
+        self.assertIn("width: clamp(180px, 75vw - 540px, 420px); min-width: 150px;", shared_css)     # the pill, v0.31.2
 
     def test_a_live_link_keeps_its_original_with_an_archive_link_beside_it(self):
         want = ('<a href="https://live.example/y">the live page</a> <a class="arch" title="Archived copy from 2026-09-02" '
