@@ -3,6 +3,13 @@
 Niwa follows [SemVer](https://semver.org). Before 1.0, a new feature, a changed default or setting, or a changed API
 field is a minor bump, and a fix or wording change is a patch. Settings are listed in the README.
 
+## 0.15.1
+
+vaultkit 0.31.0 (the header's one row, owner decision 2026-10-11).
+
+- **The header row reads brand, title and tabs; then the search pill; then the Rooms menu and the gear.** From 1100px the pill's width depends only on the window, so the pill and the icons sit in the same place in every room. Narrower, and on phones, nothing changes. The public garden keeps its header without tools.
+- In an installed app, the back button's width comes off the title's room from 1100px, so a long note title no longer pushes the icons onto a second line.
+
 ## 0.15.0
 
 vaultkit 0.30.1 (the one-row header, owner decision 2026-10-10).

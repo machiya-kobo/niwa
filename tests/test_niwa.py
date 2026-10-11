@@ -3031,6 +3031,17 @@ class PublicGardenTest(unittest.TestCase):
         note = self.get("/n/Notes/Public%20lantern")[2]
         self.assertIn('<span class="subtitle">Public lantern</span>', note[note.index('<header class="top">'):])
 
+    def test_the_installed_apps_back_button_shortens_the_title_so_the_one_row_header_holds(self):
+        """machiya.css caps .topbar > .subtitle at clamp(96px, 14vw, 320px) from 1100px; niwa.js prepends a 36px back
+        button in an installed app (and it takes a 16px gap with a -8px margin), so niwa.css takes 44px off the cap there."""
+        with open(os.path.join(os.path.dirname(__file__), "..", "app", "static", "niwa.css")) as f:
+            css = f.read()
+        self.assertIn("@media (min-width: 1100px) { .topbar > .back ~ .subtitle { max-width: calc(clamp(96px, 14vw, 320px) - 44px); } }",
+                      css)
+        shared = os.path.join(os.path.dirname(__file__), "..", "app", "vaultkit", "ui", "machiya.css")
+        with open(shared) as f:
+            self.assertIn(".topbar > .subtitle { flex: 0 1 auto; max-width: clamp(96px, 14vw, 320px); }", f.read())
+
     def test_a_live_link_keeps_its_original_with_an_archive_link_beside_it(self):
         want = ('<a href="https://live.example/y">the live page</a> <a class="arch" title="Archived copy from 2026-09-02" '
                 'href="https://web.archive.org/web/2026/https://live.example/y">archive.org</a>')

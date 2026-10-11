@@ -139,6 +139,9 @@ li.qrow { display: flex; gap: var(--sp-3); align-items: flex-start; }
 @media (display-mode: standalone) { .banner.hint { display: none; } }
 .back { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; margin-left: -8px;
   border-radius: var(--r-m); background: transparent; color: var(--fg); font-size: 26px; line-height: 1; padding: 0 0 3px; }
+/* The one-row header (machiya.css, from 1100px) fits a title of up to 14vw: the back button's 44px come off it, so the
+   tools stay on the row in an installed app. */
+@media (min-width: 1100px) { .topbar > .back ~ .subtitle { max-width: calc(clamp(96px, 14vw, 320px) - 44px); } }
 
 /* ---- phones -------------------------------------------------------------------------------------------------- */
 @media (max-width: 760px) {
