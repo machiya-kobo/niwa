@@ -3,6 +3,14 @@
 Niwa follows [SemVer](https://semver.org). Before 1.0, a new feature, a changed default or setting, or a changed API
 field is a minor bump, and a fix or wording change is a patch. Settings are listed in the README.
 
+## 0.15.4
+
+vaultkit 0.31.3 (owner decision 2026-10-11).
+
+- From 1100px the search field's text is the tabs' size and weight; on phones and below 1100px it stays 16px, so iOS doesn't zoom in.
+- The field is the height of Shiori Search's (44.4px), and focused it shows one solid ring on its edge instead of the border plus a second ring outside it.
+- On a page shorter than the window (a filter that leaves one card, an empty tag), the footer sits at the bottom of the window. On a longer page it stays right after the content.
+
 ## 0.15.3
 
 vaultkit 0.31.2 (owner decision 2026-10-11).

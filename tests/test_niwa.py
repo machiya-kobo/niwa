@@ -3047,6 +3047,13 @@ class PublicGardenTest(unittest.TestCase):
             shared_css = f.read()
         self.assertIn(".topbar > .subtitle { flex: 0 1 auto; max-width: clamp(96px, 14vw, 320px); }", shared_css)
         self.assertIn("width: clamp(180px, 75vw - 540px, 420px); min-width: 150px;", shared_css)     # the pill, v0.31.2
+        self.assertIn("form.search.searchbar input:focus-visible { outline: 2px solid var(--room); outline-offset: -2px; }",
+                      shared_css)                                                        # one ring on the edge, v0.31.3
+        self.assertIn("header.top > .searchrow form.search.searchbar input { font-size: var(--fs-s); font-weight: 500;", shared_css)
+        with open(os.path.join(os.path.dirname(__file__), "..", "app", "vaultkit", "ui", "machiya.js")) as f:
+            self.assertIn('foot.style.marginTop = parseFloat(getComputedStyle(foot).marginTop) + gap + "px"', f.read())   # v0.31.3
+        with open(os.path.join(os.path.dirname(__file__), "..", "app", "static", "niwa.css")) as f:
+            self.assertNotIn(".foot", f.read())                                          # the footer's place is machiya.js's
 
     def test_a_live_link_keeps_its_original_with_an_archive_link_beside_it(self):
         want = ('<a href="https://live.example/y">the live page</a> <a class="arch" title="Archived copy from 2026-09-02" '
