@@ -3049,7 +3049,8 @@ class PublicGardenTest(unittest.TestCase):
         self.assertIn("width: clamp(180px, 75vw - 540px, 420px); min-width: 150px;", shared_css)     # the pill, v0.31.2
         self.assertIn("form.search.searchbar input:focus-visible { outline: 2px solid var(--room); outline-offset: -2px; }",
                       shared_css)                                                        # one ring on the edge, v0.31.3
-        self.assertIn("header.top > .searchrow form.search.searchbar input { font-size: var(--fs-s); font-weight: 500;", shared_css)
+        self.assertIn("header.top > .searchrow form.search.searchbar input { font-size: 15px; }", shared_css)    # v0.31.4
+        self.assertIn("form.search.searchbar input { width: 100%; max-width: none; height: 38px;", shared_css)   # a fixed 38px
         with open(os.path.join(os.path.dirname(__file__), "..", "app", "vaultkit", "ui", "machiya.js")) as f:
             self.assertIn('foot.style.marginTop = parseFloat(getComputedStyle(foot).marginTop) + gap + "px"', f.read())   # v0.31.3
         with open(os.path.join(os.path.dirname(__file__), "..", "app", "static", "niwa.css")) as f:

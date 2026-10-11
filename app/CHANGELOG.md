@@ -3,6 +3,13 @@
 Niwa follows [SemVer](https://semver.org). Before 1.0, a new feature, a changed default or setting, or a changed API
 field is a minor bump, and a fix or wording change is a patch. Settings are listed in the README.
 
+## 0.15.5
+
+vaultkit 0.31.4 (owner decision 2026-10-11, from Safari).
+
+- **The search field is a fixed 38px tall at every width**, so no font or line height changes it (it was 44px). The one-row header is 51px and the phone header 99px.
+- From 1100px the field's text is 15px (the 13px of 0.15.4 read too small). Phones keep 16px, so iOS doesn't zoom in.
+
 ## 0.15.4
 
 vaultkit 0.31.3 (owner decision 2026-10-11).
