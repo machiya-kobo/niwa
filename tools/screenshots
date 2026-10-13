@@ -7,8 +7,9 @@
 
 Copies the sample vault into a throwaway git repository (tools/demo-vault, with a bare remote), starts Niwa on it in the
 background (NIWA_AUTH=open, 127.0.0.1, a free web port, TZ=UTC), takes the shots with Playwright's Chromium, and stops
-Niwa: the desk, the garden (Visitor View), a note, the queue and the stream at 1280x800 in light and dark, and the desk,
-the garden and a note at phone width (390x844). PNGs are written as <out_dir>/niwa-<what>-<light|dark>.png and squeezed
+Niwa: the desk, a note, the queue and the stream at 1280x800 in light and dark, and the desk and a note at phone width
+(390x844). Then it starts Niwa again with the public garden on (NIWA_PUBLIC_PORT) and takes the garden's home from it,
+as visitors see it, at both sizes. PNGs are written as <out_dir>/niwa-<what>-<light|dark>.png and squeezed
 to a small palette when they are over 200 KB. Nothing but the sample vault is ever shown. Niwa's gemini and gopher listeners need ports 1965 and 7070
 free (the web pages work without them).
 
@@ -36,13 +37,16 @@ PHONE = {"width": 390, "height": 844}
 THEMES = {"light": ("day", "light"), "dark": ("night", "dark")}      # name -> (the theme cookie, browser colour scheme)
 SHOTS = [                      # (what, path, viewport, themes)
     ("desk", "/", DESKTOP, ("light", "dark")),
-    ("garden", "/visit", DESKTOP, ("light", "dark")),
     ("note", "/n/Notes/Chochin%20folding", DESKTOP, ("light", "dark")),
     ("queue", "/queue", DESKTOP, ("light", "dark")),
     ("stream", "/stream", DESKTOP, ("light", "dark")),
     ("desk-phone", "/", PHONE, ("light",)),
-    ("garden-phone", "/visit", PHONE, ("light", "dark")),
     ("note-phone", "/n/Notes/Chochin%20folding", PHONE, ("light",)),
+]
+# from the public garden, without the owner's Visitor View banner; a run of its own, so the desk shows the garden off
+PUBLIC_SHOTS = [
+    ("garden", "/", DESKTOP, ("light", "dark")),
+    ("garden-phone", "/", PHONE, ("light", "dark")),
 ]
 
 
@@ -54,10 +58,60 @@ def squeeze(path):
     im.save(path, optimize=True)
 
 
-def main():
+def free_port():
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
-        port = s.getsockname()[1]
+        return s.getsockname()[1]
+
+
+def start(work, env, port):
+    """Start Niwa in the background and wait until it is ready; returns the process."""
+    server = subprocess.Popen([sys.executable, os.path.join(ROOT, "app", "niwa.py")], env=env, start_new_session=True,
+                              stdout=open(os.path.join(work, "log"), "a"), stderr=subprocess.STDOUT)
+    for _ in range(120):
+        try:
+            if b'"ready": true' in urllib.request.urlopen("http://127.0.0.1:%d/api/status" % port, timeout=2).read():
+                return server
+        except OSError:
+            pass
+        time.sleep(0.5)
+    stop(server)
+    sys.exit("screenshots: Niwa did not start; see %s/log" % work)
+
+
+def stop(server):
+    try:
+        os.killpg(server.pid, signal.SIGTERM)
+        server.wait(timeout=30)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+
+
+def shoot(browser, base, shots):
+    for what, path, viewport, themes in shots:
+        for theme in themes:
+            cookie, scheme = THEMES[theme]
+            kw = dict(viewport=viewport, device_scale_factor=1, color_scheme=scheme, service_workers="block")
+            if viewport is PHONE:
+                kw.update(is_mobile=True, has_touch=True, device_scale_factor=2)
+            ctx = browser.new_context(**kw)
+            ctx.add_cookies([{"name": "theme", "value": cookie, "url": base}])
+            # no preference sync: an earlier shot's theme, saved through /api/prefs, would win over the cookie
+            ctx.route("**/api/prefs", lambda route: route.abort())
+            page = ctx.new_page()
+            page.goto(base + path, wait_until="load")
+            page.wait_for_timeout(700)
+            stem = what.replace("-phone", "")
+            fname = "niwa-%s%s-%s.png" % (stem, "-phone" if what.endswith("-phone") else "", theme)
+            target = os.path.join(OUT, fname)
+            page.screenshot(path=target)
+            ctx.close()
+            squeeze(target)
+            print("%-30s %6.0f KB" % (fname, os.path.getsize(target) / 1024))
+
+
+def main():
+    port = free_port()
     work = tempfile.mkdtemp(prefix="niwa-shots-", dir=os.environ.get("SHOTS_TMP", "/var/tmp"))
     server = None
     try:
@@ -67,50 +121,23 @@ def main():
                    NIWA_REPO_SUBDIR="personal", NIWA_DB=os.path.join(work, "n.sqlite3"), NIWA_AUTH="open",
                    NIWA_BIND="127.0.0.1", NIWA_PORT=str(port), NIWA_HOST="localhost", TZ="UTC", PYTHONDONTWRITEBYTECODE="1",
                    NIWA_ARCHIVE="none")       # the sample's links never go to archive.org
-        for k in [k for k in env if k.startswith(("NIWA_KONBINI", "NIWA_KURA", "NIWA_HISTER", "MACHIYA_"))]:
+        for k in [k for k in env if k.startswith(("NIWA_KONBINI", "NIWA_KURA", "NIWA_HISTER", "MACHIYA_", "NIWA_PUBLIC",
+                                                  "NIWA_GARDEN_URL"))]:
             del env[k]
-        server = subprocess.Popen([sys.executable, os.path.join(ROOT, "app", "niwa.py")], env=env, start_new_session=True,
-                                  stdout=open(os.path.join(work, "log"), "w"), stderr=subprocess.STDOUT)
-        base = "http://127.0.0.1:%d" % port
-        for _ in range(120):
-            try:
-                if b'"ready": true' in urllib.request.urlopen(base + "/api/status", timeout=2).read():
-                    break
-            except OSError:
-                pass
-            time.sleep(0.5)
-        else:
-            sys.exit("screenshots: Niwa did not start; see %s/log" % work)
         os.makedirs(OUT, exist_ok=True)
         with sync_playwright() as p:
             browser = p.chromium.launch()
-            for what, path, viewport, themes in SHOTS:
-                for theme in themes:
-                    cookie, scheme = THEMES[theme]
-                    kw = dict(viewport=viewport, device_scale_factor=1, color_scheme=scheme, service_workers="block")
-                    if viewport is PHONE:
-                        kw.update(is_mobile=True, has_touch=True, device_scale_factor=2)
-                    ctx = browser.new_context(**kw)
-                    ctx.add_cookies([{"name": "theme", "value": cookie, "url": base}])
-                    # no preference sync: an earlier shot's theme, saved through /api/prefs, would win over the cookie
-                    ctx.route("**/api/prefs", lambda route: route.abort())
-                    page = ctx.new_page()
-                    page.goto(base + path, wait_until="load")
-                    page.wait_for_timeout(700)
-                    stem = what.replace("-phone", "")
-                    fname = "niwa-%s%s-%s.png" % (stem, "-phone" if what.endswith("-phone") else "", theme)
-                    target = os.path.join(OUT, fname)
-                    page.screenshot(path=target)
-                    ctx.close()
-                    squeeze(target)
-                    print("%-30s %6.0f KB" % (fname, os.path.getsize(target) / 1024))
+            server = start(work, env, port)
+            shoot(browser, "http://127.0.0.1:%d" % port, SHOTS)
+            stop(server)
+            public = free_port()
+            env.update(NIWA_PUBLIC_PORT=str(public), NIWA_GARDEN_URL="https://garden.example.com")
+            server = start(work, env, port)
+            shoot(browser, "http://127.0.0.1:%d" % public, PUBLIC_SHOTS)
             browser.close()
     finally:
         if server:
-            try:
-                os.killpg(server.pid, signal.SIGTERM)
-            except OSError:
-                pass
+            stop(server)
         shutil.rmtree(work, ignore_errors=True)
 
 

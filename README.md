@@ -10,7 +10,7 @@ Agentically coded with [Claude Code](https://docs.anthropic.com/en/docs/claude-c
 <a href="https://machiya-kobo.github.io/">Machiya</a> · <a href="#quickstart">Quickstart</a> · <a href="docs/install.md">Install</a> · <a href="docs/settings.md">Settings</a> · <a href="docs/access.md">Access</a> · <a href="docs/api.md">API</a> · <a href="#license">License</a>
 </p>
 
-<p align="center"><a href="docs/screenshots/niwa-garden-dark.png"><img src="docs/screenshots/niwa-garden-dark.png" alt="The garden's landing page in the dark theme: topic maps for Crafts and Travel, then every note once with its growth stage" width="100%"></a><br>Wander the garden</p>
+<p align="center"><a href="docs/screenshots/niwa-garden-dark.png"><img src="docs/screenshots/niwa-garden-dark.png" alt="The garden's home as visitors see it, in the dark theme: topic maps for Crafts and Travel, then every note once with its growth stage" width="100%"></a><br>Wander the garden</p>
 <table>
   <tr>
     <td align="center" width="33%"><a href="docs/screenshots/niwa-note-light.png"><img src="docs/screenshots/niwa-note-light.png" alt="A note, Chochin folding, with its tip callout, backlinks and nearby notes" width="100%"></a><br>Tend a note</td>
