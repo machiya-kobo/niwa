@@ -7,9 +7,9 @@
 
 Copies the sample vault into a throwaway git repository (tools/demo-vault, with a bare remote), starts Niwa on it in the
 background (NIWA_AUTH=open, 127.0.0.1, a free web port, TZ=UTC), takes the shots with Playwright's Chromium, and stops
-Niwa: the garden, a note, the queue and the stream at 1280x800 in light and dark, and the garden and a note at phone width
-(390x844). PNGs are written as <out_dir>/niwa-<what>-<light|dark>.png and squeezed to a small palette when they are
-over 200 KB. Nothing but the sample vault is ever shown. Niwa's gemini and gopher listeners need ports 1965 and 7070
+Niwa: the desk, the garden (Visitor View), a note, the queue and the stream at 1280x800 in light and dark, and the desk,
+the garden and a note at phone width (390x844). PNGs are written as <out_dir>/niwa-<what>-<light|dark>.png and squeezed
+to a small palette when they are over 200 KB. Nothing but the sample vault is ever shown. Niwa's gemini and gopher listeners need ports 1965 and 7070
 free (the web pages work without them).
 
 Needs Playwright for Python with its Chromium (`pip install playwright pillow && playwright install chromium`, in any
@@ -35,11 +35,13 @@ DESKTOP = {"width": 1280, "height": 800}
 PHONE = {"width": 390, "height": 844}
 THEMES = {"light": ("day", "light"), "dark": ("night", "dark")}      # name -> (the theme cookie, browser colour scheme)
 SHOTS = [                      # (what, path, viewport, themes)
-    ("garden", "/", DESKTOP, ("light", "dark")),
+    ("desk", "/", DESKTOP, ("light", "dark")),
+    ("garden", "/visit", DESKTOP, ("light", "dark")),
     ("note", "/n/Notes/Chochin%20folding", DESKTOP, ("light", "dark")),
     ("queue", "/queue", DESKTOP, ("light", "dark")),
     ("stream", "/stream", DESKTOP, ("light", "dark")),
-    ("garden-phone", "/", PHONE, ("light", "dark")),
+    ("desk-phone", "/", PHONE, ("light",)),
+    ("garden-phone", "/visit", PHONE, ("light", "dark")),
     ("note-phone", "/n/Notes/Chochin%20folding", PHONE, ("light",)),
 ]
 

@@ -19,6 +19,6 @@ Here the **owner** is the person whose vault it is, and a **room** is one Machiy
   proxy in `NIWA_TRUSTED_PROXIES`: with the tailscale fallback it refuses to start otherwise.
 - **Anyone, on the public web (optional):** set `NIWA_PUBLIC_PORT` and `NIWA_GARDEN_URL`, and put a TLS proxy (Caddy,
   a Cloudflare Tunnel, Tailscale Funnel) in front of that port. It serves the published notes, their tags and images,
-  the stream and the feed. No sign-in, queue, settings, writes or cookies, and nothing from Konbini, Kura or Hister.
+  the stream and the feed. No sign-in, desk, queue, settings, writes or cookies, and nothing from Konbini, Kura or Hister.
 
 Each mode's settings are under [Settings](settings.md). `/api/status` is always open.

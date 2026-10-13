@@ -52,7 +52,7 @@ from vaultkit import read_secret  # noqa: E402
 from vaultkit import signin  # noqa: E402
 from writer import Writer, WriteError  # noqa: E402
 
-VERSION = "0.15.5"
+VERSION = "0.16.0"
 PORT = int(os.environ.get("NIWA_PORT", "8080"))
 USERS = set(filter(None, (u.strip() for u in os.environ.get("NIWA_USERS", "").split(","))))
 
@@ -816,8 +816,10 @@ def make_handler(listener):
 
         def garden_get(self, gpath, base, query, ctx):
             cards = garden.konbini.cards_by_path()
-            if gpath == "/":
-                self.send(200, gmodern.home(ctx, base, garden, cards, (query.get("type") or [""])[0]))
+            if gpath == "/":                # the desk: unpublished notes among the rest, never kept on a device
+                self.send(200, gmodern.desk(ctx, base, garden, cards), headers=[NO_STORE])
+            elif gpath == "/visit":         # the garden's home as visitors see it
+                self.send(200, gmodern.home(ctx, base, garden, {}, (query.get("type") or [""])[0], "/visit"))
             elif gpath == "/random":
                 n = garden.random_note()
                 self.send(302, "", "text/plain", headers=[("Location", "%s/n/%s" % (base, quote(n.slug)) if n else base + "/")])

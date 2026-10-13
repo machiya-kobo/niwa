@@ -28,10 +28,11 @@ SIGNIN = False      # niwa.py: NIWA_AUTH=hister: every page opts in to machiya.j
 STATUS = None        # niwa.py: a function returning the footer's {"text": …, "state": "ok|stale|down"}
 ROOM = "niwa"
 house.APP_PREFS = {"linkPreviews": {"type": "bool"}}     # Niwa's own setting that follows the person: account key niwa.link_previews
-NAV = [("/", "garden", "Garden"), ("/stream", "stream", "Stream"), ("/tags", "tags", "Tags"), ("/queue", "queue", "Queue")]
+# The owner's Garden tab is the desk (gmodern.desk): planting, tending and the Queue, which it links.
+NAV = [("/", "garden", "Garden"), ("/stream", "stream", "Stream"), ("/tags", "tags", "Tags")]
 # The public garden (NIWA_PUBLIC_PORT, niwa.py's PublicHandler): its pages carry ctx.public and leave out everything
-# that is the owner's: the queue, the gear and Settings, the Rooms menu, the status line, the service worker.
-PUBLIC_NAV = NAV[:3]
+# that is the owner's: the desk and the queue, the gear and Settings, the Rooms menu, the status line, the service worker.
+PUBLIC_NAV = NAV
 GARDEN_URL = ""      # niwa.py: NIWA_GARDEN_URL while the public garden is on (the owner's notes link their public page)
 NOINDEX = False      # niwa.py: NIWA_PUBLIC_NOINDEX: the public pages ask search engines not to index them
 
@@ -107,13 +108,13 @@ def manifest(app, theme, headers=None, palette=None):
 
 
 # Navigations the worker never stores: the network, else /offline.
-NETWORK_ONLY = ["^/search$", "^/settings$", "^/random$", "^/signin$", "^/queue$", "^/stream$"]
+NETWORK_ONLY = ["^/$", "^/search$", "^/settings$", "^/random$", "^/signin$", "^/queue$", "^/stream$"]
 
 
 def service_worker(app):
     """/sw.js: Machiya's shared worker core (ui/machiya-sw.js) configured for the garden. Notes (/n/) are kept for
     offline reading (the 200 most recently read; pinned ones, offline: true, for good, fetched ahead via
-    /api/offline); search, settings, random, sign-in and the owner's queue and stream (unpublished notes, the board)
+    /api/offline); search, settings, random, sign-in and the owner's desk, queue and stream (unpublished notes, the board)
     are never stored, and an unpublished note's page answers no-store; the APIs are never touched."""
     return house.service_worker(VERSION, shell_urls(app), offline="/offline", bypass=["^/api/", "^/theme$"],
                                 network=NETWORK_ONLY, notes={"match": "^/n/", "limit": 200},
@@ -128,7 +129,6 @@ ICON = {    # Niwa's tabs; the garden is the house's niwa glyph
     "garden": house.GLYPH["niwa"],
     "stream": _SVG % '<path d="M2 8c3-3 5 3 8 0s5 3 8 0 3-3 4 0M2 16c3-3 5 3 8 0s5 3 8 0 3-3 4 0"/>',
     "tags": _SVG % '<path d="M3 12V4h8l9 9-8 8-9-9z"/><circle cx="7" cy="8" r="1.5"/>',
-    "queue": _SVG % '<path d="M3 13l2-8h14l2 8v6H3zM3 13h5l2 3h4l2-3h5"/>',
 }
 
 

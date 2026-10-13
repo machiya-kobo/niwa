@@ -3,6 +3,17 @@
 Niwa follows [SemVer](https://semver.org). Before 1.0, a new feature, a changed default or setting, or a changed API
 field is a minor bump, and a fix or wording change is a patch. Settings are listed in the README.
 
+## 0.16.0
+
+The owner's home is a gardener's desk (owner decision 2026-10-12).
+
+- **Garden (`/`) is a work page.** Tiles count the notes in the garden (with a seedling, budding and evergreen bar), the notes to plant, the notes to tend, and how many of six checks are ready to go public.
+- **Plant** lists the first five notes the Queue would offer: suggestions first, then the most linked-to, then the most recently edited. Held-back notes stay out. "All N in the Queue" opens the rest.
+- **Tend** lists the published notes that need care, each with its reason: held back by the scan (first, with Review), scan warnings, a seedling untended for 60 days, no summary. Tend and Review open the note's Tend form; rows after eight fold away.
+- **Ready to Go Public** checks for notes in the garden, nothing held back, no warnings, a summary on every note, a topic map, and a published `Garden.md` intro, and says whether the public garden is on. It only reports; nothing on the page turns the public garden on.
+- **Visitor View (`/visit`)** is the reading home as visitors see it, with a link back to the desk. The public garden's home is unchanged, and it has no `/visit` or `/queue`.
+- The Queue tab is gone (Garden, Stream, Tags); `/queue` is linked from the desk. The desk lists unpublished notes, so `/` is never cached: offline, the installed app opens the offline page.
+
 ## 0.15.5
 
 vaultkit 0.31.4 (owner decision 2026-10-11, from Safari).

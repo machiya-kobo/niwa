@@ -14,7 +14,7 @@ Agentically coded with [Claude Code](https://docs.anthropic.com/en/docs/claude-c
 <table>
   <tr>
     <td align="center" width="33%"><a href="docs/screenshots/niwa-note-light.png"><img src="docs/screenshots/niwa-note-light.png" alt="A note, Chochin folding, with its tip callout, backlinks and nearby notes" width="100%"></a><br>Tend a note</td>
-    <td align="center" width="33%"><a href="docs/screenshots/niwa-queue-dark.png"><img src="docs/screenshots/niwa-queue-dark.png" alt="The queue of unpublished notes in the dark theme, each with its scan result and a Publish button" width="100%"></a><br>Pick what to publish</td>
+    <td align="center" width="33%"><a href="docs/screenshots/niwa-desk-dark.png"><img src="docs/screenshots/niwa-desk-dark.png" alt="The desk in the dark theme: counts at the top, notes to plant with a Publish button, notes to tend, and the checklist before the garden goes public" width="100%"></a><br>Plant and tend</td>
     <td align="center" width="33%"><a href="docs/screenshots/niwa-stream-light.png"><img src="docs/screenshots/niwa-stream-light.png" alt="The stream: this week's tended notes, day by day" width="100%"></a><br>See what changed</td>
   </tr>
 </table>
@@ -25,7 +25,7 @@ Agentically coded with [Claude Code](https://docs.anthropic.com/en/docs/claude-c
 - Publish with one button. Niwa adds `publish: true` to the note's frontmatter and touches nothing else.
 - **Your notes stay yours.** Niwa writes only `publish`, `growth` and its events (`.garden/events/`), never a note's body, as one commit rebased onto your changes.
 - Growth stages (seedling, budding, evergreen), backlinks, nearby notes and topic maps.
-- A queue of notes worth sharing: your agents' suggestions first, limited to one garden folder if you like.
+- A desk to garden from: the notes to plant (your agents' suggestions first, limited to one garden folder if you like), the notes to tend (held back, warnings, no summary, a seedling left alone), and a checklist before the garden goes public. Visitor View shows the garden's home as visitors see it.
 - Short posts: publish just the part under a Garden heading, get a warning when a note runs long, and post one-line dated updates to the Stream ([how](docs/writing.md)).
 - A stream of what changed, an RSS feed, search and a random note.
 

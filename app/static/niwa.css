@@ -130,6 +130,35 @@ li.qrow { display: flex; gap: var(--sp-3); align-items: flex-start; }
 .qacts { display: flex; gap: 6px; flex-shrink: 0; }
 .qacts form { margin: 0; }
 
+/* ---- the desk (the owner's home): tiles at a glance, Plant and Tend, and Ready to Go Public beside them ------- */
+main.garden.desk { max-width: 1240px; }
+.deskstats { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 10px; margin: var(--sp-2) 0 0; }
+.card.stat { display: flex; flex-direction: column; gap: 2px; color: var(--fg2); text-decoration: none; min-width: 0; }
+a.card.stat:hover { box-shadow: var(--shadow-2); }
+.stat .n { font-size: var(--fs-xxl); font-weight: 700; line-height: 1.15; color: var(--menu-fg, var(--fg)); }
+.stat small { margin-top: 6px; color: var(--menu-muted, var(--muted)); font-size: var(--fs-xs); }
+.stagebar { display: flex; gap: 3px; height: 8px; margin: 8px 0 0; border-radius: 4px; overflow: hidden; }
+.stagebar .seg { min-width: 6px; }
+.seg.stage-seedling { background: var(--yellow); } .seg.stage-budding { background: var(--teal); } .seg.stage-evergreen { background: var(--green); }
+.deskcols { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: var(--sp-5); align-items: start; }
+.sechead .seclink { margin-left: var(--sp-2); font-size: var(--fs-s); font-weight: 400; }
+.more-rows summary { cursor: pointer; margin: var(--sp-2) 4px; color: var(--fg2); font-size: var(--fs-s); }
+ul.checklist { list-style: none; padding: 0; margin: 0 0 var(--sp-2); }
+ul.checklist li { display: flex; gap: 10px; align-items: baseline; padding: 7px 0; border-bottom: 1px solid var(--line); }
+ul.checklist .mark { width: 1.1em; flex-shrink: 0; text-align: center; font-weight: 700; color: var(--menu-muted, var(--muted)); }
+ul.checklist .done .mark { color: var(--green-panel, var(--green)); }
+ul.checklist b { display: block; font-weight: 500; color: var(--menu-fg, var(--fg)); }
+ul.checklist .done b { font-weight: 400; color: var(--fg2); }
+ul.checklist .how { display: block; margin-top: 2px; color: var(--menu-muted, var(--muted)); font-size: var(--fs-s); }
+.pubstate { color: var(--menu-muted, var(--muted)); font-size: var(--fs-s); margin: var(--sp-2) 0; }
+.visiting { margin: 0 0 var(--sp-2); font-size: var(--fs-s); }
+@media (max-width: 1000px) {
+  .deskcols { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .deskstats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .garden-stat { grid-column: 1 / -1; }
+}
+@media (max-width: 760px) { .stat .n { font-size: var(--fs-xl); } }
+
 /* ---- banners (niwa.js: offline copy, install hint) and the installed app's back button ----------------------- */
 .banner { padding: 9px var(--sp-3); border-radius: var(--r-m); margin: 0 0 var(--sp-3); font-size: var(--fs-s); display: flex; gap: 10px; align-items: center; }
 .banner.offline { background: color-mix(in srgb, var(--orange) 18%, transparent); color: var(--orange); }

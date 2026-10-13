@@ -50,16 +50,21 @@ def empty(title, line):
     return '<div class="empty"><h2>%s</h2><p>%s</p></div>' % (title, line)
 
 
-def section(title, cls, inner):
-    return '<section class="gsec"><h3 class="sechead %s">%s</h3>%s</section>' % (cls, title, inner)
+def section(title, cls, inner, sid=""):
+    return '<section class="gsec"%s><h3 class="sechead %s">%s</h3>%s</section>' % (' id="%s"' % sid if sid else "", cls, title, inner)
 
 
 from garden import DEFAULT_INTRO, INTRO  # noqa: E402,F401  (the landing intro; gemini and gopher use the same)
 
 
-def home(ctx, base, g, cards, ntype=""):
+def home(ctx, base, g, cards, ntype="", here="/"):
+    """The garden's home as visitors see it: the public garden's /, and the owner's /visit (`here`, where the type
+    pills point), under a line that says so."""
     notes = g.published()
     parts = [top(ctx, base, "garden"), '<main class="garden landing">']
+    if here != "/":
+        parts.append('<p class="preview visiting"><b>Visitor View</b>: the garden\'s home as visitors see it. '
+                     '<a href="%s/">Back to the Desk</a></p>' % base)
     intro = g.intro(base)
     if intro:
         parts.append('<div class="intro nbody is-garden">%s</div>' % intro)
@@ -68,14 +73,14 @@ def home(ctx, base, g, cards, ntype=""):
         parts.append('<p class="intro none">%s%s</p>' % (e(INTRO), hint))
     if not notes:
         parts.append(empty("Nothing Published Yet", "Nothing is in the garden yet." if modern.public(ctx) else
-                           'Pick notes to publish from the <a href="%s/queue">Queue</a>.' % base))
+                           'Pick notes to publish on the <a href="%s/">Desk</a>.' % base))
         parts.append("</main>")
         return gpage(ctx, base, "", "\n".join(parts), "garden")
     st = g.stats()
-    pills = ['<a class="pill" href="%s/"%s>All <span class="count">%d</span></a>' % (
-        base, ' aria-current="page"' if not ntype else "", st["total"])]
-    pills += ['<a class="pill" href="%s/?type=%s"%s>%s <span class="count">%d</span></a>' % (
-        base, k, ' aria-current="page"' if ntype == k else "", label, st["types"][k])
+    pills = ['<a class="pill" href="%s%s"%s>All <span class="count">%d</span></a>' % (
+        base, here, ' aria-current="page"' if not ntype else "", st["total"])]
+    pills += ['<a class="pill" href="%s%s?type=%s"%s>%s <span class="count">%d</span></a>' % (
+        base, here, k, ' aria-current="page"' if ntype == k else "", label, st["types"][k])
         for k, label in TYPES if st["types"].get(k)]
     parts.append('<p class="gstats"><b>%d notes</b> &middot; <span class="stage-evergreen">%d evergreen</span> &middot; '
                  '<span class="stage-budding">%d budding</span> &middot; <span class="stage-seedling">%d seedlings</span> &middot; '
@@ -85,7 +90,7 @@ def home(ctx, base, g, cards, ntype=""):
     label = dict(TYPES).get(ntype, ntype) if ntype else ""
     if ntype:
         if not shown:
-            parts.append(empty("No Published %s" % e(label), 'Nothing of this type is in the garden yet. <a href="%s/">Show All</a>' % base))
+            parts.append(empty("No Published %s" % e(label), 'Nothing of this type is in the garden yet. <a href="%s%s">Show All</a>' % (base, here)))
             parts.append("</main>")
             return gpage(ctx, base, label, "\n".join(parts), "garden")
     else:
@@ -187,7 +192,7 @@ def note(ctx, base, g, n, cards, checks=None):
                         e(r.get("private_at") or ""))) if web_url(r.get("private_url")) and not public else ""))
                 for r in recs if web_url(r["url"]))
             rel_links.append(section("Links", "", '<ul class="garden-list plain linklist">%s</ul>' % rows))
-    tend = "" if public else ('<section class="gsec owner"><h3 class="sechead">Tend</h3>%s%s</section>'
+    tend = "" if public else ('<section class="gsec owner" id="tend"><h3 class="sechead">Tend</h3>%s%s</section>'
                               % (meta_form(base, n, g), publish_form(ctx, base, n, checks, g.hold_digest(n), hits)))
     main = ('<main class="garden"><article class="note">%s<header class="nhead">%s'
             '<p class="nmeta">%s<br>%s</p></header><div class="nbody is-garden">%s</div></article>%s%s</main>'
@@ -367,42 +372,42 @@ def stream(ctx, base, g, d):
     return gpage(ctx, base, "Stream", "\n".join(parts), "stream")
 
 
-def queue(ctx, base, g, cards):
-    g.index()
-    suggested = g.suggestions()
-    linked = g.well_linked()
+def queue_row(base, g, n, suggested, linked):
+    """A note waiting to be published, as the Queue and the desk list it: its scan result, why it is listed, and Publish
+    (or Review, when the scan found errors) and Dismiss for a suggestion."""
+    errs, warns = g.check_summary(n)
+    if errs:
+        chk = '<span class="chip chk-err">%d Error%s</span>' % (errs, "" if errs == 1 else "s")
+    elif warns:
+        chk = '<span class="chip chk-warn">%d Warning%s</span>' % (warns, "" if warns == 1 else "s")
+    else:
+        chk = '<span class="chip chk-ok">Clean</span>'
+    badge = ""
+    sug = suggested.get(n.rel)
+    if n.rel in g.held:
+        badge = '<span class="chip sugg">Held Back by the Scan</span>'
+    elif sug:
+        badge = '<span class="chip sugg">Suggested%s</span>%s' % (
+            (" by " + e(sug["who"])) if sug["who"] else "", (' <span class="reason">%s</span>' % e(sug["reason"])) if sug["reason"] else "")
+    elif n.rel in linked:
+        badge = '<span class="chip sugg">Linked from %d Notes</span>' % linked[n.rel]
+    if errs:        # findings: the note's own page shows them in full and holds the button that accepts them
+        forms = '<a class="button" href="%s/n/%s">Review</a>' % (base, quote(n.slug))
+    else:
+        forms = ('<form class="qpub" method="post" action="%s/publish"><input type="hidden" name="rel" value="%s">'
+                 '<input type="hidden" name="on" value="1"><button type="submit">Publish</button></form>'
+                 % (base, e(n.rel)))
+    if sug:
+        forms += ('<form class="qpub" method="post" action="%s/dismiss"><input type="hidden" name="rel" value="%s">'
+                  '<button type="submit" class="quiet">Dismiss</button></form>' % (base, e(n.rel)))
+    return ('<li class="card qrow"><div class="qmain"><a class="title" href="%s/n/%s">%s</a>%s'
+            '<div class="meta">%s%s%s%s</div></div><div class="qacts">%s</div></li>'
+            % (base, quote(n.slug), e(n.title), ('<p class="snippet">%s</p>' % e(n.description)) if n.description else "",
+               stage_badge(n.stage), chk, words_badge(g, n), badge, forms))
 
-    def row(n):
-        errs, warns = g.check_summary(n)
-        if errs:
-            chk = '<span class="chip chk-err">%d Error%s</span>' % (errs, "" if errs == 1 else "s")
-        elif warns:
-            chk = '<span class="chip chk-warn">%d Warning%s</span>' % (warns, "" if warns == 1 else "s")
-        else:
-            chk = '<span class="chip chk-ok">Clean</span>'
-        badge = ""
-        sug = suggested.get(n.rel)
-        if n.rel in g.held:
-            badge = '<span class="chip sugg">Held Back by the Scan</span>'
-        elif sug:
-            badge = '<span class="chip sugg">Suggested%s</span>%s' % (
-                (" by " + e(sug["who"])) if sug["who"] else "", (' <span class="reason">%s</span>' % e(sug["reason"])) if sug["reason"] else "")
-        elif n.rel in linked:
-            badge = '<span class="chip sugg">Linked from %d Notes</span>' % linked[n.rel]
-        if errs:        # findings: the note's own page shows them in full and holds the button that accepts them
-            forms = '<a class="button" href="%s/n/%s">Review</a>' % (base, quote(n.slug))
-        else:
-            forms = ('<form class="qpub" method="post" action="%s/publish"><input type="hidden" name="rel" value="%s">'
-                     '<input type="hidden" name="on" value="1"><button type="submit">Publish</button></form>'
-                     % (base, e(n.rel)))
-        if sug:
-            forms += ('<form class="qpub" method="post" action="%s/dismiss"><input type="hidden" name="rel" value="%s">'
-                      '<button type="submit" class="quiet">Dismiss</button></form>' % (base, e(n.rel)))
-        return ('<li class="card qrow"><div class="qmain"><a class="title" href="%s/n/%s">%s</a>%s'
-                '<div class="meta">%s%s%s%s</div></div><div class="qacts">%s</div></li>'
-                % (base, quote(n.slug), e(n.title), ('<p class="snippet">%s</p>' % e(n.description)) if n.description else "",
-                   stage_badge(n.stage), chk, words_badge(g, n), badge, forms))
 
+def queue_groups(g, suggested, linked):
+    """The Queue's unpublished notes by group: Held Back, Suggested, Topic Maps, then each top-level folder."""
     scope = g.queue_folders      # NIWA_QUEUE_FOLDERS: only these folders, plus held notes and what agents suggested
     groups = {}
     for n in g.notes.values():
@@ -418,8 +423,18 @@ def queue(ctx, base, g, cards):
             groups.setdefault("Topic Maps", []).append(n)
         else:
             groups.setdefault(n.rel.split("/")[0] if "/" in n.rel else "Vault Root", []).append(n)
+    return groups
+
+
+def queue(ctx, base, g, cards):
+    g.index()
+    suggested = g.suggestions()
+    linked = g.well_linked()
+    row = lambda n: queue_row(base, g, n, suggested, linked)
+    scope = g.queue_folders
+    groups = queue_groups(g, suggested, linked)
     order = {"Held Back": -1, "Suggested": 0, "Topic Maps": 1}
-    parts = [top(ctx, base, "queue"), '<main class="garden queue">',
+    parts = [top(ctx, base, "garden", "Queue"), '<main class="garden queue">',
              '<p class="none">%s, suggestions first.%s Review shows what the pre-publish check found.</p>' % (
                  ("Unpublished notes in %s" % ", ".join(e(p) for p in scope)) if scope else "Unpublished notes",
                  " Private notes (%s) are left out." % ", ".join(e(p) for p in g.private) if g.private else "")]
@@ -432,7 +447,137 @@ def queue(ctx, base, g, cards):
             (" in " + " and ".join(e(p) for p in scope)) if scope else "",
             (" outside " + " and ".join(e(p) for p in g.private)) if g.private else "")))
     parts.append("</main>")
-    return gpage(ctx, base, "Queue", "\n".join(parts), "queue")
+    return gpage(ctx, base, "Queue", "\n".join(parts), "garden")      # the desk's full list: the Garden tab's
+
+
+# -- the desk: the owner's home, for planting and tending the garden and readying it for the public ------------------
+
+UNTENDED_DAYS = 60      # a seedling not tended for this long asks for care on the desk
+PLANT_ROWS = 5          # the desk lists this many notes to plant, then links the Queue
+TEND_ROWS = 8           # and this many to tend, then folds the rest away
+
+
+def to_plant(g, suggested, linked):
+    """The Queue's notes in the desk's order: suggested (newest first), then the most linked-to, then the most recently
+    tended. A held-back note is tended, not planted."""
+    notes = [n for group, ns in queue_groups(g, suggested, linked).items() if group != "Held Back" for n in ns]
+    notes.sort(key=lambda n: n.title.lower())
+    notes.sort(key=lambda n: g.tended.get(n.rel, ""), reverse=True)
+    notes.sort(key=lambda n: -linked.get(n.rel, 0))
+    notes.sort(key=lambda n: suggested[n.rel]["date"] if n.rel in suggested else "", reverse=True)
+    return notes
+
+
+def care(g, n, day=None):
+    """Why a note in the garden (or held back from it) asks for care: [(severity, what)], the worst first; [] when it
+    needs none. Errors the owner published anyway don't count; a missing summary is the mildest."""
+    out = []
+    if n.rel in g.held:
+        k = len(g.held[n.rel])
+        out.append(("error", "held back: %d finding%s" % (k, "" if k == 1 else "s")))
+    for sev, msg in g.check(n):
+        if sev == "warn":
+            out.append(("warn", words_label(g, n) if msg.startswith("long:") else msg.split(": ", 1)[0]))
+    tended = g.tended.get(n.rel, "")
+    if n.stage == "seedling" and tended:
+        try:
+            idle = ((day or today()) - datetime.date.fromisoformat(tended[:10])).days
+        except ValueError:
+            idle = 0
+        if idle >= UNTENDED_DAYS:
+            out.append(("info", "untended %d days" % idle))
+    if not _str(n.fm.get("summary")):
+        out.append(("info", "no summary"))
+    return out
+
+
+def to_tend(g, day=None):
+    """[(note, care)] for the notes in the garden and the held-back ones that ask for care: held back first, then the
+    most warnings, then the rest by title."""
+    notes = g.published() + [g.notes[rel] for rel in g.held if rel in g.notes]
+    found = [(n, care(g, n, day)) for n in notes]
+    found = sorted(((n, why) for n, why in found if why), key=lambda t: t[0].title.lower())
+    rank = {"error": 0, "warn": 1, "info": 2}
+    return sorted(found, key=lambda t: (rank[t[1][0][0]], -len(t[1])))
+
+
+def tend_row(base, n, why):
+    chips = "".join('<span class="chip chk-%s">%s</span>' % ({"error": "err"}.get(sev, sev), e(what)) for sev, what in why)
+    return ('<li class="card qrow"><div class="qmain"><a class="title" href="%s/n/%s">%s</a>'
+            '<div class="meta">%s%s</div></div><div class="qacts"><a class="button" href="%s/n/%s#tend">%s</a></div></li>'
+            % (base, quote(n.slug), e(n.title), stage_badge(n.stage), chips, base, quote(n.slug),
+               "Review" if why[0][0] == "error" else "Tend"))
+
+
+def intro_published(g):
+    n = g.notes.get("Garden.md")
+    return bool(n and n.published)
+
+
+def readiness(g, tend):
+    """The checklist before the garden goes public: [(done, what, how)], what visitors would meet first."""
+    notes = g.published()
+    held = sum(1 for n, why in tend if why[0][0] == "error")
+    warned = sum(1 for n, why in tend if any(sev == "warn" for sev, _ in why))
+    bare = sum(1 for n in notes if not _str(n.fm.get("summary")))
+    plural = lambda k, one, many: "%d %s" % (k, one if k == 1 else many)
+    return [
+        (bool(notes), "Notes in the garden", "Publish a first note from Plant."),
+        (not held, "Nothing held back by the scan", "%s held back: review the findings, then fix or accept them."
+         % plural(held, "note is", "notes are")),
+        (not warned, "No warnings on published notes", "%s warnings: dead links, links to private notes, an address, "
+         "a long text." % plural(warned, "note has", "notes have")),
+        (not bare, "A summary on every published note",
+         "%s none: lists and the feed show the first paragraph instead." % plural(bare, "note has", "notes have")),
+        (bool(g.maps()), "A topic map to start from", "Publish a map note (type/map) that links your notes."),
+        (intro_published(g), "An intro of your own", "Publish <code>Garden.md</code>: visitors read it first."),
+    ]
+
+
+def desk(ctx, base, g, cards, day=None):
+    """The owner's home: the garden at a glance, the notes to plant (the Queue's first few), the notes to tend, and
+    what is left before the garden goes public, beside them on a wide screen. The garden as visitors see it is /visit."""
+    g.index()
+    suggested, linked = g.suggestions(), g.well_linked()
+    st = g.stats()
+    plant, tend = to_plant(g, suggested, linked), to_tend(g, day)
+    checks = readiness(g, tend)
+    ready = sum(ok for ok, _, _ in checks)
+
+    grown = [(k, st[k]) for k, _, _ in STAGES[::-1] if st[k]]      # seedlings first, as a note grows
+    said = ", ".join("%d %s" % (c, k + "s" if k == "seedling" and c != 1 else k) for k, c in grown)
+    bar = ('<div class="stagebar" role="img" aria-label="%s">%s</div>' % (e(said), "".join(
+        '<span class="seg stage-%s" style="flex-grow:%d"></span>' % (k, c) for k, c in grown))) if grown else ""
+    stat = lambda href, n, what: '<a class="card stat" href="%s"><b class="n">%s</b><span>%s</span></a>' % (href, n, what)
+    tiles = ('<div class="card stat garden-stat"><b class="n">%d</b><span>in the garden</span>%s'
+             '<small>%s<a href="%s/visit">Visitor View</a></small></div>'
+             % (st["total"], bar, (e(said) + " &middot; ") if said else "", base)
+             + stat("#plant", len(plant), "to plant") + stat("#tend", len(tend), "to tend")
+             + stat("#ready", "%d of %d" % (ready, len(checks)), "ready to go public"))
+
+    more = ('<a class="seclink" href="%s/queue">All %d in the Queue</a>' % (base, len(plant))) if len(plant) > PLANT_ROWS else ""
+    planting = section('Plant <span class="chip">%d</span>%s' % (len(plant), more), "",
+                       ('<ul class="cards qlist">%s</ul>' % "".join(queue_row(base, g, n, suggested, linked) for n in plant[:PLANT_ROWS]))
+                       if plant else '<p class="none">Nothing waiting: every note the Queue would list is in the garden.</p>', "plant")
+    rows = [tend_row(base, n, why) for n, why in tend]
+    inner = ('<ul class="cards qlist">%s</ul>' % "".join(rows[:TEND_ROWS])) if rows else '<p class="none">Nothing needs care.</p>'
+    if len(rows) > TEND_ROWS:
+        inner += '<details class="more-rows"><summary>%d more</summary><ul class="cards qlist">%s</ul></details>' % (
+            len(rows) - TEND_ROWS, "".join(rows[TEND_ROWS:]))
+    tending = section('Tend <span class="chip">%d</span>' % len(rows), "", inner, "tend")
+
+    items = "".join('<li class="%s"><span class="mark" role="img" aria-label="%s">%s</span><span><b>%s</b>%s</span></li>'
+                    % ("done" if ok else "todo", "Done" if ok else "To do", "\u2713" if ok else "\u25cb", what,
+                       "" if ok else '<span class="how">%s</span>' % how) for ok, what, how in checks)
+    state = ('The public garden is on at <a href="%s/">%s</a>.' % (e(modern.GARDEN_URL), e(modern.GARDEN_URL))
+             if modern.GARDEN_URL else
+             'The public garden is off. It turns on with <code>NIWA_PUBLIC_PORT</code> and <code>NIWA_GARDEN_URL</code>.')
+    public = ('<aside class="gsec ready" id="ready"><h3 class="sechead">Ready to Go Public <span class="chip">%d of %d</span></h3>'
+              '<div class="card"><ul class="checklist">%s</ul><p class="pubstate">%s</p>'
+              '<a class="button" href="%s/visit">Visitor View</a></div></aside>' % (ready, len(checks), items, state, base))
+    body = ('<main class="garden desk"><div class="deskstats">%s</div><div class="deskcols"><div class="deskwork">%s%s</div>%s</div></main>'
+            % (tiles, planting, tending, public))
+    return gpage(ctx, base, "", top(ctx, base, "garden") + body, "garden")
 
 
 def today():

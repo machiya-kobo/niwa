@@ -279,13 +279,14 @@ class ReadTest(unittest.TestCase):
         self.assertEqual(call("GET", "/favicon.ico", {"Tailscale-User-Login": "owner@test"})[1]["Content-Type"], "image/x-icon")
 
     def test_the_landing_filter_is_a_row_of_pills(self):
-        _, body = req("/")
+        _, body = req("/visit")
         nav = body[body.index('<nav class="pills"'):]
         nav = nav[:nav.index("</nav>")]
         self.assertEqual(re.findall(r'<a class="pill" href="[^"]*"( aria-current="page")?>', nav)[0], ' aria-current="page"')   # All
         self.assertEqual(nav.count("aria-current"), 1)
         self.assertRegex(nav, r'>All <span class="count">\d+</span>')
-        _, typed = req("/?type=map")
+        self.assertIn('<a class="pill" href="/visit?type=map">', nav)             # the pills stay on /visit
+        _, typed = req("/visit?type=map")
         cur = re.findall(r'<a class="pill" href="[^"]*" aria-current="page">([^<]*)<', typed)
         self.assertEqual(cur, ["Maps "])
         self.assertNotIn("typechips", body)
@@ -384,11 +385,11 @@ class ReadTest(unittest.TestCase):
             body = req(page)[1]
             tabbar = body[body.index('<nav class="tabbar"'):]
             tabbar = tabbar[:tabbar.index("</nav>")]
-            self.assertEqual(re.findall(r'<a href="([^"]*)"', tabbar)[:4], ["/", "/stream", "/tags", "/queue"], page)
+            self.assertEqual(re.findall(r'<a href="([^"]*)"', tabbar)[:3], ["/", "/stream", "/tags"], page)   # the desk links the Queue
             nav = body[body.index('<nav class="nav">'):body.index('<nav class="tabbar"')]
             nav = nav[:nav.index("</nav>")]
             self.assertEqual(re.findall(r'<(?:a href="[^"]*"|b class="here")>([^<]*)<', nav),    # the current page is a <b>
-                             ["Garden", "Stream", "Tags", "Queue"], page)
+                             ["Garden", "Stream", "Tags"], page)
             self.assertEqual(body.count('<form class="search searchbar"'), 1, page)               # one pill, in the header
             self.assertIn('action="/search"', body)
             self.assertNotIn('<main class="garden search"><form', body, page)
@@ -402,7 +403,7 @@ class ReadTest(unittest.TestCase):
 
     def test_empty_states(self):
         self.assertIn('<div class="empty"><h2>No Published Notes</h2>', req("/t/topic/nothing")[1])
-        self.assertIn('<div class="empty"><h2>No Published Logs</h2>', req("/?type=log")[1])
+        self.assertIn('<div class="empty"><h2>No Published Logs</h2>', req("/visit?type=log")[1])
 
     def test_room_search(self):
         self.assertIn('placeholder="Search the Garden"', req("/")[1])          # in the header on every page
@@ -426,9 +427,9 @@ class ReadTest(unittest.TestCase):
         cfg = json.loads(sw.split("machiyaSW(", 1)[1].rsplit(");", 1)[0])
         self.assertEqual((cfg["notes"], cfg["pins"], cfg["offline"]), ({"match": "^/n/", "limit": 200}, "/api/offline", "/offline"))
         self.assertIn("/offline", cfg["precache"])
-        for page in ("^/queue$", "^/stream$", "^/signin$", "^/settings$", "^/search$"):
+        for page in ("^/$", "^/queue$", "^/stream$", "^/signin$", "^/settings$", "^/search$"):
             self.assertIn(page, cfg["network"])                                 # owner-only or unpublished: never stored
-        for page in ("/queue", "/stream", "/n/Notes/Paper%20lanterns"):
+        for page in ("/", "/queue", "/stream", "/n/Notes/Paper%20lanterns"):
             self.assertEqual(call("GET", page, {"Tailscale-User-Login": "owner@test"})[1]["Cache-Control"], "no-store", page)
         self.assertIsNone(call("GET", "/n/MOC/Crafts", {"Tailscale-User-Login": "owner@test"})[1]["Cache-Control"])
         code, core = req(sw.split('"', 2)[1])
@@ -669,7 +670,7 @@ class ReleaseDefaultsTest(unittest.TestCase):
         try:
             niwa.garden.intro = lambda base: ""                                                 # no published Garden.md
             niwa.gmodern.INTRO = "My <b>notes</b> & more"
-            body = req("/")[1]
+            body = req("/visit")[1]
             self.assertIn("My &lt;b&gt;notes&lt;/b&gt; &amp; more", body)
             self.assertNotIn("<b>notes</b>", body)
         finally:
@@ -2478,7 +2479,7 @@ class SimplerPagesTest(unittest.TestCase):
     publishing would accept."""
 
     def test_the_landing_page_lists_every_note_once(self):
-        _, body = req("/")
+        _, body = req("/visit")                         # the owner's copy of the public garden's home
         for gone in ("Recently tended", "Needs tending", "Start here", "Everything", "Projects in bloom"):
             self.assertNotIn(">%s" % gone, body, gone)
         self.assertEqual(body.count('href="/n/Notes/Paper%20lanterns"'), 0)               # unpublished: not listed
@@ -2486,7 +2487,7 @@ class SimplerPagesTest(unittest.TestCase):
         self.assertEqual(len(slugs), len(set(slugs)))                                       # no note twice
         self.assertEqual(len(slugs), len(niwa.garden.published()))                          # every published note, once
         self.assertIn(">Notes <span", body)
-        status, typed = req("/?type=map")
+        status, typed = req("/visit?type=map")
         self.assertEqual(status, 200)
         self.assertNotIn("Topic Maps", typed)
 
@@ -2973,6 +2974,15 @@ class PublicGardenTest(unittest.TestCase):
         self.assertNotIn("x-test", hdrs)
         self.assertEqual(self.get("/static/niwa.css")[0], 200)
 
+    def test_the_public_home_is_the_reading_page_never_the_desk(self):
+        status, _, body = self.get("/")
+        self.assertEqual(status, 200)
+        self.assertIn('<main class="garden landing">', body)
+        for owner in ('id="plant"', "Ready to Go Public", "Visitor View", "Held note", "Secret plan"):
+            self.assertNotIn(owner, body)
+        for path in ("/visit", "/queue"):
+            self.assertEqual(self.get(path)[0], 404, path)
+
     def test_the_public_listener_logs_no_query(self):
         err = io.StringIO()
         with mock.patch.object(sys, "stderr", err):
@@ -3117,6 +3127,73 @@ class PublicGardenTest(unittest.TestCase):
         self.assertEqual(niwa.PUBLIC_PORT, 0)                                       # off unless set
 
 
+class DeskTest(unittest.TestCase):
+    """The owner's home is the desk: the notes to plant (the Queue's first few), the notes to tend, and what is left
+    before the garden goes public. The garden's home as visitors see it is /visit."""
+
+    def test_the_desk_plants_tends_and_readies_the_garden(self):
+        status, headers, body = call("GET", "/", {"Tailscale-User-Login": "owner@test"})
+        self.assertEqual((status, headers["Cache-Control"]), (200, "no-store"))       # unpublished notes: never on a device
+        for part in ('id="plant"', 'id="tend"', 'id="ready"', ">Ready to Go Public <", 'href="/visit"'):
+            self.assertIn(part, body)
+        plant = body[body.index('id="plant"'):body.index('id="tend"')]
+        self.assertIn('href="/n/Notes/Paper%20lanterns"', plant)                      # unpublished: to plant
+        self.assertIn('<form class="qpub" method="post" action="/publish">', plant)
+        self.assertNotIn('href="/n/MOC/Crafts"', plant)                                # in the garden: not planted again
+        self.assertNotIn('class="pill"', body)                                         # the reading page's filter is /visit's
+        self.assertIn("The public garden is off.", body)
+        with mock.patch.object(niwa.shell, "GARDEN_URL", "https://garden.example"):
+            self.assertIn('The public garden is on at <a href="https://garden.example/">', req("/")[1])
+
+    def test_plant_lists_suggestions_first_and_links_the_queue_past_a_few(self):
+        import gmodern
+        g = niwa.garden
+        waiting = [n for ns in gmodern.queue_groups(g, {}, {}).values() for n in ns if n.rel not in g.held]
+        last = sorted(waiting, key=lambda n: n.title.lower())[-1]
+        order = gmodern.to_plant(g, {last.rel: {"who": "bot", "reason": "", "date": "2026-10-01"}}, {})
+        self.assertEqual(order[0].rel, last.rel)
+        with mock.patch.object(gmodern, "PLANT_ROWS", 1):
+            body = req("/")[1]
+        plant = body[body.index('id="plant"'):body.index('id="tend"')]
+        self.assertEqual(plant.count('<li class="card qrow">'), 1)
+        self.assertIn('<a class="seclink" href="/queue">All %d in the Queue</a>' % len(waiting), plant)
+
+    def test_tend_names_why_a_note_asks_for_care(self):
+        import datetime
+        import gmodern
+        path = write_note("Notes/Bare.md", "---\ntitle: Bare note\npublish: true\n---\nWrite to a@b.example.\n")
+        try:
+            n = niwa.garden.get("Notes/Bare")
+            self.assertEqual(gmodern.care(niwa.garden, n), [("warn", "email address (1)"), ("info", "no summary")])
+            body = req("/")[1]
+            tend = body[body.index('id="tend"'):body.index('id="ready"')]
+            self.assertIn('<a class="button" href="/n/Notes/Bare#tend">Tend</a>', tend)
+            self.assertIn('<span class="chip chk-warn">email address (1)</span>', tend)
+            ready = body[body.index('id="ready"'):]
+            self.assertRegex(ready, r'<li class="todo">.*<b>No warnings on published notes</b>')
+            self.assertIn('id="tend"', req("/n/Notes/Bare")[1])                       # where the Tend button lands
+            seedling = next(x for x in niwa.garden.published() if niwa.garden.tended.get(x.rel))
+            old = seedling.stage
+            seedling.stage = "seedling"
+            try:
+                later = datetime.date.fromisoformat(niwa.garden.tended[seedling.rel]) + datetime.timedelta(days=90)
+                self.assertIn(("info", "untended 90 days"), gmodern.care(niwa.garden, seedling, later))
+                self.assertNotIn("untended", str(gmodern.care(niwa.garden, seedling, later - datetime.timedelta(days=31))))
+            finally:
+                seedling.stage = old
+        finally:
+            os.remove(path)
+            niwa.garden.revision += "x"
+
+    def test_the_visitor_view_is_the_public_home_for_the_owner(self):
+        body = req("/visit")[1]
+        self.assertIn("<b>Visitor View</b>: the garden's home as visitors see it.", body)
+        self.assertIn('<a class="pill" href="/visit" aria-current="page">', body)
+        self.assertNotIn('id="plant"', body)
+        self.assertNotIn('href="/n/Notes/Paper%20lanterns"', body)                    # published notes only
+        self.assertIn('<b class="here">Garden</b>', body)
+
+
 class HoldTest(unittest.TestCase):
     """A `publish: true` note whose scan finds errors is held back everywhere until the owner acknowledges them."""
 
@@ -3150,6 +3227,14 @@ class HoldTest(unittest.TestCase):
         status, body = self.publish(confirm="1", ack="0" * 64)                   # not what was shown: shown again
         self.assertEqual(status, 200)
         self.assertFalse(niwa.garden.get("Notes/Box").published)
+        desk = req("/")[1]
+        tend = desk[desk.index('id="tend"'):desk.index('id="ready"')]
+        self.assertIn('<a class="button" href="/n/Notes/Box#tend">Review</a>', tend)      # held back: tended first
+        self.assertLess(tend.index("Box notes"), tend.index('<li class="card qrow">', tend.index("Box notes")) if
+                        tend.count('<li class="card qrow">') > 1 else len(tend))
+        self.assertIn('<span class="chip chk-err">held back: 1 finding</span>', tend)
+        self.assertNotIn("Box notes", desk[desk.index('id="plant"'):desk.index('id="tend"')])
+        self.assertRegex(desk, r'<li class="todo">.*<b>Nothing held back by the scan</b>')
         status, _ = self.publish(confirm="1", ack=ack)
         self.assertEqual(status, 302)
         self.assertTrue(niwa.garden.get("Notes/Box").published)
