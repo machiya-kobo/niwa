@@ -296,8 +296,9 @@ class ReadTest(unittest.TestCase):
         st, headers, body = call("GET", "/manifest.webmanifest", {"Tailscale-User-Login": "owner@test",
                                                                   "Sec-CH-Prefers-Color-Scheme": "light"})
         m = json.loads(body)
-        self.assertEqual((m["background_color"], m["theme_color"]), ("#e1e2e7", "#d0d5e3"))
-        self.assertEqual(m["user_preferences"]["color_scheme_dark"]["background_color"], "#1a1b26")
+        self.assertEqual((m["background_color"], m["theme_color"]), ("#e1e2e7", "#e1e2e7"))     # the bar is --bg (vaultkit 0.32.3)
+        dark = m["user_preferences"]["color_scheme_dark"]
+        self.assertEqual((dark["background_color"], dark["theme_color"]), ("#1a1b26", "#1a1b26"))
         self.assertIn("Sec-CH-Prefers-Color-Scheme", headers["Vary"])
         st, headers, _ = call("GET", "/", {"Tailscale-User-Login": "owner@test"})
         self.assertEqual(headers["Accept-CH"], "Sec-CH-Prefers-Color-Scheme")
@@ -306,6 +307,7 @@ class ReadTest(unittest.TestCase):
         self.assertEqual(json.loads(body)["background_color"], "#282828")      # the chosen theme's colours
         st, _, body = call("GET", "/", {"Tailscale-User-Login": "owner@test", "Cookie": "palette=gruvbox; theme=night"})
         self.assertIn('class="theme-night palette-gruvbox', body)
+        self.assertIn('<meta name="theme-color" content="#282828">', body)       # the status bar is the page's bg
 
     def test_link_preview_names_the_stage_as_the_badges_do(self):
         p = json.loads(req("/n/Projects/Lantern?preview=1")[1])

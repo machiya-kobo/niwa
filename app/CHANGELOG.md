@@ -3,6 +3,13 @@
 Niwa follows [SemVer](https://semver.org). Before 1.0, a new feature, a changed default or setting, or a changed API
 field is a minor bump, and a fix or wording change is a patch. Settings are listed in the README.
 
+## 0.17.2
+
+vaultkit 0.32.3 (owner decision 2026-10-14, from the owner's iPhone).
+
+- In the installed app the header's top fades from the page's background, the color iOS paints the status bar, so there is no darker band with a hard edge under it. The frost is stronger: 70% with a saturated 20px blur.
+- The browser's bar color (`theme-color`, in the page, the manifest and after a theme change) is the theme's background instead of its darker bar color.
+
 ## 0.17.1
 
 vaultkit 0.32.2 (owner decision 2026-10-14).
