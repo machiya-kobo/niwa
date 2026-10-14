@@ -3,6 +3,13 @@
 Niwa follows [SemVer](https://semver.org). Before 1.0, a new feature, a changed default or setting, or a changed API
 field is a minor bump, and a fix or wording change is a patch. Settings are listed in the README.
 
+## 0.17.1
+
+vaultkit 0.32.2 (owner decision 2026-10-14).
+
+- In the installed app the header is frosted at every width, and its top fades from the status bar's color into the page, so there is no hard edge under the status bar. A browser tab is unchanged.
+- The installed iOS app no longer starts the header's contents 24px lower: the blur that worked around is gone since 0.17.0.
+
 ## 0.17.0
 
 vaultkit 0.32.0 (owner decision 2026-10-14).
@@ -10,7 +17,7 @@ vaultkit 0.32.0 (owner decision 2026-10-14).
 - **Settings is a sheet over the page**, as in every room: the gear and the Rooms menu's Settings open it, with Cancel at the left and Save at the right. Changes (theme, text size, Link Previews) show at once and are kept only on Save; Cancel, Esc or a tap outside put the page back. Saving reloads the page. Clear Offline Copies works in the sheet.
 - On phones the sheet fills the screen and the header and tab bar hide while it is open.
 - `/settings` opened directly is still a page that keeps each change at once.
-- The installed app starts under an opaque status bar in the theme's colour (iOS 26 blurred the top of the page). iOS reads this only when the app is added, so remove Niwa from the Home Screen and add it again once.
+- The installed app starts under an opaque status bar in the theme's color (iOS 26 blurred the top of the page). iOS reads this only when the app is added, so remove Niwa from the Home Screen and add it again once.
 
 ## 0.16.1
 
