@@ -3,6 +3,12 @@
 Niwa follows [SemVer](https://semver.org). Before 1.0, a new feature, a changed default or setting, or a changed API
 field is a minor bump, and a fix or wording change is a patch. Settings are listed in the README.
 
+## 0.16.1
+
+vaultkit 0.31.5 (owner decision 2026-10-14).
+
+- On phones one tab is lit at a time: while the tab bar's Rooms sheet is open, only Rooms is lit and the page's own tab goes plain; closing the sheet lights it again.
+
 ## 0.16.0
 
 The owner's home is a gardener's desk (owner decision 2026-10-12).
