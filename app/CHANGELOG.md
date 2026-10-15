@@ -3,6 +3,12 @@
 Niwa follows [SemVer](https://semver.org). Before 1.0, a new feature, a changed default or setting, or a changed API
 field is a minor bump, and a fix or wording change is a patch. Settings are listed in the README.
 
+## 0.18.2
+
+vaultkit 0.35.3.
+
+- The app icon in the phone tab bar keeps its rounded corners, so on Day's light bar it is a rounded tile, not a dark square. Night is unchanged.
+
 ## 0.18.1
 
 vaultkit 0.35.2 (owner decisions 2026-10-14).
