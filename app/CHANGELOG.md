@@ -3,6 +3,12 @@
 Niwa follows [SemVer](https://semver.org). Before 1.0, a new feature, a changed default or setting, or a changed API
 field is a minor bump, and a fix or wording change is a patch. Settings are listed in the README.
 
+## 0.17.4
+
+vaultkit 0.33.1 (owner decision 2026-10-14).
+
+- In the installed iOS app the header's contents start 12px below the status bar instead of 24px: 24 left a large gap under the clock, and at 12 the names are still sharp.
+
 ## 0.17.3
 
 vaultkit 0.33.0 (owner decision 2026-10-14).
