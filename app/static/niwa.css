@@ -171,6 +171,13 @@ ul.checklist .how { display: block; margin-top: 2px; color: var(--menu-muted, va
 /* The one-row header (machiya.css, from 1100px) fits a title of up to 14vw: the back button's 44px come off it, so the
    tools stay on the row in an installed app. */
 @media (min-width: 1100px) { .topbar > .back ~ .subtitle { max-width: calc(clamp(96px, 14vw, 320px) - 44px); } }
+/* On an iPhone the installed app's header drops its name row for the search box (machiya.css, v0.34.0), and with it
+   everything in .topbar but the tools: the back button stays, beside the box as a room's own buttons are. */
+@supports (-webkit-touch-callout: none) {
+  @media (display-mode: standalone) and (max-width: 760px) {
+    header.top:has(> .searchrow) > .topbar > .back { display: inline-flex; order: 0; flex: none; margin-bottom: 8px; }
+  }
+}
 
 /* ---- phones -------------------------------------------------------------------------------------------------- */
 @media (max-width: 760px) {

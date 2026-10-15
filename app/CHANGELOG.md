@@ -3,6 +3,13 @@
 Niwa follows [SemVer](https://semver.org). Before 1.0, a new feature, a changed default or setting, or a changed API
 field is a minor bump, and a fix or wording change is a patch. Settings are listed in the README.
 
+## 0.17.5
+
+vaultkit 0.34.0 (owner decision 2026-10-14).
+
+- On an iPhone, the installed app's header drops its name row: the search box spans the width and starts below iOS 26's edge blur, under empty frost. The Home Screen icon names the app, and Rooms and Settings are in the tab bar. A browser tab and wider screens are unchanged.
+- On a note or any inner page there, the installed app's back button stays, beside the search box.
+
 ## 0.17.4
 
 vaultkit 0.33.1 (owner decision 2026-10-14).
