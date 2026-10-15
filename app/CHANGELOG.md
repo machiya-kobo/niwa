@@ -3,6 +3,14 @@
 Niwa follows [SemVer](https://semver.org). Before 1.0, a new feature, a changed default or setting, or a changed API
 field is a minor bump, and a fix or wording change is a patch. Settings are listed in the README.
 
+## 0.17.3
+
+vaultkit 0.33.0 (owner decision 2026-10-14).
+
+- The installed app's see-through status bar is back (`black-translucent`, or `default` on Day): the page draws under the clock again.
+- The installed app's header is plain frost up to the top edge, with no fade. On iOS its contents start 24px lower, so iOS 26's edge blur misses the names.
+- The browser's bar color stays the theme's background. As in 0.17.0, iOS reads the status bar style only when the app is added: remove Niwa from the Home Screen and add it again once.
+
 ## 0.17.2
 
 vaultkit 0.32.3 (owner decision 2026-10-14, from the owner's iPhone).

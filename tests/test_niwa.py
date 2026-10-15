@@ -308,6 +308,10 @@ class ReadTest(unittest.TestCase):
         st, _, body = call("GET", "/", {"Tailscale-User-Login": "owner@test", "Cookie": "palette=gruvbox; theme=night"})
         self.assertIn('class="theme-night palette-gruvbox', body)
         self.assertIn('<meta name="theme-color" content="#282828">', body)       # the status bar is the page's bg
+        # the installed app draws under a see-through status bar, a dark one on Day (vaultkit 0.33)
+        self.assertIn('<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">', body)
+        st, _, body = call("GET", "/", {"Tailscale-User-Login": "owner@test", "Cookie": "theme=day"})
+        self.assertIn('<meta name="apple-mobile-web-app-status-bar-style" content="default">', body)
 
     def test_link_preview_names_the_stage_as_the_badges_do(self):
         p = json.loads(req("/n/Projects/Lantern?preview=1")[1])
