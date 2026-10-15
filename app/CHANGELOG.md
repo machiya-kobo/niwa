@@ -3,6 +3,13 @@
 Niwa follows [SemVer](https://semver.org). Before 1.0, a new feature, a changed default or setting, or a changed API
 field is a minor bump, and a fix or wording change is a patch. Settings are listed in the README.
 
+## 0.18.1
+
+vaultkit 0.35.2 (owner decisions 2026-10-14).
+
+- The phone tab bar has the header's frost: the page's background at 70%, with a saturated 20px blur.
+- Niwa's sprout in the first tab is drawn the same size as the other apps' artwork. The public garden's tab bar gets both.
+
 ## 0.18.0
 
 vaultkit 0.35.1 (owner decisions 2026-10-14: one search field and tab bar across the apps).
