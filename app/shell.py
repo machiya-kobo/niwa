@@ -150,10 +150,13 @@ def footer(with_status=True, is_public=False):
 
 
 def public_tabbar(current):
-    """The phone's tab bar for the public garden: its three tabs, no Rooms menu and no Settings row."""
+    """The phone's tab bar for the public garden: its three tabs, no Rooms menu and no Settings row. The first tab is
+    Niwa itself, its icon and name, as house.tabbar draws it (vaultkit 0.35)."""
+    first = [(PUBLIC_NAV[0][0], PUBLIC_NAV[0][1], house.room_info(ROOM)[1], house.mark(ROOM))]
     return '<nav class="tabbar" aria-label="Sections">%s</nav>' % "".join(
         '<a href="%s"%s>%s<span>%s</span></a>' % (href, ' class="here" aria-current="page"' if key == current else "",
-                                                  ICON.get(key, ""), e(label)) for href, key, label in PUBLIC_NAV)
+                                                  icon, e(label))
+        for href, key, label, icon in first + [(h, k, l, ICON.get(k, "")) for h, k, l in PUBLIC_NAV[1:]])
 
 
 PUBLIC_META = '<meta name="niwa-public" content="1">\n'     # niwa.js: no service worker, no install hint

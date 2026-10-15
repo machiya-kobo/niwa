@@ -2989,6 +2989,17 @@ class PublicGardenTest(unittest.TestCase):
         for path in ("/visit", "/queue"):
             self.assertEqual(self.get(path)[0], 404, path)
 
+    def test_the_first_phone_tab_is_niwa_itself_on_both_listeners(self):
+        """vaultkit 0.35: the tab bar's first tab is the app, its icon and name, to its home; public_tabbar does the same."""
+        mark = '<span class="seal icon" data-room="niwa"'
+        for who, body in (("owner", req("/stream")[1]), ("public", self.get("/stream")[2])):
+            tabbar = body[body.index('<nav class="tabbar"'):]
+            tabbar = tabbar[:tabbar.index("</nav>")]
+            self.assertEqual(re.findall(r"<span>([^<]*)</span></a>", tabbar)[:3], ["Niwa", "Stream", "Tags"], who)
+            self.assertTrue(re.search(r'<a href="/">%s' % re.escape(mark), tabbar), who)
+            self.assertIn('<a href="/stream" class="here" aria-current="page">', tabbar, who)
+        self.assertNotIn("Rooms", tabbar)                                             # the public garden has no Rooms tab
+
     def test_the_public_listener_logs_no_query(self):
         err = io.StringIO()
         with mock.patch.object(sys, "stderr", err):
@@ -3065,8 +3076,8 @@ class PublicGardenTest(unittest.TestCase):
         self.assertIn("width: clamp(180px, 75vw - 540px, 420px); min-width: 150px;", shared_css)     # the pill, v0.31.2
         self.assertIn("form.search.searchbar input:focus-visible { outline: 2px solid var(--room); outline-offset: -2px; }",
                       shared_css)                                                        # one ring on the edge, v0.31.3
-        self.assertIn("header.top > .searchrow form.search.searchbar input { font-size: 15px; }", shared_css)    # v0.31.4
-        self.assertIn("form.search.searchbar input { width: 100%; max-width: none; height: 38px;", shared_css)   # a fixed 38px
+        self.assertIn("form.search.searchbar input { width: 100%; max-width: none; height: 44px;", shared_css)   # annai's, v0.35
+        self.assertIn("background: var(--card); color: var(--menu-fg, var(--fg)); font: inherit; font-size: 16px;", shared_css)
         with open(os.path.join(os.path.dirname(__file__), "..", "app", "vaultkit", "ui", "machiya.js")) as f:
             self.assertIn('foot.style.marginTop = parseFloat(getComputedStyle(foot).marginTop) + gap + "px"', f.read())   # v0.31.3
         with open(os.path.join(os.path.dirname(__file__), "..", "app", "static", "niwa.css")) as f:

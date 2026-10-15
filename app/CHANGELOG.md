@@ -3,6 +3,15 @@
 Niwa follows [SemVer](https://semver.org). Before 1.0, a new feature, a changed default or setting, or a changed API
 field is a minor bump, and a fix or wording change is a patch. Settings are listed in the README.
 
+## 0.18.0
+
+vaultkit 0.35.1 (owner decisions 2026-10-14: one search field and tab bar across the apps).
+
+- **The search field is the same in every app:** 44px tall, 16px text, on the card color, at every width.
+- **On phones the first tab is Niwa itself**, its icon and name, to the garden's home: the tabs read Niwa, Stream, Tags and Rooms. The public garden's tab bar does the same (Niwa, Stream, Tags). The desktop header is unchanged.
+- In the installed iPhone app, the back button on inner pages sits beside the search box (vaultkit 0.34.1); Niwa's own rule for it from 0.17.5 is gone.
+- The README screenshots are retaken.
+
 ## 0.17.5
 
 vaultkit 0.34.0 (owner decision 2026-10-14).
