@@ -3073,17 +3073,15 @@ class PublicGardenTest(unittest.TestCase):
             self.assertNotIn(".foot", f.read())                                          # the footer's place is machiya.js's
 
     def test_the_installed_iphone_header_keeps_the_back_button_beside_the_search_box(self):
-        """vaultkit 0.34.0 hides everything in .topbar but the tools in the installed app's phone header; niwa.css brings
-        back niwa.js's back button with a selector as specific, after machiya.css, beside the box."""
+        """The installed app's phone header hides everything in .topbar but the tools and niwa.js's back button (vaultkit
+        0.34.1; 0.34.0 hid the button too), which sits at the left of the box; niwa.css's .back never hides it."""
         shared = os.path.join(os.path.dirname(__file__), "..", "app", "vaultkit", "ui", "machiya.css")
         with open(shared) as f:
-            self.assertIn("header.top:has(> .searchrow) > .topbar > :not(.tools),", f.read())
-        with open(os.path.join(os.path.dirname(__file__), "..", "app", "static", "niwa.css")) as f:
             css = f.read()
-        self.assertIn("@supports (-webkit-touch-callout: none) {\n  @media (display-mode: standalone) and (max-width: 760px) {\n"
-                      "    header.top:has(> .searchrow) > .topbar > .back { display: inline-flex; order: 0;", css)
-        page = req("/n/Notes/Chochin%20folding")[1]
-        self.assertLess(page.index(niwa.shell.static_url("machiya.css")), page.index(niwa.shell.static_url("niwa.css")))   # niwa.css wins
+        self.assertIn("header.top:has(> .searchrow) > .topbar > :not(.tools, .back),", css)
+        self.assertIn("header.top:has(> .searchrow) > .topbar > .back { order: 0; flex: none; margin-bottom: 8px; }", css)
+        with open(os.path.join(os.path.dirname(__file__), "..", "app", "static", "niwa.css")) as f:
+            self.assertIn(".back { display: inline-flex;", f.read())
 
     def test_a_live_link_keeps_its_original_with_an_archive_link_beside_it(self):
         want = ('<a href="https://live.example/y">the live page</a> <a class="arch" title="Archived copy from 2026-09-02" '
