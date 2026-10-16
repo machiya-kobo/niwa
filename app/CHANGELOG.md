@@ -3,6 +3,10 @@
 Niwa follows [SemVer](https://semver.org). Before 1.0, a new feature, a changed default or setting, or a changed API
 field is a minor bump, and a fix or wording change is a patch. Settings are listed in the README.
 
+## 0.18.3
+
+- The link checker sends a link with non-ASCII characters in its ASCII form. That covers a link a note cut short with "…" and a link to an IDN host such as bücher.example: other characters are percent-encoded once and the host is sent in its IDNA form. Such a link is checked, and shown dead if it is dead, instead of failing with "'ascii' codec can't encode character". Wayback saves send the same form.
+
 ## 0.18.2
 
 vaultkit 0.35.3.

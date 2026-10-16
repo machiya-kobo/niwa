@@ -90,16 +90,36 @@ class NotPublic(Exception):
     """A name or redirect that leads to an address that isn't on the public internet (never fetched)."""
 
 
+def wire_url(url):
+    """url as a request sends it: an IDN host in its IDNA form, every other non-ASCII character percent-encoded once
+    (an existing %XX stays). A note's link may be cut short with "…" or name an IDN host, and http.client only sends
+    ASCII. UnicodeError for a host IDNA refuses."""
+    if url.isascii():
+        return url
+    scheme, netloc, path, query, fragment = urllib.parse.urlsplit(url)
+    userinfo, at, hostport = netloc.rpartition("@")
+    if not hostport.isascii():
+        host, colon, port = hostport.partition(":")
+        netloc = userinfo + at + host.encode("idna").decode("ascii") + colon + port
+    return urllib.parse.quote(urllib.parse.urlunsplit((scheme, netloc, path, query, fragment)),
+                              safe=":/?#[]@!$&'()*+,;=%~")
+
+
 def fetch_status(url, method="HEAD", timeout=15):
     """(status, final_url) of a link. NotPublic when the name or any redirect hop leads to a non-public address; other
     exceptions (urllib's, OSError) for an unreachable host."""
     u = urllib.parse.urlsplit(url)
     if u.scheme not in ("http", "https") or not u.hostname or u.username or u.password:
         raise OSError("not a plain web address")
-    req = urllib.request.Request(url, method=method, headers={"User-Agent": UA, "Accept": "*/*"})
+    try:
+        wire = wire_url(url)
+    except UnicodeError as e:
+        raise OSError("not a valid host name: %s" % e)
+    req = urllib.request.Request(wire, method=method, headers={"User-Agent": UA, "Accept": "*/*"})
     try:
         with _OPENER.open(req, timeout=timeout) as r:
-            return r.status, r.geturl()
+            final = r.geturl()
+            return r.status, url if final == wire else final
     except urllib.error.HTTPError as e:     # a 4xx or 5xx (or a redirect refused for carrying a credential)
         return e.code, url
     except websafe.Blocked as e:
@@ -147,7 +167,7 @@ class WaybackBackend:
         return None
 
     def save(self, url):
-        req = urllib.request.Request("https://web.archive.org/save/" + url, headers={"User-Agent": UA})
+        req = urllib.request.Request("https://web.archive.org/save/" + wire_url(url), headers={"User-Agent": UA})
         with urllib.request.urlopen(req, timeout=60) as r:
             loc = r.headers.get("Content-Location") or ""
             final = r.geturl()

@@ -1166,6 +1166,56 @@ class SweepFixesTest(unittest.TestCase):
         finally:
             links._OPENER = saved
 
+    def test_a_link_cut_short_with_an_ellipsis_or_on_an_idn_host_is_checked_not_raised(self):
+        import links
+        seen = []
+
+        class H(http.server.BaseHTTPRequestHandler):
+            def do_HEAD(self):
+                seen.append((self.headers["Host"], self.path))
+                self.send_response(404 if "gone" in self.path else 200)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+
+            def log_message(self, *a):
+                pass
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        port = server.server_address[1]
+        idn = "xn--bcher-kva.example"
+        resolve = niwa.websafe.resolve
+        saved = links._OPENER
+
+        def fake_resolve(host, *a, **kw):
+            self.assertEqual(host, idn)                      # the resolver only ever sees the IDNA form
+            return resolve("127.0.0.1", *a, **kw)
+        try:
+            niwa.websafe.resolve = fake_resolve
+            links._OPENER = niwa.websafe.public_opener(allow=(idn,))
+            url = "http://bücher.example:%d/notes/a-long-ti…" % port
+            self.assertEqual(links.fetch_status(url), (200, url))     # the note's own spelling comes back
+            self.assertEqual(links.fetch_status("http://bücher.example:%d/gone/é…" % port)[0], 404)   # dead, not an error
+            self.assertEqual(seen, [(idn + ":%d" % port, "/notes/a-long-ti%E2%80%A6"),
+                                    (idn + ":%d" % port, "/gone/%C3%A9%E2%80%A6")])
+        finally:
+            niwa.websafe.resolve, links._OPENER = resolve, saved
+        self.assertEqual(links.wire_url("https://example.com/a%E2%80%A6?q=é#x"), "https://example.com/a%E2%80%A6?q=%C3%A9#x")
+        self.assertEqual(links.wire_url("https://example.com/a?b=c&d=e"), "https://example.com/a?b=c&d=e")
+        with self.assertRaises(OSError):                                    # a host IDNA refuses: a failed check
+            links.fetch_status("https://a..bücher.example/")
+        sent = []
+
+        class Response:
+            headers, status = {"Content-Location": "/web/20261015000000/x"}, 200
+            geturl = lambda self: ""
+            __enter__ = lambda self: self
+            __exit__ = lambda self, *a: None
+        with mock.patch("urllib.request.urlopen", lambda req, timeout: sent.append(req.full_url) or Response()):
+            links.WaybackBackend().save("https://bücher.example/a…")
+        self.assertEqual(sent, ["https://web.archive.org/save/https://xn--bcher-kva.example/a%E2%80%A6"])
+
     def test_a_link_to_an_inside_address_is_never_probed_and_never_dead(self):
         import links
         calls = []
