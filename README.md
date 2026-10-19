@@ -1,8 +1,8 @@
 # Niwa
 
-[Machiya](https://github.com/machiya-kobo/machiya) is a set of small self-hosted apps for finding what you've read: your pages ([Hister](https://github.com/asciimoo/hister)), the web ([SearXNG](https://github.com/searxng/searxng)), your notes ([Obsidian](https://obsidian.md)) and your code ([Forgejo](https://forgejo.org) or [GitHub](https://github.com)).
+Niwa (庭, garden) publishes the notes you choose from your [Obsidian](https://obsidian.md) vault to the Web. It's also a Gemini capsule and a Gopher hole.
 
-Niwa (庭, garden) is Machiya's digital garden. Publish the notes you choose from your Obsidian vault to the Web. It's also a Gemini capsule and a Gopher hole.
+Niwa is one of [Machiya](https://github.com/machiya-kobo/machiya)'s small self-hosted apps, which share one vault of notes: [Kura](https://github.com/machiya-kobo/kura) to read them, [Konbini](https://github.com/machiya-kobo/konbini) for your projects and [Shiori](https://github.com/machiya-kobo/shiori) to search everything you've read.
 
 Agentically coded with [Claude Code](https://docs.anthropic.com/en/docs/claude-code).
 
@@ -46,7 +46,7 @@ Agentically coded with [Claude Code](https://docs.anthropic.com/en/docs/claude-c
 - Gemini and Gopher, for visitors still on the Information Superhighway.
 - The public website is optional and off by default (`NIWA_PUBLIC_PORT`): published notes only, no sign-in, no cookies.
 
-Niwa runs on its own. With [Konbini](https://github.com/machiya-kobo/konbini) a note gets board badges and the board half of the stream, with [Kura](https://github.com/machiya-kobo/kura) a link to the full note, and with [Hister](https://github.com/asciimoo/hister) private copies of its links.
+Niwa runs on its own. With Konbini a note gets board badges and the board half of the stream, with [Kura](https://github.com/machiya-kobo/kura) a link to the full note, and with [Hister](https://github.com/asciimoo/hister) private copies of its links.
 
 ## Quickstart
 

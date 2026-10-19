@@ -3,9 +3,9 @@
 [Back to the README](../README.md)
 
 - `app/niwa.py` — the server: settings, listeners, routes, forms, sync, status
-- `app/garden.py` — the garden over vaultkit's `Vault`: published notes, relations, the pre-publish check, the queue
+- `app/garden.py` — the garden over [vaultkit](https://github.com/machiya-kobo/machiya/blob/main/docs/vaultkit.md)'s `Vault`: published notes, relations, the pre-publish check, the queue
 - `app/gmodern.py` — the pages; `app/feed.py` — `/feed.xml`; `app/shell.py` — Machiya's shared shell (`vaultkit.shell`) as the room `niwa`: header with the Rooms switcher (`MACHIYA_ROOMS`, or Niwa's own Konbini/Kura URLs standing alone), tab bar, footer status line, /settings, PWA
-- `app/stream.py` — the stream (garden half here, board half from Konbini)
+- `app/stream.py` — the stream (garden half here, board half from [Konbini](https://github.com/machiya-kobo/konbini))
 - `app/smallweb.py` — Gemini and Gopher
 - `app/links.py`, `app/hister.py`, `app/urlnorm.py` — link rot, the Hister client and the URL rule (`urlnorm.py` is the URL rule used to match a note's link to a cold-archive snapshot; Konbini carries an identical copy)
 - `app/state.py` — link records and garden events
