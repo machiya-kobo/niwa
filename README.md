@@ -46,7 +46,7 @@ Agentically coded with [Claude Code](https://docs.anthropic.com/en/docs/claude-c
 - Gemini and Gopher, for visitors still on the Information Superhighway.
 - The public website is optional and off by default (`NIWA_PUBLIC_PORT`): published notes only, no sign-in, no cookies.
 
-Niwa runs on its own. With Konbini a note gets board badges and the board half of the stream, with [Kura](https://github.com/machiya-kobo/kura) a link to the full note, and with [Hister](https://github.com/asciimoo/hister) private copies of its links.
+Niwa runs on its own. With Konbini a note gets board badges and the board half of the stream, with [Kura](https://github.com/machiya-kobo/kura) a link to the full note, and with [Nogon](https://nogon.eu/) (formerly Hister) private copies of its links.
 
 ## Quickstart
 
