@@ -188,7 +188,7 @@ def note(ctx, base, g, n, cards, checks=None):
                     ((' <a class="chip link" href="%s" title="archived %s">Archived Copy</a>' % (e(r["archive_url"]), e(r.get("archived_at") or "")))
                      if web_url(r.get("archive_url")) else "")
                     + ((' <a class="chip link" href="%s" title="%s %s">Private Copy</a>' % (
-                        e(r["private_url"]), "Archived snapshot" if r.get("private_backend") == "cold" else "Hister copy",
+                        e(r["private_url"]), "Archived snapshot" if r.get("private_backend") == "cold" else "Nogon copy",
                         e(r.get("private_at") or ""))) if web_url(r.get("private_url")) and not public else ""))
                 for r in recs if web_url(r["url"]))
             rel_links.append(section("Links", "", '<ul class="garden-list plain linklist">%s</ul>' % rows))

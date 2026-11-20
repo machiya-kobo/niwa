@@ -1,9 +1,11 @@
-# Niwa (machiya-kobo/niwa): stdlib Python + markdown + pyyaml + git/ssh + openssl (the gemini certificate) + the hister
-# CLI (link rot saves pages into Hister). Runs as uid 1000.
-ARG HISTER_VERSION=v0.20.0
-FROM ghcr.io/asciimoo/hister:${HISTER_VERSION}@sha256:5ffd0a702482c71010a67db8e6b567344189844ed42072d1b4cdae511b2aa7bb AS hister
+# Niwa (machiya-kobo/niwa): stdlib Python + markdown + pyyaml + git/ssh + openssl (the gemini certificate) + the Nogon
+# CLI (link rot saves pages into Nogon, formerly Hister). Runs as uid 1000.
+# NOGON_VERSION must match the Nogon server (0.19.0: was HISTER_VERSION v0.20.0). The CLI keeps the name `hister` here, so
+# Niwa's calls don't change; v0.22 still reads HISTER__APP__ACCESS_TOKEN.
+ARG NOGON_VERSION=v0.22.0
+FROM ghcr.io/asciimoo/nogon:${NOGON_VERSION}@sha256:d1b427c7f876e64e6212e000df60d33c2e418b60372582b56cfee719eafd4107 AS nogon
 
-FROM public.ecr.aws/docker/library/python:3.13-slim@sha256:70729b46c69b4f1e97c4822c1af3df53a1476cf5ddc6c087c0c10bc3a5678c2f
+FROM public.ecr.aws/docker/library/python:3.13-slim@sha256:e48f59cdba69a3cbd9ed2cf0f348d90d45a8d350d98134cf1070bc106ee9ed90
 
 # markdown >= 3.11: older ones run out of memory on one note under Python 3.13 (vaultkit refuses them at import).
 RUN apt-get update \
@@ -14,7 +16,7 @@ RUN apt-get update \
 # ssh refuses to run for a uid without a passwd entry (git pull/push).
 RUN useradd --uid 1000 --home-dir /data --no-create-home --shell /usr/sbin/nologin niwa
 
-COPY --from=hister /hister/hister /usr/local/bin/hister
+COPY --from=nogon /usr/local/bin/nogon /usr/local/bin/hister
 
 WORKDIR /app
 COPY . /app

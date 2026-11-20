@@ -151,7 +151,7 @@ In the stack, Niwa shares the vault with the other apps and links to them. Start
 | `MACHIYA_COOKIE_DOMAIN`, `MACHIYA_ROOMS` | one cookie domain and the list of room URLs, so the Rooms menu and the theme settings are shared |
 | `NIWA_KONBINI_URL`, `NIWA_KURA_URL` | the other rooms' addresses: [Konbini](https://github.com/machiya-kobo/konbini) adds board badges and its API feeds the owner's stream; Kura adds "View in Kura" links (both optional) |
 | `NIWA_AUTH`, `NIWA_USERS`, `NIWA_BIND`, `NIWA_TRUSTED_PROXIES`, `MACHIYA_IDENTITY_FILE` | who may use it: see "Who can use it". A mode that believes a login header refuses to start on a non-loopback bind without `NIWA_TRUSTED_PROXIES`, the proxy's address |
-| `NIWA_HISTER_URL`, `NIWA_HISTER_TOKEN_FILE`, `NIWA_AUTH=hister` … | the stack's Hister and its token; Hister's users as the sign-in through the stack's [hister-login](https://github.com/machiya-kobo/machiya/blob/main/docs/services/hister-login.md) helper (see "Who can use it") |
+| `NIWA_NOGON_URL`, `NIWA_NOGON_TOKEN_FILE`, `NIWA_AUTH=hister` … | the stack's Hister and its token; Hister's users as the sign-in through the stack's [hister-login](https://github.com/machiya-kobo/machiya/blob/main/docs/services/hister-login.md) helper (see "Who can use it") |
 | `NIWA_KONBINI_TOKEN_FILE` | Niwa's own token for its calls to Konbini: a room token for Konbini, or with the identity file an identity token (see Settings) |
 | `MACHIYA_SOURCE_URL` | the address of the source code, to show a "Source code" link as the AGPL asks of a networked service |
 

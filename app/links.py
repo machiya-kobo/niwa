@@ -476,4 +476,5 @@ class Links:
                 "archived": sum(1 for r in rows if r.get("archive_url")),
                 "private": sum(1 for r in rows if r.get("private_url")), "last_run": self.last_run,
                 "cold": (self.cold.error or "%d snapshots" % len(self.cold.urls)) if self.cold else "off",
+                "nogon": (self.hister.h.error or "ok") if self.hister else "off",       # 0.19.0; "hister" until stage 3
                 "hister": (self.hister.h.error or "ok") if self.hister else "off"}

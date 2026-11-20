@@ -43,6 +43,7 @@ from state import EVENTS_DIR, State  # noqa: E402
 from vaultkit import GitSync  # noqa: E402
 from vaultkit import borrow as vk_borrow  # noqa: E402
 from vaultkit import histerauth  # noqa: E402
+from vaultkit import names  # noqa: E402
 from vaultkit import websafe  # noqa: E402
 from vaultkit import changelog  # noqa: E402
 from vaultkit import verify as vk_verify  # noqa: E402
@@ -52,7 +53,7 @@ from vaultkit import read_secret  # noqa: E402
 from vaultkit import signin  # noqa: E402
 from writer import Writer, WriteError  # noqa: E402
 
-VERSION = "0.18.3"
+VERSION = "0.19.0"
 PORT = int(os.environ.get("NIWA_PORT", "8080"))
 USERS = set(filter(None, (u.strip() for u in os.environ.get("NIWA_USERS", "").split(","))))
 
@@ -62,7 +63,7 @@ def auth_mode(value, identity_file=""):
     "open" (no identity check, for localhost or a trusted LAN), "hister" (Hister's users as the sign-in, with the
     Tailscale identity as the fallback: vaultkit.histerauth, never with an identity file), or with an identity file
     "header" (a trusted proxy's login header, NIWA_AUTH_HEADER). Anything else refuses to start rather than guess."""
-    value = (value or "tailscale").strip().lower()
+    value = names.auth_mode(value) or "tailscale"       # 0.19.0: nogon is the same as hister (the rename's stage 1)
     allowed = ("tailscale", "open", "hister", "header") if identity_file else ("tailscale", "open", "hister")
     if value not in allowed:
         raise SystemExit("niwa: NIWA_AUTH must be %s, not %r" % (" or ".join(allowed), value))
@@ -414,14 +415,17 @@ def konbini_token(path):
 garden.konbini = Konbini(server_url(os.environ.get("NIWA_KONBINI_API_URL"), shell.BOARD_URL),
                          login=os.environ.get("NIWA_KONBINI_TEST_LOGIN", ""),
                          token=konbini_token(os.environ.get("NIWA_KONBINI_TOKEN_FILE")))
-HISTER_TOKEN_FILE = os.environ.get("NIWA_HISTER_TOKEN_FILE", "").strip()   # the owner's Hister token; unset: none sent
+# 0.19.0, the rename (Hister is now Nogon): NIWA_NOGON_* first, the NIWA_HISTER_* names still read (logged once) until
+# the rename's stage 3; a NOGON name that is set wins, even empty.
+HISTER_URL = (names.setting("NIWA_NOGON_URL") or "").strip()
+HISTER_TOKEN_FILE = (names.setting("NIWA_NOGON_TOKEN_FILE") or "").strip()   # the owner's Nogon token; unset: none sent
 if HISTER_TOKEN_FILE and not read_secret(HISTER_TOKEN_FILE):
-    raise SystemExit("niwa: NIWA_HISTER_TOKEN_FILE: no token in %s" % HISTER_TOKEN_FILE)
-hister = Hister(os.environ["NIWA_HISTER_URL"], os.environ.get("NIWA_HISTER_PUBLIC", ""), token_file=HISTER_TOKEN_FILE) \
-    if os.environ.get("NIWA_HISTER_URL") else None
+    raise SystemExit("niwa: NIWA_NOGON_TOKEN_FILE: no token in %s" % HISTER_TOKEN_FILE)
+hister = Hister(HISTER_URL, names.setting("NIWA_NOGON_PUBLIC") or "", token_file=HISTER_TOKEN_FILE) \
+    if HISTER_URL else None
 garden.hister = hister
 ARCHIVE = archive_mode(os.environ.get("NIWA_ARCHIVE"))
-HISTER_SAVE = flag(os.environ.get("NIWA_HISTER_SAVE"))      # off: Hister is only looked up, Niwa never indexes into it
+HISTER_SAVE = flag(names.setting("NIWA_NOGON_SAVE"))      # off: Hister is only looked up, Niwa never indexes into it
 backends = [linkrot.WaybackBackend()] if ARCHIVE == "wayback" else []
 cold = linkrot.ColdArchive(os.environ["NIWA_COLD_MAP"]) if os.environ.get("NIWA_COLD_MAP") else None
 links = linkrot.Links(state, garden, backends, enabled=ARCHIVE == "wayback", cold=cold,
@@ -1178,7 +1182,7 @@ def status(owner=False):
         hister_status = {"on": True, "ok": not hister.error} if hister else "off"
     return {"version": VERSION, "vaultkit": vk_verify.version().split(" - ")[0], "head": sync.head(),
             "notes": len(garden.notes), "published": len(garden.published()), "sync": sync_status,
-            "konbini": konbini, "hister": hister_status, "links": links.last_run, "ready": bool(garden.revision),
+            "konbini": konbini, "nogon": hister_status, "hister": hister_status, "links": links.last_run, "ready": bool(garden.revision),
             "error": redact(sync.error) or None, "auth": AUTH}
 
 
@@ -1199,7 +1203,7 @@ def main():
         print("niwa: vaultkit drift: %s" % p, flush=True)
     garden.index()
     if HISTER_AUTH is not None:
-        users = "Hister users %s, sign-in at %s, fallback %s%s" % (
+        users = "Nogon users %s, sign-in at %s, fallback %s%s" % (
             ",".join(sorted(HISTER_AUTH.users)), HISTER_AUTH.signin, HISTER_AUTH.fallback,
             " (%s)" % ",".join(sorted(HISTER_AUTH.fallback_users)) if HISTER_AUTH.fallback == "tailscale" else "")
     elif IDENTITY is not None:

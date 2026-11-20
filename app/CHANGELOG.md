@@ -3,6 +3,17 @@
 Niwa follows [SemVer](https://semver.org). Before 1.0, a new feature, a changed default or setting, or a changed API
 field is a minor bump, and a fix or wording change is a patch. Settings are listed in the README.
 
+## 0.19.0
+
+Hister is now Nogon (the owner, 2026-11-19: rename everything Machiya calls Hister). This is the rename's stage 1: both names are read, and nothing stored changes. The lead made it this once.
+
+- **Settings:** `NIWA_NOGON_URL`, `NIWA_NOGON_PUBLIC`, `NIWA_NOGON_SAVE` and `NIWA_NOGON_TOKEN_FILE` are read first. The `NIWA_HISTER_*` names still work until stage 3, each logged once. A NOGON name that is set wins, even when empty.
+- **Sign-in:** `NIWA_AUTH=nogon` is the same as `hister`. `NIWA_NOGON_USERS`, and `nogon=` in `MACHIYA_ROOMS`, come with vaultkit.
+- **The link archive:** a private copy reads "Nogon copy". The stored backend value stays `hister`.
+- **Status:** `/api/status` reports `nogon` beside `hister`, and so do the link stats.
+- **The bundled CLI:** it now comes from `ghcr.io/asciimoo/nogon:v0.22.0` (`NOGON_VERSION`; was `HISTER_VERSION` v0.20.0), the server's version. It's installed as `hister`, so Niwa's calls don't change. v0.22 still reads `HISTER__APP__ACCESS_TOKEN`.
+- vaultkit 0.35.3 → 0.38.0. The Python base is re-pinned to today's digest.
+
 ## 0.18.3
 
 - The link checker sends a link with non-ASCII characters in its ASCII form. That covers a link a note cut short with "…" and a link to an IDN host such as bücher.example: other characters are percent-encoded once and the host is sent in its IDNA form. Such a link is checked, and shown dead if it is dead, instead of failing with "'ascii' codec can't encode character". Wayback saves send the same form.

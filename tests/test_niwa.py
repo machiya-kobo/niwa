@@ -937,7 +937,7 @@ class HisterSignInTest(unittest.TestCase):
         self.assertIn("NIWA_AUTH=hister needs NIWA_AUTH_SIGNIN_URL", r.stderr)
         full = dict(NIWA_AUTH_SIGNIN_URL="https://hister.test/machiya/signin", NIWA_HISTER_USERS="owner",
                     NIWA_PUBLIC_URL="https://niwa.test", NIWA_USERS="owner@test")
-        for missing, text in (("NIWA_HISTER_USERS", "needs NIWA_HISTER_USERS"), ("NIWA_PUBLIC_URL", "needs NIWA_PUBLIC_URL")):
+        for missing, text in (("NIWA_HISTER_USERS", "needs NIWA_NOGON_USERS"), ("NIWA_PUBLIC_URL", "needs NIWA_PUBLIC_URL")):
             r = run(**{k: v for k, v in full.items() if k != missing})
             self.assertNotEqual(r.returncode, 0, missing)
             self.assertIn(text, r.stderr)
@@ -1421,7 +1421,7 @@ class HisterTokenTest(unittest.TestCase):
                                   capture_output=True, text=True, timeout=60)
         r = run(self.tokenfile(""))
         self.assertNotEqual(r.returncode, 0)
-        self.assertIn("NIWA_HISTER_TOKEN_FILE: no token", r.stderr)
+        self.assertIn("NIWA_NOGON_TOKEN_FILE: no token", r.stderr)
         r = run(self.tokenfile())
         self.assertEqual((r.returncode, r.stdout.splitlines()[-1]), (0, self.TOKEN), r.stderr)
         self.assertNotIn(self.TOKEN, r.stderr)                          # not in the start-up log either
@@ -3356,3 +3356,44 @@ def tearDownModule():
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NogonNamesTest(unittest.TestCase):
+    """0.19.0, the rename's stage 1 (Hister is now Nogon): NIWA_NOGON_* first, NIWA_HISTER_* still read (logged once),
+    NIWA_AUTH=nogon is hister, and /api/status reports nogon beside hister."""
+
+    CODE = ("import niwa; print(repr(niwa.hister.api if niwa.hister else None)); print(niwa.HISTER_SAVE); "
+            "print(niwa.auth_mode('nogon'), niwa.auth_mode(' Hister ')); s = niwa.status(); "
+            "print(s['nogon'] == s['hister'], 'nogon' in niwa.links.stats())")
+
+    def run_niwa(self, **extra):
+        d = tempfile.mkdtemp(prefix="niwa-nogon-")
+        self.addCleanup(shutil.rmtree, d, True)
+        env = {k: v for k, v in os.environ.items() if not k.startswith(("NIWA_HISTER_", "NIWA_NOGON_"))}
+        env.update(NIWA_BIND="127.0.0.1", NIWA_DB=os.path.join(d, "niwa.sqlite3"), **extra)
+        app = os.path.join(HERE, "..", "app")
+        return subprocess.run([sys.executable, "-c", self.CODE], cwd=app, env=env, capture_output=True, text=True,
+                              timeout=60)
+
+    def test_old_names_still_read_and_logged(self):
+        r = self.run_niwa(NIWA_HISTER_URL="http://h.example:4433", NIWA_HISTER_SAVE="1")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        out = r.stdout.splitlines()
+        self.assertEqual(out[-4:], ["'http://h.example:4433'", "True", "hister hister", "True True"])
+        self.assertIn("NIWA_HISTER_URL: an old name, read as NIWA_NOGON_URL", r.stderr)
+        self.assertEqual(r.stderr.count("NIWA_HISTER_URL: an old name"), 1)
+
+    def test_new_names_win_even_empty(self):
+        r = self.run_niwa(NIWA_NOGON_URL="http://n.example:4433", NIWA_HISTER_URL="http://h.example:4433")
+        self.assertEqual(r.stdout.splitlines()[-4], "'http://n.example:4433'", r.stderr)
+        self.assertNotIn("an old name", r.stderr)
+        r = self.run_niwa(NIWA_NOGON_URL="", NIWA_HISTER_URL="http://h.example:4433")
+        self.assertEqual(r.stdout.splitlines()[-4], "None", r.stderr)
+
+    def test_private_copy_says_nogon(self):
+        sys.path.insert(0, os.path.join(HERE, "..", "app"))
+        import gmodern
+        with open(gmodern.__file__, encoding="utf-8") as f:
+            src = f.read()
+        self.assertIn("Nogon copy", src)
+        self.assertNotIn("Hister copy", src)
