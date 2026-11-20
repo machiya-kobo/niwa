@@ -121,7 +121,7 @@ def main():
                    NIWA_REPO_SUBDIR="personal", NIWA_DB=os.path.join(work, "n.sqlite3"), NIWA_AUTH="open",
                    NIWA_BIND="127.0.0.1", NIWA_PORT=str(port), NIWA_HOST="localhost", TZ="UTC", PYTHONDONTWRITEBYTECODE="1",
                    NIWA_ARCHIVE="none")       # the sample's links never go to archive.org
-        for k in [k for k in env if k.startswith(("NIWA_KONBINI", "NIWA_KURA", "NIWA_HISTER", "MACHIYA_", "NIWA_PUBLIC",
+        for k in [k for k in env if k.startswith(("NIWA_KONBINI", "NIWA_KURA", "NIWA_HISTER", "NIWA_NOGON", "MACHIYA_", "NIWA_PUBLIC",
                                                   "NIWA_GARDEN_URL"))]:
             del env[k]
         os.makedirs(OUT, exist_ok=True)

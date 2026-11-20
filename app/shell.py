@@ -10,7 +10,7 @@ import hashlib
 import os
 import re
 
-from vaultkit import histerauth
+from vaultkit import nogonauth
 from vaultkit import shell as house
 from vaultkit.shell import e, prefs  # noqa: F401  (prefs: niwa.py reads the theme and text size with it)
 
@@ -24,7 +24,7 @@ COLUMN_TITLES = {"backlog": "Backlog", "ready": "Ready", "wip": "WIP", "blocked"
                  "done": "Done", "archived": "Archived"}
 BOARD_URL = ""       # Konbini, e.g. https://konbini.example.net
 KURA_URL = ""        # Kura (owner links to the full note)
-SIGNIN = False      # niwa.py: NIWA_AUTH=hister: every page opts in to machiya.js's Hister sign-in (a Sign Out row, 401 -> sign-in)
+SIGNIN = False      # niwa.py: NIWA_AUTH=nogon: every page opts in to machiya.js's Nogon sign-in (a Sign Out row, 401 -> sign-in)
 STATUS = None        # niwa.py: a function returning the footer's {"text": …, "state": "ok|stale|down"}
 ROOM = "niwa"
 house.APP_PREFS = {"linkPreviews": {"type": "bool"}}     # Niwa's own setting that follows the person: account key niwa.link_previews
@@ -168,7 +168,7 @@ def page(ctx, what, body, current="", head="", status=True):
     """body holds the header and <main>; the footer and the tab bar are added here. what: the page's name, before the
     room's in <title> (shell.title: "Lantern - Niwa"; "" for the home page, "Niwa"). ctx.prefs_url (/api/prefs when
     the request has a principal) lets machiya.js sync theme and text size; ctx.who is the signed-in name.
-    status=False: no status line in the footer (the precached /offline). ctx.banner (Hister sign-in is down and the
+    status=False: no status line in the footer (the precached /offline). ctx.banner (Nogon sign-in is down and the
     Tailscale fallback let this request in): the banner at the top of <main>."""
     if public(ctx):
         robots = '<meta name="robots" content="noindex">\n' if NOINDEX else ""
@@ -176,8 +176,8 @@ def page(ctx, what, body, current="", head="", status=True):
                           current, links={}, head=PUBLIC_META + robots + FEED_LINK + head,
                           stylesheets=[static_url("niwa.css")], scripts=[static_url("niwa.js")], manifest=False)
     if status and getattr(ctx, "banner", False):
-        body = re.sub(r"(<main[^>]*>)", lambda m: m.group(1) + histerauth.banner_html(), body, count=1)
-    meta = histerauth.signin_meta("/signout") if SIGNIN else ""
+        body = re.sub(r"(<main[^>]*>)", lambda m: m.group(1) + nogonauth.banner_html(), body, count=1)
+    meta = nogonauth.signin_meta("/signout") if SIGNIN else ""
     return house.page(ctx, ROOM, house.title(ROOM, what), body + footer(status), NAV, current, links=rooms(),
                       head=meta + FEED_LINK + head, stylesheets=[static_url("niwa.css")], scripts=[static_url("niwa.js")], icons=ICON,
                       prefs_url=getattr(ctx, "prefs_url", ""), who=getattr(ctx, "who", ""))

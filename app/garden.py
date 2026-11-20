@@ -119,7 +119,7 @@ class Garden(Vault):
         self._applied = None     # the revision whose index and holds are both done
         self.private = private    # folder prefixes ("Private/") whose notes are never queued or published (see the setter)
         self.links = None    # set by niwa.py (links.Links)
-        self.hister = None
+        self.nogon = None
         self.konbini = None
         self._public_assets, self._public_assets_key = set(), None
 

@@ -692,7 +692,7 @@ class ReleaseDefaultsTest(unittest.TestCase):
                     "https://archive.org/", "http://konbini/", "http://[::1]:80/"):
             self.assertFalse(links.is_external(url), url)
 
-    def test_hister_leaves_out_internal_hosts(self):
+    def test_nogon_leaves_out_internal_hosts(self):
         import links
         self.assertTrue(links.is_internal("laptop.tail1234.ts.net"))
         self.assertTrue(links.is_internal("10.1.2.3"))
@@ -728,41 +728,41 @@ class ReleaseDefaultsTest(unittest.TestCase):
             niwa.garden.private = ()
 
 
-class HisterSignInTest(unittest.TestCase):
-    """NIWA_AUTH=hister with the Tailscale fallback (vaultkit.histerauth), against a fake sign-in helper: signed out
-    never falls back, only "nobody answered" does; a Hister user outside NIWA_HISTER_USERS is a 403."""
+class NogonSignInTest(unittest.TestCase):
+    """NIWA_AUTH=nogon with the Tailscale fallback (vaultkit.nogonauth), against a fake sign-in helper: signed out
+    never falls back, only "nobody answered" does; a Nogon user outside NIWA_NOGON_USERS is a 403."""
     SID = "mhs_" + "A" * 43
     SID2 = "mhs_" + "B" * 43
-    TOKEN = "owner-hister-token"
-    SIGNIN = "https://hister.test/machiya/signin"
+    TOKEN = "owner-nogon-token"
+    SIGNIN = "https://nogon.test/machiya/signin"
     PAGE = {"Accept": "text/html"}
     LOGIN = {"Tailscale-User-Login": "owner@test"}
 
     def setUp(self):
-        from vaultkit import histerauth
+        from vaultkit import nogonauth
         self.helper = FakeHelper(self)
-        self.saved = (niwa.HISTER_AUTH, niwa.SECURE, niwa.ORIGINS, niwa.shell.SIGNIN)
+        self.saved = (niwa.NOGON_AUTH, niwa.SECURE, niwa.ORIGINS, niwa.shell.SIGNIN)
         niwa.SECURE, niwa.ORIGINS = False, (BASE,)               # http, as the tests serve it
-        niwa.HISTER_AUTH = histerauth.HisterAuth("niwa", self.SIGNIN, ["owner"], BASE, "http://helper", "tailscale",
+        niwa.NOGON_AUTH = nogonauth.NogonAuth("niwa", self.SIGNIN, ["owner"], BASE, "http://helper", "tailscale",
                                                  ["owner@test"], secure=False, fetch=self.helper)
         niwa.shell.SIGNIN = True
-        self.addCleanup(lambda: (setattr(niwa, "HISTER_AUTH", self.saved[0]), setattr(niwa, "SECURE", self.saved[1]),
+        self.addCleanup(lambda: (setattr(niwa, "NOGON_AUTH", self.saved[0]), setattr(niwa, "SECURE", self.saved[1]),
                                  setattr(niwa, "ORIGINS", self.saved[2]), setattr(niwa.shell, "SIGNIN", self.saved[3])))
 
     def cookie(self, sid=None):
         return {"Cookie": "machiya_sso=%s" % (sid or self.SID)}
 
     def test_vaultkit_believes_the_fallback_login_only_from_the_trusted_proxies_itself(self):
-        """v0.29: Niwa passes the peer's address (resolve(client=…)), so histerauth's own trusted proxies decide, not only
+        """v0.29: Niwa passes the peer's address (resolve(client=…)), so nogonauth's own trusted proxies decide, not only
         Niwa's header stripping (which is off here: niwa.TRUSTED_PROXIES is empty)."""
         import ipaddress
         self.helper.down = True
         self.assertEqual(niwa.TRUSTED_PROXIES, ())
-        niwa.HISTER_AUTH.trusted = (ipaddress.ip_network("10.210.4.2/32"),)
+        niwa.NOGON_AUTH.trusted = (ipaddress.ip_network("10.210.4.2/32"),)
         self.assertEqual(as_("/", dict(self.LOGIN, **self.PAGE))[0], 503)          # the peer is 127.0.0.1: not the proxy
-        niwa.HISTER_AUTH.trusted = (ipaddress.ip_network("127.0.0.0/8"),)
+        niwa.NOGON_AUTH.trusted = (ipaddress.ip_network("127.0.0.0/8"),)
         self.assertEqual(as_("/", dict(self.LOGIN, **self.PAGE))[0], 200)
-        niwa.HISTER_AUTH.trusted = None                                              # unset: as before
+        niwa.NOGON_AUTH.trusted = None                                              # unset: as before
         self.assertEqual(as_("/", dict(self.LOGIN, **self.PAGE))[0], 200)
 
     def test_signed_out_is_a_redirect_for_a_page_and_401_json_for_an_api_never_a_fallback(self):
@@ -770,7 +770,7 @@ class HisterSignInTest(unittest.TestCase):
         self.assertEqual(status, 302)
         self.assertTrue(headers["Location"].startswith(self.SIGNIN + "?return="), headers["Location"])
         self.assertIn(urllib.parse.quote(BASE + "/", safe=""), headers["Location"])     # the way back is NIWA_PUBLIC_URL's
-        guard = niwa.HISTER_AUTH.try_cookie                  # host-only per room since vaultkit 0.22: machiya_sso_niwa_try
+        guard = niwa.NOGON_AUTH.try_cookie                  # host-only per room since vaultkit 0.22: machiya_sso_niwa_try
         self.assertEqual(guard, "machiya_sso_niwa_try")      # (with https: __Host-machiya_sso_niwa_try)
         self.assertTrue(any(c.startswith(guard + "=1") for c in headers.get_all("Set-Cookie")))
         status, headers, body = as_("/", dict(self.PAGE, Cookie=guard + "=1"))          # the loop guard: a page, no 302
@@ -786,7 +786,7 @@ class HisterSignInTest(unittest.TestCase):
             self.assertEqual(as_("/", extra)[0], 302 if "Accept" in extra else 401)       # still signed out
             self.assertEqual(as_("/api/suggestions", extra)[0], 401)
 
-    def test_a_session_or_a_token_admits_the_owner_other_hister_users_get_403(self):
+    def test_a_session_or_a_token_admits_the_owner_other_nogon_users_get_403(self):
         self.helper.sessions[self.SID] = "owner"
         status, _, body = as_("/", dict(self.cookie(), **self.PAGE))
         self.assertEqual(status, 200)
@@ -811,7 +811,7 @@ class HisterSignInTest(unittest.TestCase):
         self.assertIn('<div class="machiya-banner" role="status">Signed in through the tailnet: sign-in is unavailable</div>',
                       body)
         self.assertNotIn("Set-Cookie", headers)                         # nothing cached, nothing set
-        self.assertEqual(niwa.HISTER_AUTH.fallback_total, 1)
+        self.assertEqual(niwa.NOGON_AUTH.fallback_total, 1)
         self.assertEqual(as_("/", self.PAGE)[0], 503)                   # no tailnet login: nobody
         self.assertEqual(as_("/", dict(self.PAGE, **{"Tailscale-User-Login": "other@test"}))[0], 403)
         self.assertEqual(as_("/api/suggestions", self.LOGIN)[0], 200)
@@ -820,7 +820,7 @@ class HisterSignInTest(unittest.TestCase):
         with mock.patch.object(niwa, "TRUSTED_PROXIES", niwa.trusted_proxies("127.0.0.0/8")):
             self.assertEqual(as_("/", dict(self.LOGIN, **self.PAGE))[0], 200)    # from the proxy: as before
         self.helper.down = False
-        self.helper.off = True                                          # Hister's user handling is off: the check says so
+        self.helper.off = True                                          # Nogon's user handling is off: the check says so
         status, _, body = as_("/", dict(self.cookie(), **dict(self.LOGIN, **self.PAGE)))
         self.assertEqual((status, "machiya-banner" in body), (200, True))
 
@@ -877,7 +877,7 @@ class HisterSignInTest(unittest.TestCase):
         self.assertEqual(self.helper.calls[-1][2]["X-Access-Token"], self.TOKEN)
         self.assertNotIn("X-Machiya-Session", self.helper.calls[-1][2])
         self.helper.down = True                                                    # the helper gone: the tailnet login still
-        niwa.HISTER_AUTH.health = (None, True)                                     # (forget the last good answer)
+        niwa.NOGON_AUTH.health = (None, True)                                     # (forget the last good answer)
         status, _, body = call("GET", "/api/prefs", self.LOGIN)                    # gets in, but no account then: 503
         self.assertEqual(status, 503)
 
@@ -888,7 +888,7 @@ class HisterSignInTest(unittest.TestCase):
         self.assertIn("Saved to your account.", body)
         self.assertEqual(re.findall(r'<h2 id="[^"]*">([^<]*)</h2>', body), ["Appearance", "Garden", "About"])
         self.helper.down = True
-        niwa.HISTER_AUTH.health = (None, True)
+        niwa.NOGON_AUTH.health = (None, True)
         _, _, body = as_("/settings", dict(self.LOGIN, **self.PAGE))
         self.assertIn('data-prefs-state="unavailable"', body)                      # the fallback: no account
 
@@ -898,34 +898,34 @@ class HisterSignInTest(unittest.TestCase):
         status, headers, _ = as_("/stream", self.PAGE)                             # the trip out: a state cookie, a nonce
         self.assertEqual(status, 302)
         self.assertIn("state=", headers["Location"])
-        state = next(c for c in headers.get_all("Set-Cookie") if c.startswith(niwa.HISTER_AUTH.state_cookie + "="))
+        state = next(c for c in headers.get_all("Set-Cookie") if c.startswith(niwa.NOGON_AUTH.state_cookie + "="))
         nonce = state.split(";")[0].split("=", 1)[1]
         callback = "/machiya/callback?code=" + helper.code
-        status, headers, _ = as_(callback, dict(self.PAGE, Cookie="%s=%s" % (niwa.HISTER_AUTH.state_cookie, nonce)))
+        status, headers, _ = as_(callback, dict(self.PAGE, Cookie="%s=%s" % (niwa.NOGON_AUTH.state_cookie, nonce)))
         self.assertEqual((status, headers["Location"]), (302, BASE + "/stream"))   # back to the page it started from
         redeem = [c for c in helper.calls if c[1] == "/v1/redeem"][0][2]
         self.assertEqual((redeem["X-Machiya-Room"], redeem["X-Machiya-State"]), (BASE, nonce))   # this room, this browser
-        room_cookie = next(c for c in headers.get_all("Set-Cookie") if c.startswith(niwa.HISTER_AUTH.room_cookie + "="))
+        room_cookie = next(c for c in headers.get_all("Set-Cookie") if c.startswith(niwa.NOGON_AUTH.room_cookie + "="))
         self.assertIn(helper.rsid, room_cookie)
         self.assertNotIn("Domain=", room_cookie)                                    # host-only: no other host gets it
-        sid_cookie = {"Cookie": "%s=%s" % (niwa.HISTER_AUTH.room_cookie, helper.rsid)}
+        sid_cookie = {"Cookie": "%s=%s" % (niwa.NOGON_AUTH.room_cookie, helper.rsid)}
         self.assertEqual(as_("/api/suggestions", sid_cookie)[0], 200)               # and it signs this room in
         self.assertEqual(helper.calls[-1][2]["X-Machiya-Room"], BASE)               # every check names the room
         self.assertEqual(as_(callback, dict(self.PAGE))[0], 401)                    # no state cookie: nothing is traded
         self.assertEqual(as_("/machiya/callback?code=mhc_" + "x" * 43, dict(self.PAGE, Cookie="%s=%s" % (
-            niwa.HISTER_AUTH.state_cookie, nonce)))[0], 401)                        # a code the helper refuses: a page, no loop
+            niwa.NOGON_AUTH.state_cookie, nonce)))[0], 401)                        # a code the helper refuses: a page, no loop
 
     def test_it_is_inert_unless_asked_for(self):
-        niwa.HISTER_AUTH, niwa.shell.SIGNIN = self.saved[0], self.saved[3]
-        self.assertIsNone(niwa.HISTER_AUTH)
+        niwa.NOGON_AUTH, niwa.shell.SIGNIN = self.saved[0], self.saved[3]
+        self.assertIsNone(niwa.NOGON_AUTH)
         self.assertNotIn("machiya-signin", req("/")[1])
         self.assertEqual(req("/", user=None)[0], 403)
 
     def test_start_up_settings(self):
-        code = "import niwa; print(sorted(niwa.HISTER_AUTH.users), niwa.HISTER_AUTH.fallback, niwa.HISTER_AUTH.standalone)"
-        base = dict(os.environ, NIWA_AUTH="hister", NIWA_BIND="127.0.0.1",
-                    NIWA_DB=os.path.join(TMP, "hister-start", "niwa.sqlite3"))
-        for k in ("NIWA_AUTH_URL", "NIWA_AUTH_SIGNIN_URL", "NIWA_HISTER_USERS", "NIWA_PUBLIC_URL", "NIWA_USERS",
+        code = "import niwa; print(sorted(niwa.NOGON_AUTH.users), niwa.NOGON_AUTH.fallback, niwa.NOGON_AUTH.standalone)"
+        base = dict(os.environ, NIWA_AUTH="nogon", NIWA_BIND="127.0.0.1",
+                    NIWA_DB=os.path.join(TMP, "nogon-start", "niwa.sqlite3"))
+        for k in ("NIWA_AUTH_URL", "NIWA_AUTH_SIGNIN_URL", "NIWA_NOGON_USERS", "NIWA_PUBLIC_URL", "NIWA_USERS",
                   "MACHIYA_IDENTITY_FILE", "NIWA_AUTH_FALLBACK"):
             base.pop(k, None)
         app = os.path.join(HERE, "..", "app")
@@ -934,14 +934,14 @@ class HisterSignInTest(unittest.TestCase):
             return subprocess.run([sys.executable, "-c", code], cwd=app, env=dict(base, **extra), capture_output=True,
                                   text=True, timeout=60)
         r = run()
-        self.assertIn("NIWA_AUTH=hister needs NIWA_AUTH_SIGNIN_URL", r.stderr)
-        full = dict(NIWA_AUTH_SIGNIN_URL="https://hister.test/machiya/signin", NIWA_HISTER_USERS="owner",
+        self.assertIn("NIWA_AUTH=nogon needs NIWA_AUTH_SIGNIN_URL", r.stderr)
+        full = dict(NIWA_AUTH_SIGNIN_URL="https://nogon.test/machiya/signin", NIWA_NOGON_USERS="owner",
                     NIWA_PUBLIC_URL="https://niwa.test", NIWA_USERS="owner@test")
-        for missing, text in (("NIWA_HISTER_USERS", "needs NIWA_NOGON_USERS"), ("NIWA_PUBLIC_URL", "needs NIWA_PUBLIC_URL")):
+        for missing, text in (("NIWA_NOGON_USERS", "needs NIWA_NOGON_USERS"), ("NIWA_PUBLIC_URL", "needs NIWA_PUBLIC_URL")):
             r = run(**{k: v for k, v in full.items() if k != missing})
             self.assertNotEqual(r.returncode, 0, missing)
             self.assertIn(text, r.stderr)
-        r = run(**dict(full, NIWA_HISTER_USERS="*"))
+        r = run(**dict(full, NIWA_NOGON_USERS="*"))
         self.assertIn("'*' is refused", r.stderr)
         r = run(**dict(full, NIWA_AUTH_FALLBACK="none"))
         self.assertIn("needs NIWA_AUTH_URL", r.stderr)
@@ -953,7 +953,7 @@ class HisterSignInTest(unittest.TestCase):
 
 
 class FakeHelper:
-    """The hister-login helper as a room sees it: GET /v1/check, /healthz and POST /v1/signout."""
+    """The nogon-login helper as a room sees it: GET /v1/check, /healthz and POST /v1/signout."""
 
     def __init__(self, test):
         self.calls, self.sessions, self.tokens = [], {}, {}
@@ -1227,8 +1227,8 @@ class SweepFixesTest(unittest.TestCase):
 
     # -- NIWA-6
 
-    def test_the_hister_client_never_follows_a_redirect_with_its_token(self):
-        import hister
+    def test_the_nogon_client_never_follows_a_redirect_with_its_token(self):
+        import nogon
         seen = []
 
         class Target(http.server.BaseHTTPRequestHandler):
@@ -1260,7 +1260,7 @@ class SweepFixesTest(unittest.TestCase):
         tokenfile = os.path.join(TMP, "sweep-token")
         with open(tokenfile, "w") as f:
             f.write("sweep-secret-token\n")
-        h = hister.Hister("http://127.0.0.1:%d" % redirect.server_address[1], "", token_file=tokenfile)
+        h = nogon.Nogon("http://127.0.0.1:%d" % redirect.server_address[1], "", token_file=tokenfile)
         status, _ = h.call("GET", "/search?q=x")
         self.assertEqual(status, 302)                                   # the redirect is the answer, not followed
         self.assertEqual(seen, [])                                      # the token never reached the other server
@@ -1311,15 +1311,15 @@ class SweepFixesTest(unittest.TestCase):
             again.recv(1)                                               # accepted and held, not refused
 
 
-class HisterTokenTest(unittest.TestCase):
-    """NIWA_HISTER_TOKEN_FILE: the owner's Hister token goes out as X-Access-Token on every call, and to the hister CLI
+class NogonTokenTest(unittest.TestCase):
+    """NIWA_NOGON_TOKEN_FILE: the owner's Nogon token goes out as X-Access-Token on every call, and to the nogon CLI
     in its environment only; unset, nothing is sent; it is never logged."""
     TOKEN = "tok-owner-1234567890"
 
     def setUp(self):
-        import hister
-        self.hister = hister
-        self.dir = tempfile.mkdtemp(prefix="hister-token-", dir=TMP)
+        import nogon
+        self.nogon = nogon
+        self.dir = tempfile.mkdtemp(prefix="nogon-token-", dir=TMP)
         self.seen = []
         seen = self.seen
 
@@ -1347,25 +1347,25 @@ class HisterTokenTest(unittest.TestCase):
         return path
 
     def test_header_present_on_every_call_when_set_and_absent_when_unset(self):
-        h = self.hister.Hister(self.api, "", token_file=self.tokenfile())
+        h = self.nogon.Nogon(self.api, "", token_file=self.tokenfile())
         h.call("GET", "/search?q=x")
         h.add({"url": "https://a.example/", "title": "a"})
         h.delete("https://a.example/")
         self.assertEqual(len(self.seen), 3)
         for headers in self.seen:
             self.assertEqual(headers.get("X-Access-Token"), self.TOKEN)
-            self.assertEqual(headers.get("Origin"), "hister://")
+            self.assertEqual(headers.get("Origin"), "nogon://")
         self.seen.clear()
-        for h in (self.hister.Hister(self.api, ""), self.hister.Hister(self.api, "", token_file="")):
+        for h in (self.nogon.Nogon(self.api, ""), self.nogon.Nogon(self.api, "", token_file="")):
             h.call("GET", "/search?q=x")
         self.assertEqual(len(self.seen), 2)
         for headers in self.seen:
             self.assertNotIn("X-Access-Token", headers)
-            self.assertEqual(headers.get("Origin"), "hister://")
+            self.assertEqual(headers.get("Origin"), "nogon://")
 
     def test_a_rotated_token_is_read_again_and_an_unreadable_file_sends_none(self):
         path = self.tokenfile()
-        h = self.hister.Hister(self.api, "", token_file=path)
+        h = self.nogon.Nogon(self.api, "", token_file=path)
         h.call("GET", "/search?q=x")
         with open(path, "w") as f:
             f.write("rotated-token-0987654321\n")
@@ -1377,29 +1377,30 @@ class HisterTokenTest(unittest.TestCase):
 
     def test_the_cli_gets_the_token_in_its_environment_never_its_arguments(self):
         out = os.path.join(self.dir, "cli.out")
-        fake = os.path.join(self.dir, "hister")
+        fake = os.path.join(self.dir, "nogon")
         with open(fake, "w") as f:
-            f.write('#!/bin/sh\nprintf "%%s\\n" "$*" > "%s"\nprintf "%%s\\n" "$HISTER__APP__ACCESS_TOKEN" >> "%s"\n'
-                    'echo "failed with $HISTER__APP__ACCESS_TOKEN" >&2\nexit 1\n' % (out, out))
+            f.write('#!/bin/sh\nprintf "%%s\\n" "$*" > "%s"\nprintf "%%s\\n" "$NOGON__APP__ACCESS_TOKEN" >> "%s"\n'
+                    'echo "failed with $NOGON__APP__ACCESS_TOKEN" >&2\nexit 1\n' % (out, out))
         os.chmod(fake, 0o755)
-        h = self.hister.Hister(self.api, "", cli=fake, token_file=self.tokenfile())
+        h = self.nogon.Nogon(self.api, "", cli=fake, token_file=self.tokenfile())
         self.assertFalse(h.index("https://a.example/"))
         with open(out) as f:
             args, env_token = f.read().splitlines()
         self.assertEqual(env_token, self.TOKEN)
         self.assertNotIn(self.TOKEN, args)
         self.assertIn("index --label konbini https://a.example/", args)
+        self.assertEqual(self.nogon.TOKEN_ENV, "NOGON__APP__ACCESS_TOKEN")      # 0.20.0: the CLI is Nogon v0.22
         self.assertIn("failed with ***", h.error)                       # the CLI echoed it: it never reaches the error
         self.assertNotIn(self.TOKEN, h.error)
-        unset = self.hister.Hister(self.api, "", cli=fake)
+        unset = self.nogon.Nogon(self.api, "", cli=fake)
         with mock.patch.dict(os.environ, {}, clear=False):
-            os.environ.pop(self.hister.TOKEN_ENV, None)
+            os.environ.pop(self.nogon.TOKEN_ENV, None)
             unset.index("https://a.example/")
         with open(out) as f:
             self.assertEqual(f.read().splitlines()[1], "")              # unset: the CLI gets no token
 
     def test_the_token_is_never_logged(self):
-        h = self.hister.Hister(self.api, "", token_file=self.tokenfile())
+        h = self.nogon.Nogon(self.api, "", token_file=self.tokenfile())
         err, out = io.StringIO(), io.StringIO()
         with mock.patch.object(sys, "stderr", err), mock.patch.object(sys, "stdout", out):
             h.search("x")
@@ -1411,13 +1412,13 @@ class HisterTokenTest(unittest.TestCase):
         self.assertNotIn(self.TOKEN, err.getvalue() + out.getvalue() + h.error)
 
     def test_a_set_token_file_with_no_token_stops_startup(self):
-        code = "import niwa; print(niwa.hister.token())"
-        env = dict(os.environ, NIWA_BIND="127.0.0.1", NIWA_HISTER_URL=self.api,
+        code = "import niwa; print(niwa.nogon.token())"
+        env = dict(os.environ, NIWA_BIND="127.0.0.1", NIWA_NOGON_URL=self.api,
                    NIWA_DB=os.path.join(self.dir, "data", "niwa.sqlite3"))
         app = os.path.join(HERE, "..", "app")
 
         def run(path):
-            return subprocess.run([sys.executable, "-c", code], cwd=app, env=dict(env, NIWA_HISTER_TOKEN_FILE=path),
+            return subprocess.run([sys.executable, "-c", code], cwd=app, env=dict(env, NIWA_NOGON_TOKEN_FILE=path),
                                   capture_output=True, text=True, timeout=60)
         r = run(self.tokenfile(""))
         self.assertNotEqual(r.returncode, 0)
@@ -1427,8 +1428,8 @@ class HisterTokenTest(unittest.TestCase):
         self.assertNotIn(self.TOKEN, r.stderr)                          # not in the start-up log either
 
 
-class ArchiveAndHisterSaveTest(unittest.TestCase):
-    """Niwa never contacts archive.org, and never indexes into Hister, unless the settings say so."""
+class ArchiveAndNogonSaveTest(unittest.TestCase):
+    """Niwa never contacts archive.org, and never indexes into Nogon, unless the settings say so."""
 
     def test_archive_mode(self):
         for value, want in ((None, "wayback"), ("", "wayback"), ("none", "none"), (" None ", "none"), ("wayback", "wayback"),
@@ -1442,9 +1443,9 @@ class ArchiveAndHisterSaveTest(unittest.TestCase):
             self.assertTrue(niwa.flag(value), value)
         for value in (None, "", "0", "off", "false", "yes"):
             self.assertFalse(niwa.flag(value), value)
-        self.assertFalse(niwa.HISTER_SAVE)
+        self.assertFalse(niwa.NOGON_SAVE)
 
-    def test_hister_is_only_looked_up_unless_save_is_on(self):
+    def test_nogon_is_only_looked_up_unless_save_is_on(self):
         import links
 
         class Store:
@@ -1454,30 +1455,30 @@ class ArchiveAndHisterSaveTest(unittest.TestCase):
             def link_set(self, url, **fields):
                 self.sets.append((url, fields))
 
-        class FakeHister:
+        class FakeNogon:
             def __init__(self):
                 self.saved = []
 
             def lookup(self, url):
-                return ("http://hister/preview?id=1", "2026-09-01") if "known" in url else None
+                return ("http://nogon/preview?id=1", "2026-09-01") if "known" in url else None
 
             def save(self, url):
                 self.saved.append(url)
-                return ("http://hister/preview?id=2", "2026-09-30")
+                return ("http://nogon/preview?id=2", "2026-09-30")
 
         def run(save, url):
-            store, fake = Store(), FakeHister()
-            got = links.Links(store, None, hister=fake, hister_save=save).private_copy({"url": url, "status": "live"})
+            store, fake = Store(), FakeNogon()
+            got = links.Links(store, None, nogon=fake, nogon_save=save).private_copy({"url": url, "status": "live"})
             return got, fake.saved, store.sets[0][1]
 
         got, saved, fields = run(False, "https://new.example/a")
         self.assertEqual((got, saved), (None, []))                    # off: no index call, no copy
         self.assertNotIn("private_url", fields)
-        got, saved, fields = run(False, "https://known.example/a")    # a copy Hister already has still shows
-        self.assertEqual((got, saved, fields["private_backend"]), ("http://hister/preview?id=1", [], "hister"))
+        got, saved, fields = run(False, "https://known.example/a")    # a copy Nogon already has still shows
+        self.assertEqual((got, saved, fields["private_backend"]), ("http://nogon/preview?id=1", [], "hister"))  # stored names stay
         got, saved, _ = run(True, "https://new.example/a")            # on: the link is indexed
-        self.assertEqual((got, saved), ("http://hister/preview?id=2", ["https://new.example/a"]))
-        self.assertFalse(links.Links(Store(), None).hister_save)      # the default is off
+        self.assertEqual((got, saved), ("http://nogon/preview?id=2", ["https://new.example/a"]))
+        self.assertFalse(links.Links(Store(), None).nogon_save)      # the default is off
 
 
 class EnvFileTest(unittest.TestCase):
@@ -1797,7 +1798,8 @@ class HardeningTest(unittest.TestCase):
             anyone = json.loads(req("/api/status", user=None)[1])
             self.assertNotIn("konbini.internal", json.dumps(anyone))
             self.assertEqual(anyone["konbini"], {"on": True, "ok": True})
-            self.assertEqual(anyone["hister"], "off")
+            self.assertEqual(anyone["nogon"], "off")
+            self.assertNotIn("hister", anyone)                     # 0.20.0: no "hister" twin
             owner = json.loads(req("/api/status")[1])
             self.assertEqual(owner["konbini"]["url"], "http://konbini.internal:8081")
             for data in (anyone, owner):
@@ -2729,12 +2731,12 @@ class PublicBindTest(unittest.TestCase):
     """A mode that believes a login header refuses to start on a non-loopback bind without NIWA_TRUSTED_PROXIES: anyone
     who reaches the port (another container on the network, a LAN peer) could send the header, publish writes included."""
     APP = os.path.join(HERE, "..", "app")
-    HISTER = dict(NIWA_AUTH="hister", NIWA_AUTH_SIGNIN_URL="https://hister.test/machiya/signin", NIWA_HISTER_USERS="owner",
+    NOGON = dict(NIWA_AUTH="nogon", NIWA_AUTH_SIGNIN_URL="https://nogon.test/machiya/signin", NIWA_NOGON_USERS="owner",
                   NIWA_PUBLIC_URL="https://niwa.test", NIWA_USERS="owner@test")
 
     def run_niwa(self, **extra):
         env = {k: v for k, v in os.environ.items() if not k.startswith(("NIWA_AUTH", "NIWA_BIND", "NIWA_TRUSTED", "NIWA_USERS",
-                                                                          "NIWA_HISTER", "NIWA_PUBLIC_URL", "MACHIYA_"))}
+                                                                          "NIWA_HISTER", "NIWA_NOGON", "NIWA_PUBLIC_URL", "MACHIYA_"))}
         env.update(NIWA_DB=os.path.join(TMP, "bind-start", "niwa.sqlite3"), **extra)
         return subprocess.run([sys.executable, "-c", "import niwa; print(niwa.AUTH, niwa.BIND)"], cwd=self.APP, env=env,
                               capture_output=True, text=True, timeout=60)
@@ -2754,18 +2756,18 @@ class PublicBindTest(unittest.TestCase):
         r = self.run_niwa(NIWA_AUTH="open", NIWA_BIND="0.0.0.0")                    # open mode has its own Host allow-list
         self.assertEqual(r.returncode, 0, r.stderr)
 
-    def test_hister_with_the_tailscale_fallback_needs_the_proxy_too(self):
-        r = self.run_niwa(NIWA_BIND="0.0.0.0", **self.HISTER)                       # the fallback defaults to tailscale
+    def test_nogon_with_the_tailscale_fallback_needs_the_proxy_too(self):
+        r = self.run_niwa(NIWA_BIND="0.0.0.0", **self.NOGON)                       # the fallback defaults to tailscale
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("NIWA_AUTH_FALLBACK=tailscale", r.stderr)
         self.assertIn("NIWA_TRUSTED_PROXIES", r.stderr)
-        r = self.run_niwa(NIWA_BIND="0.0.0.0", NIWA_AUTH_FALLBACK="tailscale", NIWA_BIND_BEHIND_PROXY="1", **self.HISTER)
+        r = self.run_niwa(NIWA_BIND="0.0.0.0", NIWA_AUTH_FALLBACK="tailscale", NIWA_BIND_BEHIND_PROXY="1", **self.NOGON)
         self.assertNotEqual(r.returncode, 0)
-        r = self.run_niwa(NIWA_BIND="0.0.0.0", NIWA_TRUSTED_PROXIES="10.210.4.2", **self.HISTER)
+        r = self.run_niwa(NIWA_BIND="0.0.0.0", NIWA_TRUSTED_PROXIES="10.210.4.2", **self.NOGON)
         self.assertEqual(r.returncode, 0, r.stderr)
-        r = self.run_niwa(NIWA_BIND="0.0.0.0", NIWA_AUTH_FALLBACK="none", NIWA_AUTH_URL="http://hister-login:8081", **self.HISTER)
+        r = self.run_niwa(NIWA_BIND="0.0.0.0", NIWA_AUTH_FALLBACK="none", NIWA_AUTH_URL="http://nogon-login:8081", **self.NOGON)
         self.assertEqual(r.returncode, 0, r.stderr)                                 # no header is believed
-        r = self.run_niwa(NIWA_BIND="127.0.0.1", **self.HISTER)
+        r = self.run_niwa(NIWA_BIND="127.0.0.1", **self.NOGON)
         self.assertEqual(r.returncode, 0, r.stderr)
 
     def test_a_bad_trusted_proxy_refuses_to_start(self):
@@ -2917,7 +2919,7 @@ class TrustedProxiesTest(unittest.TestCase):
 
 class PublicGardenTest(unittest.TestCase):
     """The public garden (NIWA_PUBLIC_PORT): published notes for anyone, and nothing that is the owner's."""
-    SENTINELS = ("kura.sentinel", "konbini.sentinel", "hister.sentinel", "shiori.sentinel", "machiya.sentinel",
+    SENTINELS = ("kura.sentinel", "konbini.sentinel", "nogon.sentinel", "shiori.sentinel", "machiya.sentinel",
                  "blog.sentinel")
 
     @classmethod
@@ -2946,7 +2948,7 @@ class PublicGardenTest(unittest.TestCase):
             f.write(b"\x89PNG\r\n\x1a\n")
         niwa.state.link_set("https://dead.example/x", status="dead", notes="Notes/Public lantern.md",
                             archive_url="https://web.archive.org/web/2026/https://dead.example/x",
-                            private_url="https://hister.sentinel.example/copy", private_at="2026-09-01")
+                            private_url="https://nogon.sentinel.example/copy", private_at="2026-09-01")
         niwa.state.link_set("https://live.example/y", status="live", notes="Notes/Public lantern.md",
                             archive_url="https://web.archive.org/web/2026/https://live.example/y", archived_at="2026-09-02")
         self.private = niwa.garden.private
@@ -3059,7 +3061,7 @@ class PublicGardenTest(unittest.TestCase):
 
     def test_the_owner_page_would_show_the_sentinels(self):
         _, body = req("/n/Notes/Public%20lantern")      # the owner's own port: the proof the sweep below means something
-        for want in ("kura.sentinel", "konbini.sentinel", "hister.sentinel", "blog.sentinel", "Tend",
+        for want in ("kura.sentinel", "konbini.sentinel", "nogon.sentinel", "blog.sentinel", "Tend",
                      'href="https://garden.example/n/Notes/Public%20lantern">Public Page</a>'):
             self.assertIn(want, body)
 
@@ -3079,7 +3081,7 @@ class PublicGardenTest(unittest.TestCase):
                     self.assertNotIn(bad, body, (path, bad))
         _, hdrs, body = self.get("/n/Notes/Public%20lantern")
         self.assertIn("Public lantern", body)
-        self.assertIn('href="https://web.archive.org/web/2026/https://dead.example/x"', body)   # Wayback, never Hister
+        self.assertIn('href="https://web.archive.org/web/2026/https://dead.example/x"', body)   # Wayback, never Nogon
         self.assertIn('name="niwa-public"', body)
         self.assertIn('<span class="seed" title="not in the garden">Lantern</span>', body)     # unpublished: plain text
         self.assertIn("public", hdrs["cache-control"][0])
@@ -3154,7 +3156,7 @@ class PublicGardenTest(unittest.TestCase):
                       "=> https://web.archive.org/web/2026/https://live.example/y the live page (archive.org)\n", gem)
         self.assertIn("=> https://dead.example/x https://dead.example/x (dead link)\n"
                       "=> https://web.archive.org/web/2026/https://dead.example/x https://dead.example/x (archive.org)", gem)
-        self.assertNotIn("hister.sentinel", gem)
+        self.assertNotIn("nogon.sentinel", gem)
         gopher = SweepFixesTest.gopher("/n/Notes/Public lantern")
         self.assertIn("https://web.archive.org/web/2026/https://live.example/y", gopher)
 
@@ -3359,35 +3361,57 @@ if __name__ == "__main__":
 
 
 class NogonNamesTest(unittest.TestCase):
-    """0.19.0, the rename's stage 1 (Hister is now Nogon): NIWA_NOGON_* first, NIWA_HISTER_* still read (logged once),
-    NIWA_AUTH=nogon is hister, and /api/status reports nogon beside hister."""
+    """0.20.0, the rename's stage 3 (Hister is now Nogon): only the NIWA_NOGON_* names and NIWA_AUTH=nogon are read. An
+    old name on its own stops Niwa, naming the new one; beside its new name it is ignored and said once. /api/status
+    and the link stats report "nogon" only."""
 
-    CODE = ("import niwa; print(repr(niwa.hister.api if niwa.hister else None)); print(niwa.HISTER_SAVE); "
-            "print(niwa.auth_mode('nogon'), niwa.auth_mode(' Hister ')); s = niwa.status(); "
-            "print(s['nogon'] == s['hister'], 'nogon' in niwa.links.stats())")
+    CODE = ("import niwa; print(repr(niwa.nogon.api if niwa.nogon else None)); print(niwa.NOGON_SAVE); "
+            "print(niwa.auth_mode('nogon'), niwa.auth_mode(' Nogon ')); s = niwa.status(); st = niwa.links.stats(); "
+            "print('nogon' in s, 'hister' in s, 'nogon' in st, 'hister' in st)")
 
     def run_niwa(self, **extra):
-        d = tempfile.mkdtemp(prefix="niwa-nogon-")
+        d = tempfile.mkdtemp(prefix="niwa-nogon-", dir=TMP)
         self.addCleanup(shutil.rmtree, d, True)
-        env = {k: v for k, v in os.environ.items() if not k.startswith(("NIWA_HISTER_", "NIWA_NOGON_"))}
+        env = {k: v for k, v in os.environ.items() if not k.startswith(("NIWA_HISTER_", "NIWA_NOGON_", "NIWA_AUTH"))}
         env.update(NIWA_BIND="127.0.0.1", NIWA_DB=os.path.join(d, "niwa.sqlite3"), **extra)
         app = os.path.join(HERE, "..", "app")
         return subprocess.run([sys.executable, "-c", self.CODE], cwd=app, env=env, capture_output=True, text=True,
                               timeout=60)
 
-    def test_old_names_still_read_and_logged(self):
-        r = self.run_niwa(NIWA_HISTER_URL="http://h.example:4433", NIWA_HISTER_SAVE="1")
-        self.assertEqual(r.returncode, 0, r.stderr)
-        out = r.stdout.splitlines()
-        self.assertEqual(out[-4:], ["'http://h.example:4433'", "True", "hister hister", "True True"])
-        self.assertIn("NIWA_HISTER_URL: an old name, read as NIWA_NOGON_URL", r.stderr)
-        self.assertEqual(r.stderr.count("NIWA_HISTER_URL: an old name"), 1)
+    def test_an_old_name_alone_stops_niwa_and_names_the_new_one(self):
+        for old, value in (("NIWA_HISTER_URL", "http://h.example:4433"), ("NIWA_HISTER_PUBLIC", "https://h.example"),
+                           ("NIWA_HISTER_SAVE", "1"), ("NIWA_HISTER_TOKEN_FILE", "/nonexistent/token")):
+            r = self.run_niwa(**{old: value})
+            self.assertNotEqual(r.returncode, 0, old)
+            self.assertIn("niwa: %s is an old name and is no longer read: rename it %s" % (old, old.replace("HISTER", "NOGON")),
+                          r.stderr)
+            self.assertNotIn("Traceback", r.stderr)                     # a start-up refusal, not a crash
+        r = self.run_niwa(NIWA_AUTH="hister")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("niwa: NIWA_AUTH=hister is an old name and is no longer read: use NIWA_AUTH=nogon", r.stderr)
+        self.assertNotIn("Traceback", r.stderr)
+        r = self.run_niwa(NIWA_AUTH="hister", NIWA_AUTH_SIGNIN_URL="https://nogon.test/machiya/signin",
+                          NIWA_NOGON_USERS="owner", NIWA_PUBLIC_URL="https://niwa.test")
+        self.assertIn("use NIWA_AUTH=nogon", r.stderr)
+        r = self.run_niwa(NIWA_AUTH="nogon", NIWA_AUTH_SIGNIN_URL="https://nogon.test/machiya/signin",
+                          NIWA_HISTER_USERS="owner", NIWA_PUBLIC_URL="https://niwa.test", NIWA_USERS="owner@test")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("NIWA_HISTER_USERS is an old name and is no longer read: rename it NIWA_NOGON_USERS", r.stderr)
 
-    def test_new_names_win_even_empty(self):
+    def test_the_new_names_are_read_and_status_says_nogon_only(self):
+        r = self.run_niwa(NIWA_NOGON_URL="http://n.example:4433", NIWA_NOGON_SAVE="1")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout.splitlines()[-4:], ["'http://n.example:4433'", "True", "nogon nogon", "True False True False"])
+        self.assertNotIn("old name", r.stderr)
+        r = self.run_niwa()
+        self.assertEqual(r.stdout.splitlines()[-4:], ["None", "False", "nogon nogon", "True False True False"], r.stderr)
+
+    def test_an_old_name_beside_its_new_one_is_ignored_and_said_once(self):
         r = self.run_niwa(NIWA_NOGON_URL="http://n.example:4433", NIWA_HISTER_URL="http://h.example:4433")
+        self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(r.stdout.splitlines()[-4], "'http://n.example:4433'", r.stderr)
-        self.assertNotIn("an old name", r.stderr)
-        r = self.run_niwa(NIWA_NOGON_URL="", NIWA_HISTER_URL="http://h.example:4433")
+        self.assertEqual(r.stderr.count("NIWA_HISTER_URL: an old name, ignored (NIWA_NOGON_URL is set"), 1)
+        r = self.run_niwa(NIWA_NOGON_URL="", NIWA_HISTER_URL="http://h.example:4433")     # set even empty, it wins
         self.assertEqual(r.stdout.splitlines()[-4], "None", r.stderr)
 
     def test_private_copy_says_nogon(self):

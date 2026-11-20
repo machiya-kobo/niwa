@@ -1,7 +1,7 @@
 # Niwa (machiya-kobo/niwa): stdlib Python + markdown + pyyaml + git/ssh + openssl (the gemini certificate) + the Nogon
 # CLI (link rot saves pages into Nogon, formerly Hister). Runs as uid 1000.
-# NOGON_VERSION must match the Nogon server (0.19.0: was HISTER_VERSION v0.20.0). The CLI keeps the name `hister` here, so
-# Niwa's calls don't change; v0.22 still reads HISTER__APP__ACCESS_TOKEN.
+# NOGON_VERSION must match the Nogon server (0.19.0: was HISTER_VERSION v0.20.0). Since 0.20.0 the CLI is installed as
+# `nogon` and takes the owner's token as NOGON__APP__ACCESS_TOKEN (v0.22 and later).
 ARG NOGON_VERSION=v0.22.0
 FROM ghcr.io/asciimoo/nogon:${NOGON_VERSION}@sha256:d1b427c7f876e64e6212e000df60d33c2e418b60372582b56cfee719eafd4107 AS nogon
 
@@ -16,7 +16,7 @@ RUN apt-get update \
 # ssh refuses to run for a uid without a passwd entry (git pull/push).
 RUN useradd --uid 1000 --home-dir /data --no-create-home --shell /usr/sbin/nologin niwa
 
-COPY --from=nogon /usr/local/bin/nogon /usr/local/bin/hister
+COPY --from=nogon /usr/local/bin/nogon /usr/local/bin/nogon
 
 WORKDIR /app
 COPY . /app

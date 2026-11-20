@@ -1,17 +1,17 @@
-"""Hister: a self-hosted search engine and page archive, reached over HTTP (optional).
+"""Nogon (formerly Hister): a self-hosted search engine and page archive, reached over HTTP (optional).
 
 Niwa uses it for two things: link rot shows the owner's private copy of an
-external link (links.HisterBackend; indexing a link that Hister lacks only
-happens with NIWA_HISTER_SAVE on), and the owner's stream says how many pages
+external link (links.NogonBackend; indexing a link that Nogon lacks only
+happens with NIWA_NOGON_SAVE on), and the owner's stream says how many pages
 were saved each week and lists a few of them.
 
-Every call sends `Origin: hister://` (without it Hister answers 500/403).
-With NIWA_HISTER_TOKEN_FILE set, every call also sends the owner's Hister token
-as `X-Access-Token`, and the `hister` command-line tool gets it as
-HISTER__APP__ACCESS_TOKEN in its own environment (never argv). The token is
+Every call sends `Origin: nogon://` (without it Nogon answers 500/403; v0.22
+and later accept it). With NIWA_NOGON_TOKEN_FILE set, every call also sends the
+owner's Nogon token as `X-Access-Token`, and the `nogon` command-line tool gets
+it as NOGON__APP__ACCESS_TOKEN in its own environment (never argv). The token is
 never logged, and never kept in an error message. Unset: nothing is sent, and
-whatever network rule guards the Hister server is the gate. API calls go to
-NIWA_HISTER_URL; links shown in the browser use NIWA_HISTER_PUBLIC.
+whatever network rule guards the Nogon server is the gate. API calls go to
+NIWA_NOGON_URL; links shown in the browser use NIWA_NOGON_PUBLIC.
 
 Privacy: everything from here is owner-only. Search results, copies and
 private_url must never reach gemini or gopher."""
@@ -31,10 +31,10 @@ from vaultkit import read_secret, websafe
 # (a 3xx reaches the caller as an HTTPError, which call() returns as the status).
 _OPENER = websafe.token_opener()
 CACHE_SECONDS = 600
-# The label Machiya's rooms put on the pages they save into Hister. The saved-pages count leaves these out, and
+# The label Machiya's rooms put on the pages they save into Nogon. The saved-pages count leaves these out, and
 # index() uses it unless a caller passes another.
 ROOM_LABEL = "konbini"
-TOKEN_ENV = "HISTER__APP__ACCESS_TOKEN"     # how the hister CLI takes its token
+TOKEN_ENV = "NOGON__APP__ACCESS_TOKEN"      # how the nogon CLI takes its token (v0.22 and later)
 
 
 def ts_date(value):
@@ -49,8 +49,8 @@ def domain_of(url):
     return host[4:] if host.startswith("www.") else host
 
 
-class Hister:
-    def __init__(self, api, public, cli="hister", token_file=""):
+class Nogon:
+    def __init__(self, api, public, cli="nogon", token_file=""):
         self.api = api.rstrip("/")
         self.public = (public or api).rstrip("/")
         self.cli = cli
@@ -64,7 +64,7 @@ class Hister:
     # -- the owner's token -------------------------------------------------------
 
     def token(self):
-        """The Hister token in token_file, read again when the file changes (a rotation needs no restart); "" when
+        """The Nogon token in token_file, read again when the file changes (a rotation needs no restart); "" when
         no file is set or it can't be read."""
         if not self.token_file:
             return ""
@@ -89,9 +89,9 @@ class Hister:
     # -- transport ---------------------------------------------------------------
 
     def call(self, method, path, body=None, timeout=10):
-        """(status, parsed JSON or text); status 0 when Hister can't be reached."""
+        """(status, parsed JSON or text); status 0 when Nogon can't be reached."""
         data = json.dumps(body).encode() if body is not None else None
-        headers = {"Origin": "hister://", "Accept": "application/json", "Content-Type": "application/json"}
+        headers = {"Origin": "nogon://", "Accept": "application/json", "Content-Type": "application/json"}
         token = self.token()
         if token:
             headers["X-Access-Token"] = token
@@ -102,7 +102,7 @@ class Hister:
         except urllib.error.HTTPError as e:
             raw, status = e.read(), e.code
         except (urllib.error.URLError, OSError, ValueError) as e:
-            self.error = "hister unreachable: %s" % e
+            self.error = "nogon unreachable: %s" % e
             return 0, None
         self.last_ok = datetime.datetime.now().isoformat(timespec="seconds")
         if status < 500:
@@ -115,7 +115,7 @@ class Hister:
     # -- search ------------------------------------------------------------------
 
     def search(self, q, timeout=4):
-        """Documents matching a Hister query (first page, up to 100), cached briefly."""
+        """Documents matching a Nogon query (first page, up to 100), cached briefly."""
         now = time.time()
         with self.lock:
             hit = self.cache.get(q)
@@ -132,7 +132,7 @@ class Hister:
         return docs, total
 
     def find(self, url):
-        """The document Hister holds for a URL (or its normalised form), or None."""
+        """The document Nogon holds for a URL (or its normalised form), or None."""
         from urlnorm import norm
         for u in dict.fromkeys((url, norm(url))):
             status, data = self.call("GET", "/search?q=" + urllib.parse.quote('url:"%s"' % u.replace('"', "%22")))
@@ -151,7 +151,7 @@ class Hister:
     # -- writes ------------------------------------------------------------------
 
     def add(self, doc):
-        """POST a whole document. True when Hister stored it."""
+        """POST a whole document. True when Nogon stored it."""
         status, data = self.call("POST", "/api/add", doc, timeout=30)
         if status not in (200, 201):
             self.error = "add %s: HTTP %s %s" % (doc.get("url", "")[:80], status, str(data or "")[:80])
@@ -163,7 +163,7 @@ class Hister:
         return (data or {}).get("deleted", 0) if status == 200 and isinstance(data, dict) else 0
 
     def index(self, url, label=ROOM_LABEL):
-        """Fetch and store a page with the hister CLI (/api/add alone doesn't fetch).
+        """Fetch and store a page with the nogon CLI (/api/add alone doesn't fetch).
         Callers check find() first: --force on an existing document would
         replace its metadata (imported tags and the archive link)."""
         try:
@@ -172,17 +172,17 @@ class Hister:
             r = subprocess.run([self.cli, "-u", self.api, "index", "--label", label, url],
                                capture_output=True, text=True, timeout=120, env=env)
         except (subprocess.SubprocessError, OSError) as e:
-            self.error = "hister index failed: %s" % e
+            self.error = "nogon index failed: %s" % e
             return False
         if r.returncode != 0:
-            self.error = "hister index %s: %s" % (url[:80], (r.stderr or r.stdout).strip()[:120])
+            self.error = "nogon index %s: %s" % (url[:80], (r.stderr or r.stdout).strip()[:120])
             return False
         return True
 
     # -- the stream's saved-pages line ----------------------------------------------------------
 
     def saved_between(self, start, end):
-        """Pages added to Hister in [start, end): count plus the biggest groups
+        """Pages added to Nogon in [start, end): count plus the biggest groups
         (imported folder label, else domain). Vault notes and the pages Machiya's
         rooms saved themselves (ROOM_LABEL) don't count."""
         q = "added:>=%s added:<%s -label:vault -label:%s" % (start.isoformat(), end.isoformat(), ROOM_LABEL)

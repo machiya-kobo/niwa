@@ -3,6 +3,16 @@
 Niwa follows [SemVer](https://semver.org). Before 1.0, a new feature, a changed default or setting, or a changed API
 field is a minor bump, and a fix or wording change is a patch. Settings are listed in the README.
 
+## 0.20.0
+
+Hister is now Nogon: the rename's stage 3 (the owner, 2026-11-19: rename everything Machiya calls Hister). Niwa reads only the new names now.
+
+- **Old settings stop Niwa at start.** `NIWA_HISTER_URL`, `NIWA_HISTER_PUBLIC`, `NIWA_HISTER_SAVE`, `NIWA_HISTER_TOKEN_FILE` and `NIWA_HISTER_USERS` are no longer read. Set on its own, an old name stops Niwa with a message naming the new one. Set beside its `NIWA_NOGON_*` twin, it is ignored and noted once in the log. `NIWA_AUTH=hister` stops Niwa too: use `NIWA_AUTH=nogon`.
+- **Status:** `/api/status` and the link stats report `nogon` only. The `hister` twin is gone.
+- **Calls to Nogon** send `Origin: nogon://` (Nogon v0.22 and later). The bundled CLI is installed as `nogon` and gets the owner's token as `NOGON__APP__ACCESS_TOKEN`. Its error text says "nogon unreachable".
+- **Kept:** the link store's stored `private_backend` value stays `hister` (stored names stay), and a copy reads "Nogon copy" either way.
+- vaultkit 0.40.0 → 0.41.0: the sign-in is `nogonauth`, the room id is `nogon` (a saved `hister` still reads as `nogon`), and the old names refuse to start.
+
 ## 0.19.1
 
 - vaultkit 0.38.0 → 0.40.0: an extra room in the Rooms menu can say what it is (`MACHIYA_EXTRA_ROOMS`' sixth field; Techō shows "agents", owner 2026-11-20).

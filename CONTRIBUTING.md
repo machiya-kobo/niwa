@@ -20,22 +20,22 @@ The suite serves the garden against a real bare Git remote and a throwaway vault
 write path (form post → frontmatter edit → event → commit → push) and the pre-publish check. Add a test with any
 change to behaviour. Run the suite on the oldest `markdown` you support (3.11) before changing rendering.
 
-**Never test against a real vault or a real Hister.** Use the throwaway vault in the tests, and a fake that records
-requests for Hister.
+**Never test against a real vault or a real Nogon.** Use the throwaway vault in the tests, and a fake that records
+requests for Nogon.
 
 ## Rules
 
 - **Only the owner publishes.** `publish`, `growth`, `confidence` and `garden_pin` change only from the web UI
   (same-origin form posts). Agents may only `POST /api/suggest`.
 - **Writes edit frontmatter lines only**, never note bodies.
-- **Never break gemini and gopher** (`app/smallweb.py`), and never put Hister results, copies or private URLs on
+- **Never break gemini and gopher** (`app/smallweb.py`), and never put Nogon results, copies or private URLs on
   them.
 - **Never edit `app/vaultkit/`.** It is vendored from `machiya-kobo/machiya` (`tools/vendor-vaultkit <tag>`); the build
   fails if it's edited. Fix it upstream and re-vendor.
 - **Keep personal details out of the repo:** server addresses, network names, usernames, folder names from your own
   vault. They belong in settings ([docs/settings.md](docs/settings.md)), not in code defaults, tests or comments.
 - **No new network endpoints** without discussion. Niwa talks to the vault repo, the optional sister services and
-  Hister the settings name, and to archive.org unless `NIWA_ARCHIVE=none`. No analytics.
+  Nogon the settings name, and to archive.org unless `NIWA_ARCHIVE=none`. No analytics.
 - Match the surrounding code: its naming, comment density and idiom. Commits start with `niwa: `.
 
 ## Sending a change

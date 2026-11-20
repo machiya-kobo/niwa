@@ -6,7 +6,7 @@
 - `GET /feed.xml`: RSS 2.0 of the published notes, the 50 most recently tended first (title, link, summary; never an unpublished note, the queue, `Archive/` or a private folder). Behind the same gate as the pages; every page links it in its head and footer.
 - `GET /api/suggestions[?days=60]`: the open suggestions, newest first (`days` 1 to 365), as `{"suggestions": [{"path", "reason", "agent", "date"}], "days"}`; same access as the pages.
 - `GET /api/changelog`: `app/CHANGELOG.md` as `text/markdown` (ETag, 304; 404 without the file), open like `/api/status`, for the stack's landing page.
-- `GET /api/status`: version, [vaultkit](https://github.com/machiya-kobo/machiya/blob/main/docs/vaultkit.md), head, notes, published, sync, konbini, hister, links, ready, error, auth. Open to anyone for monitoring; only the owner sees the Konbini and Hister addresses and their errors, and credentials in a remote URL are never shown.
+- `GET /api/status`: version, [vaultkit](https://github.com/machiya-kobo/machiya/blob/main/docs/vaultkit.md), head, notes, published, sync, konbini, nogon, links, ready, error, auth (`nogon` was `hister` before 0.19.0, and both until 0.20.0). Open to anyone for monitoring; only the owner sees the Konbini and Nogon addresses and their errors, and credentials in a remote URL are never shown.
 
 The public garden (`NIWA_PUBLIC_PORT`) answers only `GET` and `HEAD` on `/`, `/n/…` (published notes; anything else
 is 404), `/t/…`, `/tags`, `/stream`, `/search` (60 a minute per address; behind a proxy every visitor shares the

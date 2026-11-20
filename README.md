@@ -39,7 +39,7 @@ Agentically coded with [Claude Code](https://docs.anthropic.com/en/docs/claude-c
 
 - Niwa checks every link in a published note and saves a copy at the Wayback Machine. A live link gets a small "archive.org" link beside it; a dead one points at the copy.
 - That sends your published notes' links to archive.org. `NIWA_ARCHIVE=none` turns it off.
-- With Hister, your own pages show your private copy too.
+- With Nogon, your own pages show your private copy too.
 
 ## Meet your audience where they are
 
@@ -112,4 +112,4 @@ Ctrl-C stops it, and `rm -rf demo-vault demo-vault.git demo-data` cleans up.
 
 Copyright (C) 2026 Micheal Waltz and Machiya contributors.
 
-Niwa is free software under the GNU Affero General Public License, version 3 or (at your option) any later version: see [LICENSE](LICENSE). What it ships from other projects (Mermaid, the Hister CLI in the image) is listed with their licenses in [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES). Contributions are welcome: [CONTRIBUTING.md](CONTRIBUTING.md); report a vulnerability privately: [SECURITY.md](SECURITY.md).
+Niwa is free software under the GNU Affero General Public License, version 3 or (at your option) any later version: see [LICENSE](LICENSE). What it ships from other projects (Mermaid, the Nogon CLI in the image) is listed with their licenses in [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES). Contributions are welcome: [CONTRIBUTING.md](CONTRIBUTING.md); report a vulnerability privately: [SECURITY.md](SECURITY.md).

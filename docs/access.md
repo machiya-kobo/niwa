@@ -12,13 +12,13 @@ Here the **owner** is the person whose vault it is, and a **room** is one Machiy
 - **People, agents and [Shiori](https://github.com/machiya-kobo/shiori) devices with their own sign-in:** Machiya's identity file.
   `python3 -m vaultkit.identity setup` prints the settings. See
   [Machiya's identity guide](https://github.com/machiya-kobo/machiya/blob/main/docs/identity.md) (Python 3.11 or later).
-- **Hister's users:** `NIWA_AUTH=hister` signs people in with their Hister account through Machiya's sign-in helper
-  ([the guide](https://github.com/machiya-kobo/machiya/blob/main/docs/identity.md#hister-sign-in-authhister)). Only
+- **Nogon's users:** `NIWA_AUTH=nogon` signs people in with their Nogon account through Machiya's sign-in helper
+  ([the guide](https://github.com/machiya-kobo/machiya/blob/main/docs/identity.md#nogon-sign-in-authnogon)). Only
   accounts in `NIWA_NOGON_USERS` get in. While sign-in is down, the owner's Tailscale login in `NIWA_USERS` gets in
   with a banner; a signed-out browser never does. Bind `127.0.0.1` behind `tailscale serve`, or on another address name the
   proxy in `NIWA_TRUSTED_PROXIES`: with the tailscale fallback it refuses to start otherwise.
 - **Anyone, on the public web (optional):** set `NIWA_PUBLIC_PORT` and `NIWA_GARDEN_URL`, and put a TLS proxy (Caddy,
   a Cloudflare Tunnel, Tailscale Funnel) in front of that port. It serves the published notes, their tags and images,
-  the stream and the feed. No sign-in, desk, queue, settings, writes or cookies, and nothing from [Konbini](https://github.com/machiya-kobo/konbini), [Kura](https://github.com/machiya-kobo/kura) or Hister.
+  the stream and the feed. No sign-in, desk, queue, settings, writes or cookies, and nothing from [Konbini](https://github.com/machiya-kobo/konbini), [Kura](https://github.com/machiya-kobo/kura) or Nogon.
 
 Each mode's settings are under [Settings](settings.md). `/api/status` is always open.

@@ -12,8 +12,8 @@ Two kinds of copy, kept apart on purpose:
 - archive_url: the public copy (Wayback Machine). Backends implement
   lookup(url) / save(url) -> (archive_url, when) or None.
 - private_url: the owner-only copy. A cold-archive snapshot when there is one
-  (NIWA_COLD_MAP, a static map of snapshots), else Hister's copy; with
-  NIWA_HISTER_SAVE on, a live link Hister doesn't have yet is indexed into it.
+  (NIWA_COLD_MAP, a static map of snapshots), else Nogon's copy; with
+  NIWA_NOGON_SAVE on, a live link Nogon doesn't have yet is indexed into it.
 Gemini and gopher read only archive_url; private_url is for the owner's web
 pages."""
 import datetime
@@ -36,7 +36,7 @@ URL_RE = re.compile(r"https?://[^\s<>\"'()\[\]`]+")
 
 def web_url(url):
     """url when it is an http(s) address, else "": a copy's address comes from another service (the Wayback Machine,
-    Hister, the cold map), and only a web address may become a link on a page."""
+    Nogon, the cold map), and only a web address may become a link on a page."""
     return url if isinstance(url, str) and re.match(r"https?://[^\s\x00-\x1f]+\Z", url, re.I) else ""
 ARCHIVE_HOSTS = ("web.archive.org", "archive.org")
 # Only links some published note still has are checked and archived (collect() clears `notes` for the others).
@@ -80,7 +80,7 @@ def is_external(url):
 
 
 # -- fetching a link: only ever a public address ---------------------------------------------------------------------------
-# The checker (and the Hister save) fetch addresses an author typed into a note. vaultkit's websafe.public_opener
+# The checker (and the Nogon save) fetch addresses an author typed into a note. vaultkit's websafe.public_opener
 # connects only to an address it resolved and found public at connect time (so a name that resolves inside, any spelling of
 # an inside address, and DNS rebinding are all refused), and vets every redirect hop the same way.
 _OPENER = websafe.public_opener()
@@ -129,7 +129,7 @@ def fetch_status(url, method="HEAD", timeout=15):
 
 
 def public_url(url):
-    """True when url's host resolves only to public addresses (what may be handed to the hister command line)."""
+    """True when url's host resolves only to public addresses (what may be handed to the nogon command line)."""
     u = urllib.parse.urlsplit(url)
     try:
         websafe.vet(u.hostname or "", u.port or (443 if u.scheme == "https" else 80))
@@ -205,22 +205,22 @@ class ColdArchive:
         return (hit["snapshot"], hit.get("date") or "") if hit and hit.get("snapshot") else None
 
 
-class HisterBackend:
-    """Hister's copy of a page (hister.Hister). save() indexes only URLs that
-    Hister doesn't hold yet: re-indexing an existing document would replace
+class NogonBackend:
+    """Nogon's copy of a page (nogon.Nogon). save() indexes only URLs that
+    Nogon doesn't hold yet: re-indexing an existing document would replace
     its metadata."""
-    name = "hister"
+    name = "hister"     # the stored private_backend value: stored names stay (owner, 2026-11-19); readers take either
 
-    def __init__(self, hister):
-        self.h = hister
+    def __init__(self, nogon):
+        self.h = nogon
 
     def lookup(self, url):
-        from hister import ts_date
+        from nogon import ts_date
         d = self.h.find(url)
         return (self.h.preview_url(d["url"]), ts_date(d.get("updated") or d.get("added"))) if d else None
 
     def final_url(self, url):
-        """Where a URL redirects to: Hister stores the page under its final address."""
+        """Where a URL redirects to: Nogon stores the page under its final address."""
         try:
             return fetch_status(url, "HEAD")[1]
         except Exception:
@@ -230,7 +230,7 @@ class HisterBackend:
         found = self.lookup(url)
         if found:
             return found
-        if not public_url(url):             # the hister command fetches it: only a public address
+        if not public_url(url):             # the nogon command fetches it: only a public address
             return None
         final = self.final_url(url)
         if final != url:
@@ -239,7 +239,7 @@ class HisterBackend:
                 return found
         if not self.h.index(url):
             return None
-        for _ in range(4):  # Hister indexes in the background
+        for _ in range(4):  # Nogon indexes in the background
             time.sleep(2)
             found = self.lookup(url) or (self.lookup(final) if final != url else None)
             if found:
@@ -248,12 +248,12 @@ class HisterBackend:
 
 
 class Links:
-    def __init__(self, store, garden, backends=(), enabled=True, cold=None, hister=None, hister_save=False):
+    def __init__(self, store, garden, backends=(), enabled=True, cold=None, nogon=None, nogon_save=False):
         self.store, self.garden = store, garden
         self.backends = list(backends)
-        self.cold, self.hister = cold, hister  # private copies (owner-only)
+        self.cold, self.nogon = cold, nogon  # private copies (owner-only)
         self.enabled = enabled
-        self.hister_save = hister_save   # off: Hister is looked up, never indexed into (Shiori saves pages)
+        self.nogon_save = nogon_save     # off: Nogon is looked up, never indexed into (Shiori saves pages)
         self.lock = threading.Lock()
         self.last_run = ""
         self._index, self._index_version = ({}, {}), None
@@ -345,22 +345,22 @@ class Links:
         return None
 
     def private_copy(self, rec):
-        """Fill private_url: the cold snapshot if there is one, else Hister's
-        copy. With NIWA_HISTER_SAVE on, a live link Hister lacks is indexed when
+        """Fill private_url: the cold snapshot if there is one, else Nogon's
+        copy. With NIWA_NOGON_SAVE on, a live link Nogon lacks is indexed when
         there's no snapshot or the snapshot is over a year old (the old snapshot
-        stays the answer); otherwise Hister is only looked up."""
+        stays the answer); otherwise Nogon is only looked up."""
         url, fields = rec["url"], {"private_checked": now_iso()}
         cold = hist = None
         try:
             cold = self.cold.lookup(url) if self.cold else None
-            if self.hister:
-                hist = self.hister.lookup(url)
+            if self.nogon:
+                hist = self.nogon.lookup(url)
                 stale = not cold or not cold[1] or (datetime.date.today() - datetime.date.fromisoformat(cold[1][:10])).days > 365
-                if not hist and stale and rec.get("status") == "live" and self.hister_save:
-                    hist = self.hister.save(url)
+                if not hist and stale and rec.get("status") == "live" and self.nogon_save:
+                    hist = self.nogon.save(url)
         except Exception as exc:
             print("links: private %s: %s" % (url[:80], str(exc)[:80]), flush=True)
-        best, name = (cold, "cold") if cold else ((hist, "hister") if hist else (None, None))
+        best, name = (cold, "cold") if cold else ((hist, NogonBackend.name) if hist else (None, None))
         if best:
             fields.update(private_url=best[0], private_at=best[1], private_backend=name)
         self.store.link_set(url, **fields)
@@ -382,7 +382,7 @@ class Links:
                 if self.archive(rec):
                     saved += 1
                 time.sleep(3)
-        if self.cold or self.hister:
+        if self.cold or self.nogon:
             week = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=CHECK_DAYS)).strftime("%Y-%m-%dT%H:%M:%SZ")
             for rec in self.store.links("private_url IS NULL AND status != 'unknown' AND "
                                         "(private_checked IS NULL OR private_checked < ?) AND " + IN_USE, (week,),
@@ -476,5 +476,4 @@ class Links:
                 "archived": sum(1 for r in rows if r.get("archive_url")),
                 "private": sum(1 for r in rows if r.get("private_url")), "last_run": self.last_run,
                 "cold": (self.cold.error or "%d snapshots" % len(self.cold.urls)) if self.cold else "off",
-                "nogon": (self.hister.h.error or "ok") if self.hister else "off",       # 0.19.0; "hister" until stage 3
-                "hister": (self.hister.h.error or "ok") if self.hister else "off"}
+                "nogon": (self.nogon.h.error or "ok") if self.nogon else "off"}         # 0.20.0: no "hister" twin

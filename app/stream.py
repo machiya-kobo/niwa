@@ -54,7 +54,7 @@ def window(days):
 
 
 def build(garden, days=30, links=None, reading=None, public=False):
-    """reading: optional callable(start, end) -> {"total", "top", "search"} (Hister,
+    """reading: optional callable(start, end) -> {"total", "top", "search"} (Nogon,
     owner-only). Pass it only for the owner's web stream, never for gemini or
     gopher.
 

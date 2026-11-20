@@ -4,7 +4,7 @@ Part of Machiya (machiya-kobo/machiya).
 Standalone: Niwa keeps its own read-write clone of the vault (ssh deploy key), commits only the garden's fields
 and events as `garden` (vaultkit.GitSync: batched, rebased, pushed), and keeps its link-rot table in NIWA_DB.
 Optional: Konbini (column badges, "in bloom", the board half of the stream), Kura (owner links to every note),
-Hister (private link copies, the stream's reading line).
+Nogon (private link copies, the stream's reading line).
 
 Listeners: web (NIWA_PORT; owner gate on Tailscale-User-Login, or Machiya's identity file and its grants), gemini 1965,
 gopher 7070, and with NIWA_PUBLIC_PORT the public garden (PublicHandler: published notes for anyone, read-only).
@@ -37,12 +37,12 @@ import stream  # noqa: E402
 from capped import Capped  # noqa: E402
 import garden as garden_mod  # noqa: E402
 from garden import Garden  # noqa: E402
-from hister import Hister  # noqa: E402
+from nogon import Nogon  # noqa: E402
 from konbini import Konbini  # noqa: E402
 from state import EVENTS_DIR, State  # noqa: E402
 from vaultkit import GitSync  # noqa: E402
 from vaultkit import borrow as vk_borrow  # noqa: E402
-from vaultkit import histerauth  # noqa: E402
+from vaultkit import nogonauth  # noqa: E402
 from vaultkit import names  # noqa: E402
 from vaultkit import websafe  # noqa: E402
 from vaultkit import changelog  # noqa: E402
@@ -53,18 +53,22 @@ from vaultkit import read_secret  # noqa: E402
 from vaultkit import signin  # noqa: E402
 from writer import Writer, WriteError  # noqa: E402
 
-VERSION = "0.19.1"
+VERSION = "0.20.0"
 PORT = int(os.environ.get("NIWA_PORT", "8080"))
 USERS = set(filter(None, (u.strip() for u in os.environ.get("NIWA_USERS", "").split(","))))
 
 
 def auth_mode(value, identity_file=""):
     """NIWA_AUTH: "tailscale" (the default: Tailscale-User-Login must be in NIWA_USERS, or in the identity file),
-    "open" (no identity check, for localhost or a trusted LAN), "hister" (Hister's users as the sign-in, with the
-    Tailscale identity as the fallback: vaultkit.histerauth, never with an identity file), or with an identity file
-    "header" (a trusted proxy's login header, NIWA_AUTH_HEADER). Anything else refuses to start rather than guess."""
-    value = names.auth_mode(value) or "tailscale"       # 0.19.0: nogon is the same as hister (the rename's stage 1)
-    allowed = ("tailscale", "open", "hister", "header") if identity_file else ("tailscale", "open", "hister")
+    "open" (no identity check, for localhost or a trusted LAN), "nogon" (Nogon's users as the sign-in, with the
+    Tailscale identity as the fallback: vaultkit.nogonauth, never with an identity file), or with an identity file
+    "header" (a trusted proxy's login header, NIWA_AUTH_HEADER). Anything else refuses to start rather than guess,
+    and so does the old name "hister" (0.20.0: use nogon)."""
+    try:
+        value = names.auth_mode(value, "NIWA_AUTH") or "tailscale"
+    except names.OldName as err:
+        raise SystemExit("niwa: %s" % err)
+    allowed = ("tailscale", "open", "nogon", "header") if identity_file else ("tailscale", "open", "nogon")
     if value not in allowed:
         raise SystemExit("niwa: NIWA_AUTH must be %s, not %r" % (" or ".join(allowed), value))
     return value
@@ -279,13 +283,13 @@ PUBLIC_URL = public_url(os.environ.get("NIWA_PUBLIC_URL"))
 SECURE = urlsplit(PUBLIC_URL).scheme != "http"            # unset or https: Secure cookies, https pages only
 if AUTH in ("tailscale", "header"):         # the NIWA_USERS gate, or the identity file's Tailscale or proxy header
     need_trusted_proxies("NIWA_AUTH=%s" % AUTH, BIND, TRUSTED_PROXIES)
-if AUTH == "hister" and (os.environ.get("NIWA_AUTH_FALLBACK") or "tailscale").strip().lower() == "tailscale":
+if AUTH == "nogon" and (os.environ.get("NIWA_AUTH_FALLBACK") or "tailscale").strip().lower() == "tailscale":
     need_trusted_proxies("NIWA_AUTH_FALLBACK=tailscale", BIND, TRUSTED_PROXIES)
-try:        # NIWA_AUTH=hister: Hister's users as the sign-in (NIWA_AUTH_URL, NIWA_AUTH_SIGNIN_URL, NIWA_HISTER_USERS, ...)
-    HISTER_AUTH = histerauth.load_for("niwa", proxied(os.environ), bind=BIND, secure=SECURE)       # None in any other mode
+try:        # NIWA_AUTH=nogon: Nogon's users as the sign-in (NIWA_AUTH_URL, NIWA_AUTH_SIGNIN_URL, NIWA_NOGON_USERS, ...)
+    NOGON_AUTH = nogonauth.load_for("niwa", proxied(os.environ), bind=BIND, secure=SECURE)       # None in any other mode
 except identity.IdentityError as err:
-    raise SystemExit("niwa: hister sign-in: %s" % err)
-shell.SIGNIN = HISTER_AUTH is not None          # the pages carry <meta name="machiya-signin"> (a Sign Out row, 401 -> sign-in)
+    raise SystemExit("niwa: nogon sign-in: %s" % err)
+shell.SIGNIN = NOGON_AUTH is not None          # the pages carry <meta name="machiya-signin"> (a Sign Out row, 401 -> sign-in)
 try:        # Machiya's identity file (MACHIYA_IDENTITY_FILE); None without one: the NIWA_USERS gate, as before
     IDENTITY = identity.load_for("niwa", proxied(os.environ), bind=BIND, secure=SECURE)
 except identity.IdentityError as err:
@@ -401,7 +405,7 @@ garden.deny = garden_mod.deny_re(SCAN_DENY)
 garden.queue_folders = QUEUE_FOLDERS
 garden._apply_private()
 def konbini_token(path):
-    """NIWA_KONBINI_TOKEN_FILE: Niwa's token for Konbini (a room token, mht_…, when Konbini is in AUTH=hister mode, or a
+    """NIWA_KONBINI_TOKEN_FILE: Niwa's token for Konbini (a room token, mht_…, when Konbini is in AUTH=nogon mode, or a
     Machiya identity token), sent as Authorization on every call. "" when unset; a set file that holds no token refuses to start rather than call Konbini without it."""
     path = (path or "").strip()
     if not path:
@@ -415,21 +419,30 @@ def konbini_token(path):
 garden.konbini = Konbini(server_url(os.environ.get("NIWA_KONBINI_API_URL"), shell.BOARD_URL),
                          login=os.environ.get("NIWA_KONBINI_TEST_LOGIN", ""),
                          token=konbini_token(os.environ.get("NIWA_KONBINI_TOKEN_FILE")))
-# 0.19.0, the rename (Hister is now Nogon): NIWA_NOGON_* first, the NIWA_HISTER_* names still read (logged once) until
-# the rename's stage 3; a NOGON name that is set wins, even empty.
-HISTER_URL = (names.setting("NIWA_NOGON_URL") or "").strip()
-HISTER_TOKEN_FILE = (names.setting("NIWA_NOGON_TOKEN_FILE") or "").strip()   # the owner's Nogon token; unset: none sent
-if HISTER_TOKEN_FILE and not read_secret(HISTER_TOKEN_FILE):
-    raise SystemExit("niwa: NIWA_NOGON_TOKEN_FILE: no token in %s" % HISTER_TOKEN_FILE)
-hister = Hister(HISTER_URL, names.setting("NIWA_NOGON_PUBLIC") or "", token_file=HISTER_TOKEN_FILE) \
-    if HISTER_URL else None
-garden.hister = hister
+
+
+def nogon_setting(name):
+    """A NIWA_NOGON_* setting (vaultkit.names.setting): set even empty, it wins. Since 0.20.0 (the rename's stage 3) its
+    old NIWA_HISTER_* name is no longer read: set on its own, it stops Niwa, naming the new one."""
+    try:
+        return names.setting(name)
+    except names.OldName as err:
+        raise SystemExit("niwa: %s" % err)
+
+
+NOGON_URL = (nogon_setting("NIWA_NOGON_URL") or "").strip()
+NOGON_PUBLIC = nogon_setting("NIWA_NOGON_PUBLIC") or ""        # read even without NOGON_URL: an old name alone stops Niwa
+NOGON_TOKEN_FILE = (nogon_setting("NIWA_NOGON_TOKEN_FILE") or "").strip()   # the owner's Nogon token; unset: none sent
+NOGON_SAVE = flag(nogon_setting("NIWA_NOGON_SAVE"))      # off: Nogon is only looked up, Niwa never indexes into it
+if NOGON_TOKEN_FILE and not read_secret(NOGON_TOKEN_FILE):
+    raise SystemExit("niwa: NIWA_NOGON_TOKEN_FILE: no token in %s" % NOGON_TOKEN_FILE)
+nogon = Nogon(NOGON_URL, NOGON_PUBLIC, token_file=NOGON_TOKEN_FILE) if NOGON_URL else None
+garden.nogon = nogon
 ARCHIVE = archive_mode(os.environ.get("NIWA_ARCHIVE"))
-HISTER_SAVE = flag(names.setting("NIWA_NOGON_SAVE"))      # off: Hister is only looked up, Niwa never indexes into it
 backends = [linkrot.WaybackBackend()] if ARCHIVE == "wayback" else []
 cold = linkrot.ColdArchive(os.environ["NIWA_COLD_MAP"]) if os.environ.get("NIWA_COLD_MAP") else None
 links = linkrot.Links(state, garden, backends, enabled=ARCHIVE == "wayback", cold=cold,
-                      hister=linkrot.HisterBackend(hister) if hister else None, hister_save=HISTER_SAVE)
+                      nogon=linkrot.NogonBackend(nogon) if nogon else None, nogon_save=NOGON_SAVE)
 garden.links = links
 
 
@@ -491,7 +504,7 @@ def make_handler(listener):
         server_version = "niwa/" + VERSION
         timeout = 30                   # a client that stops sending lets its thread go
         _who = None                    # the identity file's answer, worked out once per request (who())
-        _hres = None                   # the Hister sign-in's answer, worked out once per request (hres())
+        _hres = None                   # the Nogon sign-in's answer, worked out once per request (hres())
 
         def parse_request(self):
             """After the headers are read: an untrusted peer's identity headers go (NIWA_TRUSTED_PROXIES)."""
@@ -509,7 +522,7 @@ def make_handler(listener):
         def login(self):
             """Who is asking, for the log: the principal and how it was proven, or the Tailscale login. Never a
             token."""
-            if HISTER_AUTH is not None:      # hister:<user>, app:<user>, token:<user> or fallback:<login>
+            if NOGON_AUTH is not None:      # nogon:<user>, app:<user>, token:<user> or fallback:<login>
                 return (self._hres.actor or "-") if self._hres is not None else "-"
             if IDENTITY is not None:
                 who = self._who
@@ -524,10 +537,10 @@ def make_handler(listener):
             return self._who
 
         def hres(self):
-            """The Hister sign-in's answer for this request (vaultkit.histerauth.Result), worked out once: a browser
+            """The Nogon sign-in's answer for this request (vaultkit.nogonauth.Result), worked out once: a browser
             page that is signed out gets a redirect, an API call a 401 with the sign-in address."""
             if self._hres is None:
-                self._hres = HISTER_AUTH.resolve(self.headers, is_page=self.browser_page(), path=self.path,
+                self._hres = NOGON_AUTH.resolve(self.headers, is_page=self.browser_page(), path=self.path,
                                                  client=self.client_address[0] if self.client_address else "")
             return self._hres
 
@@ -538,7 +551,7 @@ def make_handler(listener):
         def allowed(self):
             if not self.host_ok():
                 return False
-            if HISTER_AUTH is not None:      # one owner: whoever is signed in to Hister as a listed user, or the fallback
+            if NOGON_AUTH is not None:      # one owner: whoever is signed in to Nogon as a listed user, or the fallback
                 return bool(self.hres())
             if IDENTITY is not None:
                 who = self.who()
@@ -557,7 +570,7 @@ def make_handler(listener):
             return self.allowed() and who.principal.can("niwa", action)
 
         def owner(self):
-            """The full /api/status (where Konbini and Hister are, what they answered): the owner only. Without an
+            """The full /api/status (where Konbini and Nogon are, what they answered): the owner only. Without an
             identity file, everyone the gate admits is the owner, as before."""
             if IDENTITY is not None:
                 return self.host_ok() and bool(self.who()) and self.who().principal.owner
@@ -567,8 +580,8 @@ def make_handler(listener):
             if not self.host_ok():
                 return self.send(403, "forbidden: NIWA_AUTH=open serves localhost, IP addresses, NIWA_HOST, "
                                       "NIWA_PUBLIC_URL and NIWA_ALLOWED_HOSTS, not %r\n" % self.headers.get("Host", ""), "text/plain")
-            if HISTER_AUTH is not None:      # a 302 to the helper's sign-in, a 401 page or JSON, a 403, or a 503
-                status, headers, body = HISTER_AUTH.respond(self.hres(), is_page=self.browser_page(),
+            if NOGON_AUTH is not None:      # a 302 to the helper's sign-in, a 401 page or JSON, a 403, or a 503
+                status, headers, body = NOGON_AUTH.respond(self.hres(), is_page=self.browser_page(),
                                                             ctx=shell.prefs(self.headers.get("Cookie")))
                 return self.reply(status, headers, body)
             if IDENTITY is not None:
@@ -597,13 +610,13 @@ def make_handler(listener):
 
         def session_cookies(self, headers=()):
             """The Set-Cookie values this request's identity asks for: a renewed session, or a bad one cleared (the
-            identity file), or the loop guard and machiya_sso (Hister sign-in); not those the answer already carries."""
+            identity file), or the loop guard and machiya_sso (Nogon sign-in); not those the answer already carries."""
             have = {v for k, v in headers if k.lower() == "set-cookie"}
             mine = self._who.cookies if self._who is not None else self._hres.cookies if self._hres is not None else ()
             return [c for c in mine if c not in have]
 
         def reply(self, status, headers, body):
-            """A vaultkit.signin or histerauth answer: (status, [(header, value)], bytes)."""
+            """A vaultkit.signin or nogonauth answer: (status, [(header, value)], bytes)."""
             out = list(headers)
             if any(k.lower() == "content-type" and v.startswith("text/html") for k, v in headers):
                 out += shell.house.security_headers()     # the sign-in pages: Niwa's CSP on top of theirs
@@ -642,7 +655,7 @@ def make_handler(listener):
             return self.send(413, "request body too large\n", "text/plain", headers=[NO_STORE])
 
         def actor(self):
-            if HISTER_AUTH is not None:  # the Hister username, or the Tailscale login in the fallback
+            if NOGON_AUTH is not None:  # the Nogon username, or the Tailscale login in the fallback
                 return self.hres().principal.name
             if IDENTITY is not None:  # the principal's name ("local" in open mode, as before)
                 return self.who().principal.name
@@ -658,27 +671,27 @@ def make_handler(listener):
             without one identity.ambient (the Tailscale login, or open mode's owner). None otherwise."""
             if not self.allowed():
                 return None
-            if HISTER_AUTH is not None:
+            if NOGON_AUTH is not None:
                 return self.hres().principal
             if IDENTITY is not None:
                 return self.who().principal
             return identity.ambient(AUTH, self.headers)
 
         def prefs_state(self):
-            """Where the Shared settings are kept for this request (shell.shared_section): the account's in hister mode
+            """Where the Shared settings are kept for this request (shell.shared_section): the account's in nogon mode
             with the helper ("unavailable" in the fallback), Niwa's own store ("room") when it has a principal."""
-            if HISTER_AUTH is not None:
-                return HISTER_AUTH.prefs_state(self.hres())
+            if NOGON_AUTH is not None:
+                return NOGON_AUTH.prefs_state(self.hres())
             return "room" if self.principal() is not None else "standalone"
 
         def ctx(self):
             """Theme and text size (machiya.js writes the cookies), /api/prefs when the request has a principal (the
             page then syncs them with the server), and the signed-in name for the header's person button."""
-            account = self._hres.prefs if HISTER_AUTH is not None and self._hres is not None else None
+            account = self._hres.prefs if NOGON_AUTH is not None and self._hres is not None else None
             ctx = shell.prefs(self.headers.get("Cookie"), account=account)     # a fresh browser: the account's theme
             ctx.prefs_url = "/api/prefs" if self.principal() is not None else ""
             ctx.who = self.signed_in()
-            ctx.banner = HISTER_AUTH is not None and self._hres is not None and self._hres.banner   # sign-in is down
+            ctx.banner = NOGON_AUTH is not None and self._hres is not None and self._hres.banner   # sign-in is down
             return ctx
 
         def origins(self):
@@ -693,10 +706,10 @@ def make_handler(listener):
 
         def prefs(self, method, body=b""):
             """GET/PUT /api/prefs as this request's principal (after the gate): the account's, forwarded to the sign-in
-            helper in hister mode (vaultkit 0.21, docs/contracts/prefs.md), else Niwa's own store."""
+            helper in nogon mode (vaultkit 0.21, docs/contracts/prefs.md), else Niwa's own store."""
             origins = self.origins()
-            if HISTER_AUTH is not None:
-                fwd = HISTER_AUTH.forward_prefs(self.hres(), method, self.headers, body, origins)
+            if NOGON_AUTH is not None:
+                fwd = NOGON_AUTH.forward_prefs(self.hres(), method, self.headers, body, origins)
                 if fwd is not None:                   # None: no helper here, so Niwa's own store answers
                     return self.reply(*fwd)
             if IDENTITY is not None:
@@ -763,7 +776,7 @@ def make_handler(listener):
                 if not self.host_ok():
                     return self.refuse()
                 return self.reply(*signin.handle_get(IDENTITY, self.headers, url.query))
-            if (HISTER_AUTH is not None or IDENTITY is not None and IDENTITY.signin) and self.host_ok() \
+            if (NOGON_AUTH is not None or IDENTITY is not None and IDENTITY.signin) and self.host_ok() \
                     and (path in SHARED_UI or path.startswith("/static/icons/") or path == "/favicon.ico"):
                 return self.static("favicon.ico" if path == "/favicon.ico" else path[8:], query)      # the sign-in page's stylesheet and icons: vendored, no notes
             if not self.allowed():
@@ -801,10 +814,10 @@ def make_handler(listener):
                                  "application/rss+xml", headers=[("Cache-Control", "max-age=300")])
             if path == "/settings":
                 state = self.prefs_state()
-                who = self.hres().principal.name if state == "account" and HISTER_AUTH is not None else ""
+                who = self.hres().principal.name if state == "account" and NOGON_AUTH is not None else ""
                 return self.send(200, shell.settings(ctx, VERSION, footer_status()["text"],
                                                      vk_verify.version().split(" - ")[0], self.signed_in(), state, who,
-                                                     HISTER_AUTH.signin if HISTER_AUTH is not None else ""),
+                                                     NOGON_AUTH.signin if NOGON_AUTH is not None else ""),
                                  headers=[NO_STORE])
             if path == "/theme":            # the no-JavaScript fallback for /settings' Theme
                 theme = (query.get("set") or ["system"])[0]
@@ -844,9 +857,9 @@ def make_handler(listener):
             elif gpath == "/tags":
                 self.send(200, gmodern.tags_page(ctx, base, garden))
             elif gpath == "/stream":
-                reading = hister.saved_between if hister else None  # owner-only (never gemini or gopher)
+                reading = nogon.saved_between if nogon else None  # owner-only (never gemini or gopher)
                 self.send(200, gmodern.stream(ctx, base, garden, stream.build(garden, links=links, reading=reading)),
-                          headers=[NO_STORE])           # the board and Hister: the owner's, never on a device
+                          headers=[NO_STORE])           # the board and Nogon: the owner's, never on a device
             elif gpath == "/queue":
                 self.send(200, gmodern.queue(ctx, base, garden, cards), headers=[NO_STORE])   # unpublished notes
             elif gpath.startswith("/a/"):
@@ -903,14 +916,14 @@ def make_handler(listener):
             ref = self.headers.get("Origin") or self.headers.get("Referer") or ""
             return bool(host) and urlsplit(ref).netloc == host
 
-        def hister_signout(self):
-            """POST /signout with NIWA_AUTH=hister: same-origin only (the cookie rides along on any site's post). The
-            helper ends the Hister session and every id on it, this clears machiya_sso here, and the browser goes to
+        def nogon_signout(self):
+            """POST /signout with NIWA_AUTH=nogon: same-origin only (the cookie rides along on any site's post). The
+            helper ends the Nogon session and every id on it, this clears machiya_sso here, and the browser goes to
             the front door, which sends it to sign in. Dropped from the cache either way, even if the helper is down."""
             self.drain(self.content_length())
             if not signin.same_origin(self.headers, SECURE, ORIGINS):
                 return self.send(403, "cross-site sign-out refused\n", "text/plain", headers=[NO_STORE])
-            _, cookies = HISTER_AUTH.signout(self.headers)
+            _, cookies = NOGON_AUTH.signout(self.headers)
             return self.reply(303, [NO_STORE, ("Location", "/")] + [("Set-Cookie", c) for c in cookies], b"")
 
         def cross_site_post(self):
@@ -927,8 +940,8 @@ def make_handler(listener):
         def do_POST(self):
             path = unquote(urlsplit(self.path).path)
             api = path.startswith("/api/")
-            if path == "/signout" and HISTER_AUTH is not None:   # before the gate: it works while sign-in is down
-                return self.hister_signout()
+            if path == "/signout" and NOGON_AUTH is not None:   # before the gate: it works while sign-in is down
+                return self.nogon_signout()
             if path in SIGNIN_LIMITS and IDENTITY is not None:  # before the gate: sign-in, sign-out, pairing
                 if not self.host_ok():
                     return self.refuse()
@@ -956,7 +969,7 @@ def make_handler(listener):
                     raise WriteError(403, "cross-site post refused")
                 if IDENTITY is not None and self.who().principal.via == "session" and not self.same_origin():
                     raise WriteError(403, "cross-site post refused")       # a cookie rides along on any site's post
-                if HISTER_AUTH is not None and self.hres().principal.via == "hister" and not self.same_origin():
+                if NOGON_AUTH is not None and self.hres().principal.via == "nogon" and not self.same_origin():
                     raise WriteError(403, "cross-site post refused")       # the machiya_sso cookie does too
                 actor, agent = self.actor(), self.agent()
                 if api and agent == "web" and not self.same_origin():
@@ -1056,7 +1069,7 @@ def make_public_handler():
     """The public garden (NIWA_PUBLIC_PORT): the published notes, their tags, the public stream, their images and the
     feed, for anyone. An allow-list of GET routes and nothing else: no sign-in, settings, queue, API or write, no
     cookie read or set, no identity header trusted (Tailscale-User-Login, a proxy's, Authorization), and nothing from
-    Konbini, Kura or Hister: what gemini and gopher show, as web pages. Every absolute URL comes from NIWA_GARDEN_URL,
+    Konbini, Kura or Nogon: what gemini and gopher show, as web pages. Every absolute URL comes from NIWA_GARDEN_URL,
     never from Host."""
     class PublicHandler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.0"
@@ -1136,7 +1149,7 @@ def make_public_handler():
                 return self.page(gmodern.tag_page(ctx, "", garden, path[3:], {}))
             if path == "/tags":
                 return self.page(gmodern.tags_page(ctx, "", garden))
-            if path == "/stream":       # garden events about published notes: no board, no Hister (as on gemini)
+            if path == "/stream":       # garden events about published notes: no board, no Nogon (as on gemini)
                 return self.page(gmodern.stream(ctx, "", garden, stream.build(garden, links=links, public=True)))
             if path == "/search":
                 if not SEARCH_LIMIT.allow(self.client_address[0] if self.client_address else ""):
@@ -1171,18 +1184,18 @@ shell.STATUS = footer_status
 
 
 def status(owner=False):
-    """Open for monitoring. Only the owner sees where Konbini and Hister are and what they answered."""
+    """Open for monitoring. Only the owner sees where Konbini and Nogon are and what they answered."""
     garden.index()
     sync_status = dict(sync.status(), error=redact(sync.status().get("error")))
     if owner:
         konbini = garden.konbini.status()
-        hister_status = dict(hister.status(), error=hister.error or None) if hister else "off"
+        nogon_status = dict(nogon.status(), error=nogon.error or None) if nogon else "off"
     else:
         konbini = {"on": garden.konbini.enabled(), "ok": not garden.konbini.error}
-        hister_status = {"on": True, "ok": not hister.error} if hister else "off"
+        nogon_status = {"on": True, "ok": not nogon.error} if nogon else "off"
     return {"version": VERSION, "vaultkit": vk_verify.version().split(" - ")[0], "head": sync.head(),
             "notes": len(garden.notes), "published": len(garden.published()), "sync": sync_status,
-            "konbini": konbini, "nogon": hister_status, "hister": hister_status, "links": links.last_run, "ready": bool(garden.revision),
+            "konbini": konbini, "nogon": nogon_status, "links": links.last_run, "ready": bool(garden.revision),
             "error": redact(sync.error) or None, "auth": AUTH}
 
 
@@ -1202,19 +1215,19 @@ def main():
     for p in vk_verify.check():
         print("niwa: vaultkit drift: %s" % p, flush=True)
     garden.index()
-    if HISTER_AUTH is not None:
+    if NOGON_AUTH is not None:
         users = "Nogon users %s, sign-in at %s, fallback %s%s" % (
-            ",".join(sorted(HISTER_AUTH.users)), HISTER_AUTH.signin, HISTER_AUTH.fallback,
-            " (%s)" % ",".join(sorted(HISTER_AUTH.fallback_users)) if HISTER_AUTH.fallback == "tailscale" else "")
+            ",".join(sorted(NOGON_AUTH.users)), NOGON_AUTH.signin, NOGON_AUTH.fallback,
+            " (%s)" % ",".join(sorted(NOGON_AUTH.fallback_users)) if NOGON_AUTH.fallback == "tailscale" else "")
     elif IDENTITY is not None:
         users = "from %s (NIWA_AUTH=%s)" % (IDENTITY.path, AUTH)
     else:
         users = "anyone (NIWA_AUTH=open)" if AUTH == "open" else ",".join(sorted(USERS)) or "NOBODY (set NIWA_USERS)"
-    print("niwa %s (vaultkit %s): %d notes, %d published; repo %s, subdir %r; konbini %s%s; hister %s; users %s" % (
+    print("niwa %s (vaultkit %s): %d notes, %d published; repo %s, subdir %r; konbini %s%s; nogon %s; users %s" % (
         VERSION, vk_verify.version().split(" - ")[0], len(garden.notes), len(garden.published()), REPO, SUBDIR,
-        shell.BOARD_URL or "off", " (service token)" if garden.konbini.token else "", "on" if hister else "off",
+        shell.BOARD_URL or "off", " (service token)" if garden.konbini.token else "", "on" if nogon else "off",
         users), flush=True)
-    print("niwa: link archive %s; hister save %s" % (ARCHIVE, "on" if HISTER_SAVE else "off"), flush=True)
+    print("niwa: link archive %s; nogon save %s" % (ARCHIVE, "on" if NOGON_SAVE else "off"), flush=True)
     print("niwa: listening on %s: web %d, gemini 1965, gopher 7070%s" % (
         BIND, PORT, ("; settings from " + ENV_FILE) if ENV_FILE else ""), flush=True)
     if TRUSTED_PROXIES:
