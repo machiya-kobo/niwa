@@ -3,6 +3,10 @@
 Niwa follows [SemVer](https://semver.org). Before 1.0, a new feature, a changed default or setting, or a changed API
 field is a minor bump, and a fix or wording change is a patch. Settings are listed in the README.
 
+## 0.19.1
+
+- vaultkit 0.38.0 → 0.40.0: an extra room in the Rooms menu can say what it is (`MACHIYA_EXTRA_ROOMS`' sixth field; Techō shows "agents", owner 2026-11-20).
+
 ## 0.19.0
 
 Hister is now Nogon (the owner, 2026-11-19: rename everything Machiya calls Hister). This is the rename's stage 1: both names are read, and nothing stored changes. The lead made it this once.
